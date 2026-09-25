@@ -3,7 +3,7 @@ import { initializeDatabase } from './db.js';
 
 const db = initializeDatabase();
 const port = Number(process.env.PORT ?? 3001);
-const server = createApp().listen(port, '0.0.0.0', () => {
+const server = createApp(db).listen(port, '0.0.0.0', () => {
   console.log(`Quiz server listening on http://localhost:${port}`);
 });
 

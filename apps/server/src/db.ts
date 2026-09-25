@@ -5,8 +5,20 @@ import { fileURLToPath } from 'node:url';
 
 const defaultPath = fileURLToPath(new URL('../../../data/quiz.sqlite', import.meta.url));
 
-// Add numbered SQL migrations here as later phases introduce persistent data.
-const migrations: readonly { version: number; sql: string }[] = [];
+const migrations: readonly { version: number; sql: string }[] = [
+  {
+    version: 1,
+    sql: `CREATE TABLE quizzes (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      theme_id TEXT NOT NULL,
+      default_answer_time_seconds INTEGER NOT NULL,
+      shuffle_answers INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`,
+  },
+];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {
   mkdirSync(dirname(filePath), { recursive: true });

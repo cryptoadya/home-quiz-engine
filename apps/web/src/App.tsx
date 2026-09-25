@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { QuizEditor, QuizList } from './Admin';
 
 const interfaces = [
-  { path: '/admin', title: 'Admin', description: 'Quiz editor' },
   { path: '/host', title: 'Host', description: 'Game controls' },
   { path: '/screen', title: 'Screen', description: 'TV presentation' },
   { path: '/play', title: 'Player', description: 'Phone answers' },
@@ -11,6 +11,8 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/admin" replace />} />
+      <Route path="/admin" element={<QuizList />} />
+      <Route path="/admin/quizzes/:quizId" element={<QuizEditor />} />
       {interfaces.map(({ path, title, description }) => (
         <Route
           key={path}

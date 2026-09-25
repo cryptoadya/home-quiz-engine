@@ -5,6 +5,7 @@ import { createRound, deleteRound, listRounds, reorderRounds, updateRound, valid
 import { createQuestion, deleteQuestion, getQuestion, listQuestions, reorderQuestions, updateQuestion, validateQuestionChanges,
   createOption, deleteOption, getOption, listOptions, reorderOptions, selectCorrectOption, updateOption, validateOptionChanges } from './questions.js';
 import { getRound } from './rounds.js';
+import { validateQuizReadiness } from './validation.js';
 
 export function createApp(db: DatabaseSync) {
   const app = express();
@@ -27,6 +28,10 @@ export function createApp(db: DatabaseSync) {
     const quiz = getQuiz(db, request.params.id);
     if (!quiz) return response.status(404).json({ error: 'Quiz not found.' });
     return response.json(quiz);
+  });
+  app.get('/api/quizzes/:id/validation', (request, response) => {
+    const result = validateQuizReadiness(db, request.params.id);
+    return result ? response.json(result) : response.status(404).json({ error: 'Quiz not found.' });
   });
   app.put('/api/quizzes/:id', (request, response) => {
     const result = validateQuizChanges(request.body);

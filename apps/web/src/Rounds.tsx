@@ -25,7 +25,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
 
-export function Rounds({ quizId }: { quizId: string }) {
+export function Rounds({ quizId, targetRound, onPersistedChange }: { quizId: string; targetRound?: { id: string } | null; onPersistedChange?: () => void }) {
   const base = `/api/quizzes/${quizId}/rounds`;
   const [rounds, setRounds] = useState<Round[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -38,6 +38,14 @@ export function Rounds({ quizId }: { quizId: string }) {
   const revision = useRef(0);
   const saveChain = useRef<Promise<void>>(Promise.resolve());
   const incomplete = useRef(false);
+  const appliedTarget = useRef<typeof targetRound>(null);
+
+  useEffect(() => {
+    if (targetRound && targetRound !== appliedTarget.current && rounds.some((round) => round.id === targetRound.id)) {
+      appliedTarget.current = targetRound;
+      setSelectedId(targetRound.id);
+    }
+  }, [targetRound, rounds]);
 
   useEffect(() => {
     let active = true;
@@ -63,6 +71,7 @@ export function Rounds({ quizId }: { quizId: string }) {
         await api<Round>(`${base}/${id}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
         });
+        onPersistedChange?.();
         if (version === revision.current) { setStatus('Saved'); setError(''); }
       } catch (cause) {
         if (version === revision.current) { setStatus('Save failed'); setError((cause as Error).message); }
@@ -97,6 +106,7 @@ export function Rounds({ quizId }: { quizId: string }) {
     setBusy(true);
     try {
       const round = await api<Round>(base, { method: 'POST' });
+      onPersistedChange?.();
       setRounds((current) => [...current, round]);
       setSelectedId(round.id);
       setStatus('Saved');
@@ -116,6 +126,7 @@ export function Rounds({ quizId }: { quizId: string }) {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: next.map((round) => round.id) }),
       });
+      onPersistedChange?.();
       setRounds(saved);
       setError('');
     } catch (cause) { setError((cause as Error).message); }
@@ -131,6 +142,7 @@ export function Rounds({ quizId }: { quizId: string }) {
     setBusy(true);
     try {
       await api<void>(`${base}/${round.id}`, { method: 'DELETE' });
+      onPersistedChange?.();
       const next = rounds.filter((item) => item.id !== round.id);
       setRounds(next);
       setSelectedId(next[0]?.id ?? null);
@@ -170,7 +182,7 @@ export function Rounds({ quizId }: { quizId: string }) {
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
         <button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button>
       </div>}
-      {selected && <Questions key={selected.id} quizId={quizId} roundId={selected.id} />}
+      {selected && <Questions key={selected.id} quizId={quizId} roundId={selected.id} onPersistedChange={onPersistedChange} />}
     </>}
   </section>;
 }

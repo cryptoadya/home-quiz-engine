@@ -13,6 +13,8 @@ export type Quiz = {
 };
 
 type QuizSettings = Pick<Quiz, 'title' | 'themeId' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'>;
+type ValidationProblem = { code: string; message: string; roundId?: string; questionId?: string; optionId?: string };
+type QuizValidation = { ready: boolean; problems: ValidationProblem[] };
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -86,10 +88,29 @@ export function QuizEditor() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('Saved');
   const [error, setError] = useState('');
+  const [validation, setValidation] = useState<QuizValidation | null>(null);
+  const [validationError, setValidationError] = useState('');
+  const [targetRound, setTargetRound] = useState<{ id: string } | null>(null);
+  const validationRevision = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<QuizSettings | null>(null);
   const revision = useRef(0);
   const saveChain = useRef<Promise<void>>(Promise.resolve());
+
+  function refreshValidation() {
+    const version = ++validationRevision.current;
+    void api<QuizValidation>(`/api/quizzes/${quizId}/validation`).then((result) => {
+      if (version === validationRevision.current) { setValidation(result); setValidationError(''); }
+    }).catch((cause: Error) => {
+      if (version === validationRevision.current) setValidationError(cause.message);
+    });
+  }
+
+  useEffect(() => {
+    setValidation(null);
+    refreshValidation();
+    return () => { validationRevision.current += 1; };
+  }, [quizId]);
 
   useEffect(() => {
     let active = true;
@@ -111,6 +132,7 @@ export function QuizEditor() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(settings),
         });
+        refreshValidation();
         if (version === revision.current) {
           setStatus('Saved');
           setError('');
@@ -159,6 +181,16 @@ export function QuizEditor() {
     <Link to="/admin" onClick={flush}>← Quiz list</Link>
     <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status}</span></div>
     {error && <p role="alert" className="error">{error}</p>}
+    <section className="readiness" aria-label="Quiz readiness">
+      <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Draft · ${validation.problems.length} ${validation.problems.length === 1 ? 'problem' : 'problems'}` : 'Checking readiness...'}</strong>
+      {validationError && <p role="alert" className="error">Could not refresh readiness: {validationError}</p>}
+      {validation && validation.problems.length > 0 && <details>
+        <summary>Show problems</summary>
+        <ul>{validation.problems.map((problem, index) => <li key={`${problem.code}-${problem.roundId ?? ''}-${problem.questionId ?? ''}-${problem.optionId ?? ''}-${index}`}>
+          {problem.roundId ? <button type="button" className="problem-link" onClick={() => setTargetRound({ id: problem.roundId! })}>{problem.message}</button> : problem.message}
+        </li>)}</ul>
+      </details>}
+    </section>
     <div className="fields">
       <label>Title<input value={quiz.title} maxLength={100} onChange={(event) => change({ ...settings, title: event.target.value })} /></label>
       <label>Theme<select value={quiz.themeId} onChange={(event) => change({ ...settings, themeId: event.target.value as Quiz['themeId'] })}>
@@ -167,6 +199,6 @@ export function QuizEditor() {
       <label>Default answer time (seconds)<input type="number" min="1" max="3600" step="1" value={quiz.defaultAnswerTimeSeconds} onChange={(event) => change({ ...settings, defaultAnswerTimeSeconds: Number(event.target.value) })} /></label>
       <label className="checkbox"><input type="checkbox" checked={quiz.shuffleAnswers} onChange={(event) => change({ ...settings, shuffleAnswers: event.target.checked })} /> Shuffle answers</label>
     </div>
-    <Rounds quizId={quiz.id} />
+    <Rounds quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
   </main>;
 }

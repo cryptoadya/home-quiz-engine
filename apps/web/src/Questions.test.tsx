@@ -20,6 +20,7 @@ test('selected round edits draft questions and options, saves, reorders, and con
   dom.window.confirm = () => confirmed;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round has no questions', roundId: 'r1' }] });
     const method = init?.method || 'GET';
     if (path === '/api/quizzes/q1') return Response.json(quiz);
     if (path.endsWith('/rounds')) return Response.json([round]);

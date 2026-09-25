@@ -42,4 +42,10 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .questions button.subtle { color: #254f9a; }
 .questions button.danger { color: #a12424; }
 .error { color: #a12424; }
+.readiness { margin-top: 1rem; padding: 0.9rem 1rem; border: 1px solid #d4dbe3; border-radius: 0.4rem; background: white; }
+.readiness details { margin-top: 0.5rem; }
+.readiness summary { cursor: pointer; }
+.readiness ul { margin: 0.6rem 0 0; padding-left: 1.4rem; }
+.readiness li { margin: 0.35rem 0; }
+.readiness .problem-link { padding: 0; border: 0; background: none; color: #254f9a; text-align: left; text-decoration: underline; }
 @media (max-width: 38rem) { .admin-header { align-items: flex-start; } }

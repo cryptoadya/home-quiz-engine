@@ -25,6 +25,7 @@ test('Admin lists drafts, creates one, and confirms deletion', async () => {
   globalThis.fetch = async (input, init) => {
     const path = String(input);
     calls.push(`${init?.method || 'GET'} ${path}`);
+    if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'QUIZ_NO_ROUNDS', message: 'Quiz has no rounds' }] });
     if (path.endsWith('/rounds')) return Response.json([]);
     if (init?.method === 'POST') return Response.json(quiz, { status: 201 });
     if (init?.method === 'DELETE') return new Response(null, { status: 204 });
@@ -55,6 +56,7 @@ test('editor autosaves basic settings and keeps a failed save visible', async ()
   const updates: unknown[] = [];
   let fail = false;
   globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'QUIZ_NO_ROUNDS', message: 'Quiz has no rounds' }] });
     if (String(input).endsWith('/rounds')) return Response.json([]);
     if (init?.method === 'PUT') {
       updates.push(JSON.parse(String(init.body)));
@@ -90,6 +92,7 @@ test('editor loads, adds, edits, reorders, and confirms round deletion', async (
   dom.window.confirm = () => confirmed;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round has no questions', roundId: 'r1' }] });
     if (path === `/api/quizzes/${quiz.id}`) return Response.json(quiz);
     if (path.endsWith('/rounds')) {
       if (init?.method === 'POST') {
@@ -144,6 +147,7 @@ test('round editor waits for both description languages and shows failed autosav
   const updates: unknown[] = [];
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round has no questions', roundId: 'r1' }] });
     if (path.endsWith('/rounds')) return Response.json([round]);
     if (path.endsWith('/questions')) return Response.json([]);
     if (path.endsWith('/r1') && init?.method === 'PUT') {
@@ -161,4 +165,37 @@ test('round editor waits for both description languages and shows failed autosav
   await waitFor(() => assert.equal(view.getByText('Save failed', { selector: '.round-status' }).textContent, 'Save failed'), { timeout: 2000 });
   assert.equal(updates.length, 1);
   assert.ok(view.getByRole('alert').textContent?.includes('Round save unavailable.'));
+});
+
+test('editor shows readiness, problems, and selects the affected round', async () => {
+  const rounds = [
+    { id: 'r1', quizId: quiz.id, titleRu: 'Первый', titleEn: 'First', descriptionRu: '', descriptionEn: '', showLeaderboardAfter: false, position: 0 },
+    { id: 'r2', quizId: quiz.id, titleRu: 'Второй', titleEn: 'Second', descriptionRu: '', descriptionEn: '', showLeaderboardAfter: false, position: 1 },
+  ];
+  let validation = { ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round “Second” has no questions', roundId: 'r2' }] };
+  globalThis.fetch = async (input) => {
+    const path = String(input);
+    if (path.endsWith('/validation')) return Response.json(validation);
+    if (path.endsWith('/rounds')) return Response.json(rounds);
+    if (path.endsWith('/questions')) return Response.json([]);
+    return Response.json(quiz);
+  };
+  const view = show('/admin/quizzes/quiz-1');
+  await waitFor(() => assert.ok(view.getByText('Draft · 1 problem')));
+  fireEvent.click(view.getByText('Show problems'));
+  assert.ok(view.getByText('Round “Second” has no questions'));
+  fireEvent.click(view.getByRole('button', { name: 'Round “Second” has no questions' }));
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Second / Второй' }).className.includes('selected-round')));
+  validation = { ready: true, problems: [] };
+  // A successful persisted quiz edit refreshes the server's authoritative result.
+  globalThis.fetch = async (input, init) => {
+    const path = String(input);
+    if (path.endsWith('/validation')) return Response.json(validation);
+    if (path.endsWith('/rounds')) return Response.json(rounds);
+    if (path.endsWith('/questions')) return Response.json([]);
+    if (init?.method === 'PUT') return Response.json(quiz);
+    return Response.json(quiz);
+  };
+  fireEvent.change(view.getByLabelText('Title'), { target: { value: 'Party Quiz' } });
+  await waitFor(() => assert.ok(view.getByText('Ready to play')), { timeout: 2000 });
 });

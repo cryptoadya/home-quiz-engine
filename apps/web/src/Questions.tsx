@@ -22,7 +22,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 const json = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-export function Questions({ quizId, roundId }: { quizId: string; roundId: string }) {
+export function Questions({ quizId, roundId, onPersistedChange }: { quizId: string; roundId: string; onPersistedChange?: () => void }) {
   const base = `/api/quizzes/${quizId}/rounds/${roundId}/questions`;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -64,6 +64,7 @@ export function Questions({ quizId, roundId }: { quizId: string; roundId: string
     chain.current = chain.current.then(async () => {
       try {
         for (const save of saves) await api(save.path, json('PUT', save.body));
+        onPersistedChange?.();
         if (version === revision.current) { setStatus('Saved'); setError(''); }
       } catch (cause) {
         if (version === revision.current) { setStatus('Save failed'); setError((cause as Error).message); }
@@ -84,7 +85,7 @@ export function Questions({ quizId, roundId }: { quizId: string; roundId: string
     flush();
     await chain.current;
     setBusy(true);
-    try { await action(); setError(''); }
+    try { await action(); onPersistedChange?.(); setError(''); }
     catch (cause) { setStatus('Save failed'); setError((cause as Error).message); }
     finally { setBusy(false); }
   }

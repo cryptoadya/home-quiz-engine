@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { DatabaseSync } from 'node:sqlite';
 import { createQuiz, deleteQuiz, getQuiz, listQuizzes, updateQuiz, validateQuizChanges } from './quizzes.js';
+import { createRound, deleteRound, listRounds, reorderRounds, updateRound, validateRoundChanges } from './rounds.js';
 
 export function createApp(db: DatabaseSync) {
   const app = express();
@@ -33,6 +34,35 @@ export function createApp(db: DatabaseSync) {
   });
   app.delete('/api/quizzes/:id', (request, response) => {
     if (!deleteQuiz(db, request.params.id)) return response.status(404).json({ error: 'Quiz not found.' });
+    return response.status(204).end();
+  });
+
+  app.get('/api/quizzes/:quizId/rounds', (request, response) => {
+    if (!getQuiz(db, request.params.quizId)) return response.status(404).json({ error: 'Quiz not found.' });
+    return response.json(listRounds(db, request.params.quizId));
+  });
+  app.post('/api/quizzes/:quizId/rounds', (request, response) => {
+    if (!getQuiz(db, request.params.quizId)) return response.status(404).json({ error: 'Quiz not found.' });
+    if (request.body !== undefined && (typeof request.body !== 'object' || request.body === null || Array.isArray(request.body) || Object.keys(request.body).length > 0)) {
+      return response.status(400).json({ error: 'Create round does not accept fields.' });
+    }
+    return response.status(201).json(createRound(db, request.params.quizId));
+  });
+  app.put('/api/quizzes/:quizId/rounds/order', (request, response) => {
+    if (!getQuiz(db, request.params.quizId)) return response.status(404).json({ error: 'Quiz not found.' });
+    const rounds = reorderRounds(db, request.params.quizId, request.body?.ids);
+    if (!rounds) return response.status(400).json({ error: 'Order must include every round exactly once.' });
+    return response.json(rounds);
+  });
+  app.put('/api/quizzes/:quizId/rounds/:roundId', (request, response) => {
+    const result = validateRoundChanges(request.body);
+    if ('error' in result) return response.status(400).json(result);
+    const round = updateRound(db, request.params.quizId, request.params.roundId, result.changes);
+    if (!round) return response.status(404).json({ error: 'Round not found in quiz.' });
+    return response.json(round);
+  });
+  app.delete('/api/quizzes/:quizId/rounds/:roundId', (request, response) => {
+    if (!deleteRound(db, request.params.quizId, request.params.roundId)) return response.status(404).json({ error: 'Round not found in quiz.' });
     return response.status(204).end();
   });
 

@@ -18,6 +18,22 @@ const migrations: readonly { version: number; sql: string }[] = [
       updated_at TEXT NOT NULL
     )`,
   },
+  {
+    version: 2,
+    sql: `CREATE TABLE rounds (
+      id TEXT PRIMARY KEY,
+      quiz_id TEXT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+      title_ru TEXT NOT NULL,
+      title_en TEXT NOT NULL,
+      description_ru TEXT NOT NULL,
+      description_en TEXT NOT NULL,
+      show_leaderboard_after INTEGER NOT NULL,
+      position INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX rounds_quiz_position ON rounds(quiz_id, position)`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {
@@ -25,6 +41,7 @@ export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaul
   const db = new DatabaseSync(filePath);
 
   try {
+    db.exec('PRAGMA foreign_keys = ON');
     db.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,

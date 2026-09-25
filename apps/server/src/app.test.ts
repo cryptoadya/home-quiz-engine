@@ -71,3 +71,57 @@ test('health and quiz CRUD persist drafts with validation', async () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('rounds support bilingual edits, persistent ordering, scoped access, and cascade deletion', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'home-quiz-rounds-'));
+  const path = join(directory, 'quiz.sqlite');
+  const db = initializeDatabase(path);
+  const app = request(createApp(db));
+  try {
+    const quizId = (await app.post('/api/quizzes')).body.id;
+    const otherId = (await app.post('/api/quizzes')).body.id;
+    const base = `/api/quizzes/${quizId}/rounds`;
+    assert.deepEqual((await app.get(base)).body, []);
+    assert.equal((await app.post('/api/quizzes/missing/rounds')).status, 404);
+    const first = await app.post(base);
+    const second = await app.post(base);
+    assert.equal(first.status, 201);
+    assert.match(first.body.id, /^[0-9a-f-]{36}$/);
+    assert.equal(first.body.titleRu, 'Новый раунд');
+    assert.equal(first.body.showLeaderboardAfter, false);
+    assert.deepEqual((await app.get(base)).body.map((round: { id: string }) => round.id), [first.body.id, second.body.id]);
+    const changes = { titleRu: '  Раунд  ', titleEn: '  Round  ', descriptionRu: 'Описание', descriptionEn: 'Description', showLeaderboardAfter: true };
+    const updated = await app.put(`${base}/${first.body.id}`).send(changes);
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.titleRu, 'Раунд');
+    assert.equal(updated.body.titleEn, 'Round');
+    assert.equal(updated.body.descriptionRu, 'Описание');
+    assert.equal(updated.body.showLeaderboardAfter, true);
+    for (const invalid of [
+      { ...changes, titleRu: ' ' }, { ...changes, titleEn: '' },
+      { ...changes, titleRu: 'a'.repeat(101) },
+      { ...changes, descriptionEn: '' }, { ...changes, descriptionRu: '' },
+      { ...changes, showLeaderboardAfter: 'yes' },
+    ]) {
+      assert.equal((await app.put(`${base}/${first.body.id}`).send(invalid)).status, 400);
+    }
+    assert.equal((await app.put(`/api/quizzes/${otherId}/rounds/${first.body.id}`).send(changes)).status, 404);
+    assert.equal((await app.delete(`/api/quizzes/${otherId}/rounds/${first.body.id}`)).status, 404);
+    for (const ids of [[first.body.id], [first.body.id, first.body.id], [first.body.id, 'missing']]) {
+      assert.equal((await app.put(`${base}/order`).send({ ids })).status, 400);
+    }
+    assert.equal((await app.put(`${base}/order`).send({ ids: [second.body.id, first.body.id] })).status, 200);
+    db.close();
+    const reopened = initializeDatabase(path);
+    const reopenedApp = request(createApp(reopened));
+    assert.deepEqual((await reopenedApp.get(base)).body.map((round: { id: string }) => round.id), [second.body.id, first.body.id]);
+    assert.equal((await reopenedApp.delete(`${base}/${second.body.id}`)).status, 204);
+    assert.deepEqual((await reopenedApp.get(base)).body.map((round: { id: string }) => round.id), [first.body.id]);
+    assert.equal((await reopenedApp.delete(`/api/quizzes/${quizId}`)).status, 204);
+    assert.equal(reopened.prepare('SELECT count(*) AS count FROM rounds WHERE quiz_id = ?').get(quizId)?.count, 0);
+    reopened.close();
+  } finally {
+    if (db.isOpen) db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -16,8 +16,10 @@ test('SQLite initializes its migration ledger and reopens cleanly', () => {
       assert.equal(table?.name, 'schema_migrations');
       const quizTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'quizzes'").get();
       assert.equal(quizTable?.name, 'quizzes');
+      const roundsTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'rounds'").get();
+      assert.equal(roundsTable?.name, 'rounds');
       const migration = db.prepare('SELECT version FROM schema_migrations').all();
-      assert.deepEqual(migration.map((row) => row.version), [1]);
+      assert.deepEqual(migration.map((row) => row.version), [1, 2]);
       db.close();
     }
   } finally {

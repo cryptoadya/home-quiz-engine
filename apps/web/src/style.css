@@ -35,5 +35,11 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .rounds button.subtle { color: #254f9a; }
 .rounds button.danger { color: #a12424; }
 .rounds .fields { padding-bottom: 2rem; }
+.questions { border-top: 1px solid #d4dbe3; padding-top: 1rem; }
+.questions h3, .questions h4 { margin: 0.7rem 0; }
+.question-editor { max-width: 40rem; }
+.option-editor { display: grid; gap: 0.7rem; border: 1px solid #d4dbe3; border-radius: 0.4rem; padding: 1rem; }
+.questions button.subtle { color: #254f9a; }
+.questions button.danger { color: #a12424; }
 .error { color: #a12424; }
 @media (max-width: 38rem) { .admin-header { align-items: flex-start; } }

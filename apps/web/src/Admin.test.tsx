@@ -145,6 +145,7 @@ test('round editor waits for both description languages and shows failed autosav
   globalThis.fetch = async (input, init) => {
     const path = String(input);
     if (path.endsWith('/rounds')) return Response.json([round]);
+    if (path.endsWith('/questions')) return Response.json([]);
     if (path.endsWith('/r1') && init?.method === 'PUT') {
       updates.push(JSON.parse(String(init.body)));
       return Response.json({ error: 'Round save unavailable.' }, { status: 500 });

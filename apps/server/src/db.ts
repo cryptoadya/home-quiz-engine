@@ -34,6 +34,34 @@ const migrations: readonly { version: number; sql: string }[] = [
     );
     CREATE INDEX rounds_quiz_position ON rounds(quiz_id, position)`,
   },
+  {
+    version: 3,
+    sql: `CREATE TABLE questions (
+      id TEXT PRIMARY KEY,
+      round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK (type = 'single_choice'),
+      text_ru TEXT NOT NULL,
+      text_en TEXT NOT NULL,
+      points INTEGER NOT NULL CHECK (points > 0),
+      answer_time_seconds INTEGER CHECK (answer_time_seconds IS NULL OR answer_time_seconds BETWEEN 1 AND 3600),
+      show_options_on_screen INTEGER NOT NULL CHECK (show_options_on_screen IN (0, 1)),
+      position INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX questions_round_position ON questions(round_id, position);
+    CREATE TABLE answer_options (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+      text_ru TEXT NOT NULL,
+      text_en TEXT NOT NULL,
+      is_correct INTEGER NOT NULL CHECK (is_correct IN (0, 1)),
+      position INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX answer_options_question_position ON answer_options(question_id, position)`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

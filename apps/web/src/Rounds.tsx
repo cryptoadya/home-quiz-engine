@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Questions } from './Questions';
 
 export type Round = {
   id: string;
@@ -169,6 +170,7 @@ export function Rounds({ quizId }: { quizId: string }) {
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
         <button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button>
       </div>}
+      {selected && <Questions key={selected.id} quizId={quizId} roundId={selected.id} />}
     </>}
   </section>;
 }

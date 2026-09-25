@@ -1,3 +1,4 @@
+import { joinPlayer, reconnectPlayer, listPlayers } from './players.js';
 import { createRoom, getRoom, getRoomByCode, closeRoom } from './rooms.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { DatabaseSync } from 'node:sqlite';
@@ -29,6 +30,24 @@ export function createApp(db: DatabaseSync) {
   app.post('/api/rooms/:roomId/close', (request, response) => {
     const room = closeRoom(db, request.params.roomId);
     return room ? response.json(room) : response.status(404).json({ error: 'Room not found.' });
+  });
+
+  app.post('/api/rooms/code/:code/players', (request, response) => {
+    const result = joinPlayer(db, request.params.code, request.body);
+    response.set('Cache-Control', 'no-store');
+    if ('status' in result) return response.status(result.status).json({ error: result.error });
+    return response.status(201).json(result);
+  });
+  app.post('/api/rooms/:roomId/reconnect', (request, response) => {
+    const result = reconnectPlayer(db, request.params.roomId, request.body?.token);
+    response.set('Cache-Control', 'no-store');
+    if ('status' in result) return response.status(result.status).json({ error: result.error });
+    return response.json(result);
+  });
+  app.get('/api/rooms/:roomId/players', (request, response) => {
+    const room = getRoom(db, request.params.roomId);
+    if (!room || room.closedAt) return response.status(404).json({ error: 'Active room not found.' });
+    return response.json(listPlayers(db, room.id));
   });
 
   app.get('/api/health', (_request, response) => {

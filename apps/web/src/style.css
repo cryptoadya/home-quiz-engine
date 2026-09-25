@@ -50,3 +50,6 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .readiness li { margin: 0.35rem 0; }
 .readiness .problem-link { padding: 0; border: 0; background: none; color: #254f9a; text-align: left; text-decoration: underline; }
 @media (max-width: 38rem) { .admin-header { align-items: flex-start; } }
+
+.player { max-width: 28rem; margin-top: 3rem; }
+.player .fields input, .player .fields select { min-width: 0; width: 100%; box-sizing: border-box; }

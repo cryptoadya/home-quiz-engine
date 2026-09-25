@@ -74,6 +74,21 @@ const migrations: readonly { version: number; sql: string }[] = [
     );
     CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL`,
   },
+  {
+    version: 5,
+    sql: `CREATE TABLE session_players (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+      display_name TEXT NOT NULL,
+      normalized_name TEXT NOT NULL,
+      language TEXT NOT NULL CHECK (language IN ('ru', 'en')),
+      token_hash TEXT NOT NULL UNIQUE,
+      joined_at TEXT NOT NULL,
+      removed_at TEXT
+    );
+    CREATE UNIQUE INDEX session_players_active_name
+      ON session_players(session_id, normalized_name) WHERE removed_at IS NULL`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

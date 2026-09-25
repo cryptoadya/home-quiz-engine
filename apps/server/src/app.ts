@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { DatabaseSync } from 'node:sqlite';
-import { createQuiz, deleteQuiz, getQuiz, listQuizzes, updateQuiz, validateQuizChanges } from './quizzes.js';
+import { createQuiz, deleteQuiz, duplicateQuiz, getQuiz, listQuizzes, updateQuiz, validateQuizChanges } from './quizzes.js';
 import { createRound, deleteRound, listRounds, reorderRounds, updateRound, validateRoundChanges } from './rounds.js';
 import { createQuestion, deleteQuestion, getQuestion, listQuestions, reorderQuestions, updateQuestion, validateQuestionChanges,
   createOption, deleteOption, getOption, listOptions, reorderOptions, selectCorrectOption, updateOption, validateOptionChanges } from './questions.js';
@@ -23,6 +23,10 @@ export function createApp(db: DatabaseSync) {
       return response.status(400).json({ error: 'Create quiz does not accept settings.' });
     }
     response.status(201).json(createQuiz(db));
+  });
+  app.post('/api/quizzes/:id/duplicate', (request, response) => {
+    const copy = duplicateQuiz(db, request.params.id);
+    return copy ? response.status(201).json(copy) : response.status(404).json({ error: 'Quiz not found.' });
   });
   app.get('/api/quizzes/:id', (request, response) => {
     const quiz = getQuiz(db, request.params.id);

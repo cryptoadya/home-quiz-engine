@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { listRounds } from './rounds.js';
+import { listOptions, listQuestions } from './questions.js';
 
 export type Quiz = {
   id: string;
@@ -59,6 +61,43 @@ export function createQuiz(db: DatabaseSync): Quiz {
     Number(quiz.shuffleAnswers), quiz.createdAt, quiz.updatedAt,
   );
   return quiz;
+}
+
+export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
+  const source = getQuiz(db, sourceId);
+  if (!source) return null;
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const title = `${source.title.slice(0, 93)} (Copy)`;
+  db.exec('BEGIN');
+  try {
+    db.prepare(`INSERT INTO quizzes (id, title, theme_id, default_answer_time_seconds, shuffle_answers, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, title, source.themeId, source.defaultAnswerTimeSeconds, Number(source.shuffleAnswers), now, now);
+    const insertRound = db.prepare(`INSERT INTO rounds (id, quiz_id, title_ru, title_en, description_ru, description_en,
+      show_leaderboard_after, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insertQuestion = db.prepare(`INSERT INTO questions (id, round_id, type, text_ru, text_en, points, answer_time_seconds,
+      show_options_on_screen, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insertOption = db.prepare(`INSERT INTO answer_options (id, question_id, text_ru, text_en, is_correct, position, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const round of listRounds(db, sourceId)) {
+      const roundId = randomUUID();
+      insertRound.run(roundId, id, round.titleRu, round.titleEn, round.descriptionRu, round.descriptionEn,
+        Number(round.showLeaderboardAfter), round.position, now, now);
+      for (const question of listQuestions(db, round.id)) {
+        const questionId = randomUUID();
+        insertQuestion.run(questionId, roundId, question.type, question.textRu, question.textEn, question.points,
+          question.answerTimeSeconds, Number(question.showOptionsOnScreen), question.position, now, now);
+        for (const option of listOptions(db, question.id)) {
+          insertOption.run(randomUUID(), questionId, option.textRu, option.textEn, Number(option.isCorrect), option.position, now, now);
+        }
+      }
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return getQuiz(db, id)!;
 }
 
 export type QuizChanges = Pick<Quiz, 'title' | 'themeId' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'>;

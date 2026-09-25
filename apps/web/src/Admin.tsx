@@ -71,13 +71,29 @@ export function QuizList() {
     }
   }
 
+  async function duplicate(quiz: Quiz) {
+    setBusy(true);
+    setError('');
+    try {
+      const copy = await api<Quiz>(`/api/quizzes/${quiz.id}/duplicate`, { method: 'POST' });
+      setQuizzes((current) => [copy, ...current]);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <main className="admin">
     <header className="admin-header"><div><h1>Quizzes</h1><p>Your saved drafts</p></div><button onClick={create} disabled={busy}>Create quiz</button></header>
     {error && <p role="alert" className="error">{error}</p>}
     {loading ? <p>Loading quizzes...</p> : quizzes.length === 0 ? <p>No quizzes yet. Create one to get started.</p> :
       <ul className="quiz-list">{quizzes.map((quiz) => <li key={quiz.id}>
         <div><Link to={`/admin/quizzes/${quiz.id}`}>{quiz.title}</Link><p>{quiz.themeId === 'default' ? 'Default' : 'Halloween'} · Modified {formatDate(quiz.updatedAt)}</p></div>
-        <button className="subtle danger" onClick={() => void remove(quiz)} aria-label={`Delete ${quiz.title}`}>Delete</button>
+        <div className="quiz-actions">
+          <button className="subtle" onClick={() => void duplicate(quiz)} disabled={busy} aria-label={`Duplicate ${quiz.title}`}>Duplicate</button>
+          <button className="subtle danger" onClick={() => void remove(quiz)} aria-label={`Delete ${quiz.title}`}>Delete</button>
+        </div>
       </li>)}</ul>}
   </main>;
 }

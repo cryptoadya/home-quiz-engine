@@ -52,6 +52,33 @@ test('Admin lists drafts, creates one, and confirms deletion', async () => {
   assert.ok(calls.includes('POST /api/quizzes'));
 });
 
+test('Admin duplicates a quiz through one API call and lists the returned copy', async () => {
+  const calls: string[] = [];
+  const copy = { ...quiz, id: 'quiz-2', title: 'New Quiz (Copy)' };
+  let fail = true;
+  globalThis.fetch = async (input, init) => {
+    const path = String(input);
+    calls.push(`${init?.method || 'GET'} ${path}`);
+    if (path === '/api/quizzes') return Response.json([quiz]);
+    if (path === '/api/quizzes/quiz-1/duplicate') return fail
+      ? Response.json({ error: 'Copy unavailable.' }, { status: 500 })
+      : Response.json(copy, { status: 201 });
+    return Response.json({ error: 'Unexpected request.' }, { status: 404 });
+  };
+  const view = show('/admin');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Duplicate New Quiz' })));
+  fireEvent.click(view.getByRole('button', { name: 'Duplicate New Quiz' }));
+  await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Copy unavailable.')));
+  assert.equal(view.queryByRole('link', { name: 'New Quiz (Copy)' }), null);
+  fail = false;
+  fireEvent.click(view.getByRole('button', { name: 'Duplicate New Quiz' }));
+  await waitFor(() => assert.ok(view.getByRole('link', { name: 'New Quiz (Copy)' })));
+  assert.equal(view.queryByRole('alert'), null);
+  assert.deepEqual(calls.filter((call) => call.includes('/duplicate')), [
+    'POST /api/quizzes/quiz-1/duplicate', 'POST /api/quizzes/quiz-1/duplicate',
+  ]);
+});
+
 test('editor autosaves basic settings and keeps a failed save visible', async () => {
   const updates: unknown[] = [];
   let fail = false;

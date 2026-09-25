@@ -15,6 +15,7 @@ p { line-height: 1.5; }
 .admin-header p, .quiz-list p { color: #5b6470; margin: 0.3rem 0; }
 .quiz-list { list-style: none; padding: 0; border-top: 1px solid #d4dbe3; }
 .quiz-list li { padding: 1rem 0; border-bottom: 1px solid #d4dbe3; }
+.quiz-actions { display: flex; gap: 0.5rem; }
 .quiz-list a { font-weight: 600; }
 button { font: inherit; cursor: pointer; color: white; background: #254f9a; border: 1px solid #254f9a; border-radius: 0.4rem; padding: 0.6rem 0.9rem; }
 button:disabled { opacity: 0.6; cursor: wait; }

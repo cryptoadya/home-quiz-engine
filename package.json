@@ -1,0 +1,16 @@
+{
+  "name": "home-quiz-engine",
+  "private": true,
+  "workspaces": ["apps/web", "apps/server"],
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "dev": "concurrently -k -n server,web \"npm run dev -w apps/server\" \"npm run dev -w apps/web\"",
+    "build": "npm run build -ws",
+    "typecheck": "npm run typecheck -ws",
+    "test": "npm run test -ws"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.8.3"
+  }
+}

@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 coverage/
+.vite/
 .env
 .env.*
 !.env.example
@@ -9,7 +10,11 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+data/*
+!data/quizzes/
 data/quizzes/*
 !data/quizzes/.gitkeep
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal

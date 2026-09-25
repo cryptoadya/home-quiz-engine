@@ -1,30 +1,28 @@
 # Home Quiz Engine
 
-Private local-network quiz engine for home parties with friends.
+Private quiz engine for parties on one home network. Phase 0 provides the local app skeleton; quiz editing and gameplay come in later phases.
 
-This is deliberately **not** a SaaS product. The priority is a reliable, pleasant party experience on one home network, not multi-tenant scale or commercial platform features.
+## Local setup
 
-## Runtime roles
+Requires Node.js 22.13+ and npm. From the repository root:
 
-- `/admin` — quiz editor
-- `/host` — host controller, mobile-first
-- `/screen` — TV / presentation screen
-- `/play` — player phone UI
+```sh
+npm install
+npm run dev
+```
 
-## Canonical docs
+Open `http://localhost:5173/admin`, `/host`, `/screen`, or `/play`. Other devices on the same Wi-Fi can use the host computer's LAN IP with port `5173`. The web dev server forwards `/api` requests to the Express server on port `3001`; check `http://localhost:5173/api/health` for `{ "status": "ok" }`.
 
-- `docs/SPEC.md` — product requirements; source of truth for behavior
-- `docs/ROADMAP.md` — implementation phases and acceptance gates
-- `docs/ARCHITECTURE.md` — technical boundaries and state ownership
-- `docs/CODEX_WORKFLOW.md` — how Codex tasks are issued and reviewed
-- `AGENTS.md` — short standing instructions for coding agents
+The server creates `data/quiz.sqlite` on startup. Set `QUIZ_DB_PATH` to use another database path. Node 22 currently prints an experimental warning for its built-in SQLite module.
 
-## Planned stack
+## Checks
 
-- React + TypeScript
-- Node.js + Express + TypeScript
-- Socket.IO for live game synchronization
-- SQLite
-- Local per-quiz media storage
+```sh
+npm run test
+npm run typecheck
+npm run build
+```
 
-Do not add infrastructure, abstractions, services, authentication systems, cloud dependencies, or framework layers unless a current requirement actually needs them.
+The frontend build is in `apps/web/dist` and the server build is in `apps/server/dist`. `npm run start -w apps/server` starts the compiled API; the frontend build is static and can be served by a local static-file server when needed.
+
+See `docs/SPEC.md`, `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`, and `docs/phases/00-foundation.md` for the product and phase boundaries.

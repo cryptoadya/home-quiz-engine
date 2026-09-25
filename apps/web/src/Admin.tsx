@@ -99,6 +99,9 @@ export function QuizList() {
 }
 
 export function QuizEditor() {
+  const navigate = useNavigate();
+  const [opening, setOpening] = useState(false);
+  const [launchError, setLaunchError] = useState('');
   const { quizId } = useParams();
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,6 +187,19 @@ export function QuizEditor() {
     timer.current = setTimeout(flush, 400);
   }
 
+  async function openLobby() {
+    setOpening(true);
+    setLaunchError('');
+    try {
+      const room = await api<{ id: string }>(`/api/quizzes/${quizId}/rooms`, { method: 'POST' });
+      navigate(`/host/${room.id}`);
+    } catch (cause) {
+      setLaunchError((cause as Error).message);
+      refreshValidation();
+      setOpening(false);
+    }
+  }
+
   if (loading) return <main className="admin"><p>Loading quiz...</p></main>;
   if (!quiz) return <main className="admin"><Link to="/admin">← Quiz list</Link><p role="alert">{error}</p></main>;
   const settings: QuizSettings = {
@@ -197,6 +213,8 @@ export function QuizEditor() {
     <Link to="/admin" onClick={flush}>← Quiz list</Link>
     <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status}</span></div>
     {error && <p role="alert" className="error">{error}</p>}
+    {launchError && <p role="alert" className="error">{launchError}</p>}
+    <button onClick={() => void openLobby()} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Open lobby</button>
     <section className="readiness" aria-label="Quiz readiness">
       <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Draft · ${validation.problems.length} ${validation.problems.length === 1 ? 'problem' : 'problems'}` : 'Checking readiness...'}</strong>
       {validationError && <p role="alert" className="error">Could not refresh readiness: {validationError}</p>}

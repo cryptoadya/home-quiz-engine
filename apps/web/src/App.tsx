@@ -1,3 +1,4 @@
+import { Host } from './Host';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { QuizEditor, QuizList } from './Admin';
 
@@ -13,6 +14,7 @@ export function App() {
       <Route path="/" element={<Navigate to="/admin" replace />} />
       <Route path="/admin" element={<QuizList />} />
       <Route path="/admin/quizzes/:quizId" element={<QuizEditor />} />
+      <Route path="/host/:roomId" element={<Host />} />
       {interfaces.map(({ path, title, description }) => (
         <Route
           key={path}

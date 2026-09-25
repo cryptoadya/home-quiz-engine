@@ -22,7 +22,7 @@ test('SQLite initializes its migration ledger and reopens cleanly', () => {
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)?.name, name);
       }
       const migration = db.prepare('SELECT version FROM schema_migrations').all();
-      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3]);
+      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4]);
       db.close();
     }
   } finally {

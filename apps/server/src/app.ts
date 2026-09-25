@@ -1,3 +1,4 @@
+import { createRoom, getRoom, getRoomByCode, closeRoom } from './rooms.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { DatabaseSync } from 'node:sqlite';
 import { createQuiz, deleteQuiz, duplicateQuiz, getQuiz, listQuizzes, updateQuiz, validateQuizChanges } from './quizzes.js';
@@ -10,6 +11,25 @@ import { validateQuizReadiness } from './validation.js';
 export function createApp(db: DatabaseSync) {
   const app = express();
   app.use(express.json());
+
+  app.post('/api/quizzes/:quizId/rooms', (request, response) => {
+    const result = createRoom(db, request.params.quizId);
+    if ('room' in result) return response.status(201).json(result.room);
+    const { status, ...body } = result;
+    return response.status(status).json(body);
+  });
+  app.get('/api/rooms/code/:code', (request, response) => {
+    const room = getRoomByCode(db, request.params.code);
+    return room ? response.json(room) : response.status(404).json({ error: 'Active room not found.' });
+  });
+  app.get('/api/rooms/:roomId', (request, response) => {
+    const room = getRoom(db, request.params.roomId);
+    return room ? response.json(room) : response.status(404).json({ error: 'Room not found.' });
+  });
+  app.post('/api/rooms/:roomId/close', (request, response) => {
+    const room = closeRoom(db, request.params.roomId);
+    return room ? response.json(room) : response.status(404).json({ error: 'Room not found.' });
+  });
 
   app.get('/api/health', (_request, response) => {
     response.json({ status: 'ok' });

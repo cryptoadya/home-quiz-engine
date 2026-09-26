@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 
-export type Room = { id: string; code: string; quizTitle: string; state: string; closedAt: string | null };
+export type Room = { id: string; code: string; quizTitle: string; state: 'LOBBY' | 'ROUND_INTRO'; closedAt: string | null };
 export type LobbyState = { room: Room; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };

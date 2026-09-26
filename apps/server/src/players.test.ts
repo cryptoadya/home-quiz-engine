@@ -7,17 +7,20 @@ import request from 'supertest';
 import { createApp } from './app.js';
 import { initializeDatabase } from './db.js';
 import { createQuiz } from './quizzes.js';
+import { createRound } from './rounds.js';
+import { createQuestion, createOption } from './questions.js';
 
 function room(db: ReturnType<typeof initializeDatabase>, id = 'room', code = 'ABCDE') {
   const quiz = createQuiz(db);
   db.prepare("INSERT INTO game_sessions (id, code, quiz_id, state, created_at) VALUES (?, ?, ?, 'LOBBY', ?)").run(id, code, quiz.id, new Date().toISOString());
+  return quiz;
 }
 
 test('join validates names, language, room state and reserves Unicode names per room', async () => {
   const db = initializeDatabase(':memory:');
   const api = request(createApp(db));
   try {
-    room(db);
+    const quiz = room(db);
     room(db, 'other', 'FGHJK');
     const joinPlayer = (name: unknown, language: unknown = 'ru', code = 'abcde') => api.post(`/api/rooms/code/${code}/players`).send({ name, language });
     for (const name of ['', '   ', " - ' ", 'A1', 'A😀', '<b>Alex</b>', 'A!', 'A_B', 'A\nB', 'a'.repeat(21), 123]) {
@@ -32,7 +35,14 @@ test('join validates names, language, room state and reserves Unicode names per 
     for (const name of ['АЛЕКСЕЙ', 'éLODIE', 'JOSÉ']) assert.equal((await joinPlayer(name)).status, 409);
     assert.equal((await joinPlayer('АЛЕКСЕЙ', 'en', 'FGHJK')).status, 201);
     assert.equal((await joinPlayer('Alex', 'en', 'ZZZZZ')).status, 404);
-    db.prepare("UPDATE game_sessions SET state = 'ROUND_INTRO' WHERE id = 'room'").run();
+    const round = createRound(db, quiz.id);
+    const question = createQuestion(db, round.id);
+    db.prepare("UPDATE questions SET text_ru = 'Вопрос', text_en = 'Question' WHERE id = ?").run(question.id);
+    for (const correct of [1, 0]) {
+      const option = createOption(db, question.id);
+      db.prepare("UPDATE answer_options SET text_ru = 'Ответ', text_en = 'Answer', is_correct = ? WHERE id = ?").run(correct, option.id);
+    }
+    await api.post('/api/rooms/room/start').expect(200);
     assert.equal((await joinPlayer('Alex')).status, 409);
     await api.post('/api/rooms/room/close');
     assert.equal((await joinPlayer('Alex')).status, 404);

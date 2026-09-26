@@ -1,20 +1,22 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { validateQuizReadiness, type QuizValidation } from './validation.js';
+import { createGameSnapshot } from './snapshot.js';
 
 export type Room = {
   id: string;
   code: string;
-  quizId: string;
+  quizId: string | null;
   quizTitle: string;
-  state: 'LOBBY';
+  state: 'LOBBY' | 'ROUND_INTRO';
   createdAt: string;
   closedAt: string | null;
 };
 
-const roomQuery = `SELECT s.id, s.code, s.quiz_id AS quizId, q.title AS quizTitle,
+const roomQuery = `SELECT s.id, s.code, s.quiz_id AS quizId,
+  CASE WHEN s.state = 'LOBBY' THEN q.title ELSE json_extract(s.snapshot_json, '$.title') END AS quizTitle,
   s.state, s.created_at AS createdAt, s.closed_at AS closedAt
-  FROM game_sessions s JOIN quizzes q ON q.id = s.quiz_id`;
+  FROM game_sessions s LEFT JOIN quizzes q ON s.state = 'LOBBY' AND q.id = s.quiz_id`;
 
 export function getRoom(db: DatabaseSync, id: string): Room | null {
   return db.prepare(`${roomQuery} WHERE s.id = ?`).get(id) as Room | undefined ?? null;
@@ -58,4 +60,31 @@ export function createRoom(db: DatabaseSync, quizId: string, nextCode = generate
 export function closeRoom(db: DatabaseSync, id: string): Room | null {
   db.prepare('UPDATE game_sessions SET closed_at = ? WHERE id = ? AND closed_at IS NULL').run(new Date().toISOString(), id);
   return getRoom(db, id);
+}
+
+export function startRoom(db: DatabaseSync, id: string): { room: Room } | { status: 404 | 409; error: string; validation?: QuizValidation } {
+  db.exec('BEGIN IMMEDIATE');
+  let committed = false;
+  try {
+    const room = getRoom(db, id);
+    if (!room) return { status: 404, error: 'Room not found.' };
+    if (room.closedAt) return { status: 409, error: 'Room is closed.' };
+    if (room.state !== 'LOBBY') return { status: 409, error: 'Game has already started.' };
+    const validation = room.quizId === null ? null : validateQuizReadiness(db, room.quizId);
+    if (!validation || !validation.ready) return {
+      status: 409, error: 'Quiz is not ready. Review the validation problems.', validation: validation ?? undefined,
+    };
+    const count = db.prepare('SELECT count(*) AS n FROM session_players WHERE session_id = ? AND removed_at IS NULL').get(id)!;
+    if (Number(count.n) === 0) return { status: 409, error: 'At least one active player is required.' };
+    const snapshot = createGameSnapshot(db, room.quizId!);
+    db.prepare('UPDATE session_players SET in_roster = 1 WHERE session_id = ? AND removed_at IS NULL').run(id);
+    db.prepare(`UPDATE game_sessions SET snapshot_json = ?, roster_locked_at = ?, state = 'ROUND_INTRO' WHERE id = ?`)
+      .run(JSON.stringify(snapshot), new Date().toISOString(), id);
+    const started = getRoom(db, id)!;
+    db.exec('COMMIT');
+    committed = true;
+    return { room: started };
+  } finally {
+    if (!committed) db.exec('ROLLBACK');
+  }
 }

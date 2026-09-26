@@ -10,7 +10,9 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 
 export function listPlayers(db: DatabaseSync, roomId: string): Player[] {
   return db.prepare(`SELECT ${publicFields} FROM session_players
-    WHERE session_id = ? AND removed_at IS NULL ORDER BY joined_at, id`).all(roomId) as Player[];
+    WHERE session_id = ? AND CASE
+      WHEN (SELECT roster_locked_at FROM game_sessions WHERE id = session_id) IS NULL THEN removed_at IS NULL
+      ELSE in_roster = 1 END ORDER BY joined_at, id`).all(roomId) as Player[];
 }
 
 export function joinPlayer(db: DatabaseSync, code: string, body: unknown): (Identity & { token: string }) | Failure {
@@ -28,7 +30,7 @@ export function joinPlayer(db: DatabaseSync, code: string, body: unknown): (Iden
   try {
     const room = getRoomByCode(db, code);
     if (!room) return { status: 404, error: 'Active room not found.' };
-    if (room.state !== 'LOBBY') return { status: 409, error: 'Room is no longer in Lobby.' };
+    if (room.state !== 'LOBBY') return { status: 409, error: 'Game has already started; room is no longer accepting players.' };
     const count = db.prepare('SELECT count(*) AS n FROM session_players WHERE session_id = ? AND removed_at IS NULL').get(room.id)!;
     if (Number(count.n) >= 30) return { status: 409, error: 'Room is full (30 players).' };
     const player: Player = { id: randomUUID(), name, language: input.language, joinedAt: new Date().toISOString() };
@@ -51,7 +53,8 @@ export function reconnectPlayer(db: DatabaseSync, roomId: string, token: unknown
   const invalid: Failure = { status: 401, error: 'Invalid player reconnect token.' };
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return invalid;
   const player = db.prepare(`SELECT ${publicFields} FROM session_players
-    WHERE session_id = ? AND token_hash = ? AND removed_at IS NULL`).get(roomId, hashToken(token)) as Player | undefined;
+    WHERE session_id = ? AND token_hash = ? AND removed_at IS NULL
+      AND ((SELECT roster_locked_at FROM game_sessions WHERE id = session_id) IS NULL OR in_roster = 1)`).get(roomId, hashToken(token)) as Player | undefined;
   const room = getRoom(db, roomId);
   if (!player || !room) return invalid;
   return { player, room, active: room.closedAt === null };

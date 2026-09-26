@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const defaultPath = fileURLToPath(new URL('../../../data/quiz.sqlite', import.meta.url));
 
-const migrations: readonly { version: number; sql: string }[] = [
+const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: boolean }[] = [
   {
     version: 1,
     sql: `CREATE TABLE quizzes (
@@ -89,6 +89,31 @@ const migrations: readonly { version: number; sql: string }[] = [
     CREATE UNIQUE INDEX session_players_active_name
       ON session_players(session_id, normalized_name) WHERE removed_at IS NULL`,
   },
+  {
+    version: 6,
+    rebuildForeignKeys: true,
+    sql: `CREATE TABLE game_sessions_new (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL CHECK (length(code) = 5 AND code NOT GLOB '*[^ABCDEFGHJKMNPQRSTUVWXYZ23456789]*'),
+      quiz_id TEXT REFERENCES quizzes(id) ON DELETE SET NULL,
+      state TEXT NOT NULL CHECK (state IN ('LOBBY', 'ROUND_INTRO')),
+      created_at TEXT NOT NULL,
+      closed_at TEXT,
+      snapshot_json TEXT CHECK (snapshot_json IS NULL OR json_valid(snapshot_json)),
+      roster_locked_at TEXT,
+      CHECK ((state = 'LOBBY' AND quiz_id IS NOT NULL AND snapshot_json IS NULL AND roster_locked_at IS NULL)
+        OR (state = 'ROUND_INTRO' AND snapshot_json IS NOT NULL AND roster_locked_at IS NOT NULL))
+    );
+    INSERT INTO game_sessions_new (id, code, quiz_id, state, created_at, closed_at)
+      SELECT id, code, quiz_id, state, created_at, closed_at FROM game_sessions;
+    DROP TABLE game_sessions;
+    ALTER TABLE game_sessions_new RENAME TO game_sessions;
+    CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
+    ALTER TABLE session_players ADD COLUMN in_roster INTEGER NOT NULL DEFAULT 0 CHECK (in_roster IN (0, 1));
+    CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN
+      DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY';
+    END`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {
@@ -108,14 +133,22 @@ export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaul
       const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(migration.version);
       if (applied) continue;
 
-      db.exec('BEGIN');
+      // Rebuild the parent table without cascading into existing player identities.
+      // SQLite requires toggling foreign_keys outside the transaction.
+      if (migration.rebuildForeignKeys) db.exec('PRAGMA foreign_keys = OFF');
+      db.exec('BEGIN IMMEDIATE');
       try {
         db.exec(migration.sql);
+        if (migration.rebuildForeignKeys && db.prepare('PRAGMA foreign_key_check').all().length) {
+          throw new Error('Migration would leave invalid foreign keys.');
+        }
         db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(migration.version);
         db.exec('COMMIT');
       } catch (error) {
         db.exec('ROLLBACK');
         throw error;
+      } finally {
+        if (migration.rebuildForeignKeys) db.exec('PRAGMA foreign_keys = ON');
       }
     }
 

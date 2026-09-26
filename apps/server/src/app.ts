@@ -1,5 +1,5 @@
 import { joinPlayer, reconnectPlayer, listPlayers } from './players.js';
-import { createRoom, getRoom, getRoomByCode, closeRoom } from './rooms.js';
+import { createRoom, getRoom, getRoomByCode, closeRoom, startRoom } from './rooms.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { DatabaseSync } from 'node:sqlite';
 import { createQuiz, deleteQuiz, duplicateQuiz, getQuiz, listQuizzes, updateQuiz, validateQuizChanges } from './quizzes.js';
@@ -31,6 +31,15 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
     const room = getRoom(db, request.params.roomId);
     response.set('Cache-Control', 'no-store');
     return room ? response.json({ room, players: listPlayers(db, room.id) }) : response.status(404).json({ error: 'Room not found.' });
+  });
+  app.post('/api/rooms/:roomId/start', (request, response) => {
+    const result = startRoom(db, request.params.roomId);
+    if ('room' in result) {
+      lobbyChanged(result.room.id);
+      return response.json(result.room);
+    }
+    const { status, ...body } = result;
+    return response.status(status).json(body);
   });
   app.post('/api/rooms/:roomId/close', (request, response) => {
     const room = closeRoom(db, request.params.roomId);

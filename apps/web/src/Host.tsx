@@ -10,6 +10,19 @@ export function Host() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  async function start() {
+    if (!window.confirm('Start game? The player list and quiz content will be locked.')) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/start`, { method: 'POST' });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Could not start game.');
+      setState(current => ({ room: body, players: current?.players ?? [] }));
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  }
+
   async function close() {
     if (!window.confirm('Close this room and release its code?')) return;
     setBusy(true);
@@ -35,7 +48,9 @@ export function Host() {
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       <ul>{state?.players?.map(player => <li key={player.id}>{player.name} — {player.language.toUpperCase()}</li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
-      <p>State: <span>Lobby</span></p>
+      <p>State: <span>{room.state === 'ROUND_INTRO' ? 'Round Intro' : 'Lobby'}</span></p>
+      {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
+        <button onClick={() => void start()} disabled={busy}>Start Game</button>}
       {room.closedAt ? <p role="status">Room closed</p> : <button onClick={() => void close()} disabled={busy}>Close room</button>}
     </>}
   </main>;

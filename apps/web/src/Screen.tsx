@@ -7,15 +7,16 @@ export function Screen() {
   const { state, error, connected } = useLobby(roomId, 'screen');
   const local = /^(localhost|127(?:\.\d+){3}|\[::1\]|0\.0\.0\.0)$/.test(window.location.hostname);
   return <main className="screen-lobby">
-    <h1>Лобби / Lobby</h1>
+    <h1>{state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : 'Лобби / Lobby'}</h1>
     {error && <p role="alert">{error}</p>}
     {!state && !error && <p>Загрузка / Loading…</p>}
     {state && <>
       <h2>{state.room.quizTitle}</h2>
       <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
-      <p>Код комнаты / Room code</p>
-      <strong className="room-code">{state.room.code}</strong>
-      {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : <>
+      {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state === 'ROUND_INTRO'
+        ? <p role="status">Игра начинается… / Game starting…</p> : <>
+        <p>Код комнаты / Room code</p>
+        <strong className="room-code">{state.room.code}</strong>
         <p>Подключитесь к Wi-Fi и сканируйте QR / Join the Wi-Fi and scan a QR code</p>
         {local && <p role="alert">Откройте экран по LAN-адресу / Open Screen using this computer’s LAN address; localhost QR links will not work on phones.</p>}
         <div className="join-codes">{(['ru', 'en'] as const).map(language => {

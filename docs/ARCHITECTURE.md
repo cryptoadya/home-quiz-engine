@@ -44,7 +44,8 @@ Use HTTP for slow CRUD:
 Use Socket.IO for active-session events:
 
 - player join/reconnect/disconnect
-- start game/round/question
+- room/session state broadcasts (including Start Game)
+- start round/question (future gameplay)
 - media control
 - timer/pause/resume
 - submit
@@ -70,26 +71,48 @@ Expected entities:
 
 ## Quiz snapshot
 
-When a real/test game starts, create an immutable in-memory/database snapshot sufficient to prevent editor changes from altering that running session. Do not build version-control semantics around it.
+Lobby references the editable quiz. `POST /api/rooms/:roomId/start` runs one SQLite
+`BEGIN IMMEDIATE` transaction: require an existing active Lobby, revalidate the
+persisted quiz, require at least one active player, create the snapshot, mark the
+Start-time roster, and transition to `ROUND_INTRO`. Failure rolls everything back;
+repeat Start returns 409. No progression beyond Round Intro exists yet.
+
+`game_sessions.snapshot_json` stores a version-1 typed quiz tree, with ordered
+rounds, questions and options (including correctness), quiz settings and original
+IDs, but no editor timestamps or content foreign keys. The internal
+`getGameSnapshot(db, sessionId)` parses/validates this durable JSON and reads no
+editor tables. Future gameplay must use this boundary exclusively. Public room
+metadata uses the frozen title after Start and never exposes the snapshot or
+correctness through room, reconnect, or realtime payloads.
+
+`roster_locked_at` records Start; `session_players.in_roster` marks only players
+active in that transaction. These existing rows retain their reconnect tokens.
+New joins fail after Start; roster members can reconnect and receive the current
+state. Closure still uses `closed_at` and is allowed after Start.
+
+Migration 6 changes the source `quiz_id` FK to nullable `ON DELETE SET NULL`.
+Deleting an editor quiz deletes its Lobby sessions (the previous behavior), via a
+trigger, but preserves started sessions, frozen content and player identities.
+The parent-table rebuild temporarily disables FK enforcement outside the migration
+transaction, checks all foreign keys before commit, then restores enforcement.
 
 ## Lobby foundation (Phase 2A)
 
 Opening a Lobby creates a durable `game_sessions` row referencing the editable quiz;
-no content is copied or frozen. The immutable snapshot belongs to the future Start
-Game boundary, which must validate the quiz again. Host reloads read the session
+no content is copied or frozen until the Start Game boundary revalidates it. Host reloads read the session
 from SQLite. Multiple Lobbies may reference one quiz.
 
-Sessions currently have only `LOBBY` state; a nullable `closed_at` records closure
+Sessions begin in `LOBBY`; a nullable `closed_at` records closure
 without adding a gameplay state. Closing is idempotent. Five-character codes use
 `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, with a partial unique index for active sessions
 and bounded collision retries. Closed sessions remain accessible by ID, but not by
-code; their codes can be reused. Deleting a quiz cascades to its Lobby sessions.
+code; their codes can be reused. Deleting a quiz removes its Lobby sessions; started games survive.
 
 HTTP endpoints: `POST /api/quizzes/:quizId/rooms`, `GET /api/rooms/:roomId`,
 `GET /api/rooms/code/:code`, and `POST /api/rooms/:roomId/close`. Code lookup trims
 whitespace and accepts lowercase. Creation returns 409 with readiness validation
 problems for a draft, 404 for a missing quiz, or 503 if code allocation is exhausted.
-Room responses contain metadata and the current quiz title, never question answers.
+Room responses contain metadata and the current Lobby or frozen game title, never question answers.
 Admin opens `/host/:roomId`; `/host` remains the general Host entry route.
 
 ## Media
@@ -125,4 +148,8 @@ boundary, not authentication, in this trusted LAN application.
 
 Screen QR codes are generated locally and use the browser origin with the same
 room code and `?lang=ru` / `?lang=en`. Opening Screen on loopback displays a LAN
-address warning. Start Game and gameplay events are outside this slice.
+address warning. Start Game publishes the new state through the same `lobby:state`
+channel after commit. Host confirms the content/roster lock and shows Round Intro;
+Screen removes the Lobby QR/join UI; Player replaces waiting text with a localized
+game-starting message. Refresh and socket reconnect load current durable state.
+Question presentation, timers and Round Intro progression remain out of scope.

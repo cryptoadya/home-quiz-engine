@@ -83,3 +83,66 @@ test('shared HTTP/socket server validates subscriptions, broadcasts safe state a
     db.close();
   }
 });
+
+test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers and refreshes from frozen data', async () => {
+  const db = initializeDatabase(':memory:');
+  const quiz = createQuiz(db);
+  const { createRound } = await import('./rounds.js');
+  const { createQuestion, createOption } = await import('./questions.js');
+  const round = createRound(db, quiz.id);
+  const question = createQuestion(db, round.id);
+  db.prepare("UPDATE questions SET text_ru = 'Вопрос', text_en = 'Question' WHERE id = ?").run(question.id);
+  for (const correct of [1, 0]) {
+    const option = createOption(db, question.id);
+    db.prepare("UPDATE answer_options SET text_ru = 'Ответ', text_en = 'Answer', is_correct = ? WHERE id = ?").run(correct, option.id);
+  }
+  const { server, io } = createQuizServer(db);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const api = request(server);
+  const room = (await api.post(`/api/quizzes/${quiz.id}/rooms`).expect(201)).body;
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const sockets = ['host', 'screen', 'player'].map(() => connect(url, { transports: ['websocket'], autoConnect: false, forceNew: true }));
+  try {
+    for (const [i, socket] of sockets.entries()) {
+      const connected = once(socket, 'connect');
+      socket.connect();
+      await connected;
+      const state = nextState(socket);
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      await state;
+    }
+    const identities = [];
+    for (const name of ['Alice', 'Bob']) identities.push((await api.post(`/api/rooms/code/${room.code}/players`).send({ name, language: 'en' }).expect(201)).body);
+    db.prepare("UPDATE quizzes SET title = 'Final Lobby title' WHERE id = ?").run(quiz.id);
+    const states = sockets.map(nextState);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    for (const [i, payload] of (await Promise.all(states)).entries()) {
+      assert.equal(payload.room.state, 'ROUND_INTRO');
+      assert.equal(payload.room.quizTitle, 'Final Lobby title');
+      assert.equal(payload.players?.length, i === 2 ? undefined : 2);
+      assert.doesNotMatch(JSON.stringify(payload), /isCorrect|snapshot|questions|options|token/);
+    }
+    await api.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Charlie', language: 'en' }).expect(409);
+    db.prepare("UPDATE quizzes SET title = 'After start' WHERE id = ?").run(quiz.id);
+    await api.delete(`/api/quizzes/${quiz.id}`).expect(204);
+    for (const [i, socket] of sockets.entries()) {
+      socket.disconnect();
+      const connected = once(socket, 'connect');
+      socket.connect();
+      await connected;
+      const state = nextState(socket);
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      const refreshed = await state;
+      assert.equal(refreshed.room.state, 'ROUND_INTRO');
+      assert.equal(refreshed.room.quizTitle, 'Final Lobby title');
+    }
+    for (const identity of identities) {
+      assert.equal((await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body.room.state, 'ROUND_INTRO');
+    }
+  } finally {
+    sockets.forEach(socket => socket.disconnect());
+    await new Promise<void>(resolve => io.close(() => resolve()));
+    db.close();
+  }
+});

@@ -1,8 +1,7 @@
-import { useLobby } from './lobby';
+import { useLobby, type Room } from './lobby';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-type Room = { id: string; code: string; quizTitle: string; state: string; closedAt: string | null };
 type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean };
 const storageKey = (code: string) => `quiz-player:${code}`;
 
@@ -53,7 +52,7 @@ function PlayerRoom({ code }: { code: string }) {
       const response = await fetch(`/api/rooms/code/${encodeURIComponent(code)}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not find room.');
-      if (body.state !== 'LOBBY' || body.closedAt) throw new Error('Room is not accepting players.');
+      if (body.state !== 'LOBBY' || body.closedAt) throw new Error('Game has already started or room is no longer accepting players.');
       if (active) setRoom(body);
     }
     void load().catch((cause: Error) => { if (active) setError(cause.message); })
@@ -90,7 +89,9 @@ function PlayerRoom({ code }: { code: string }) {
       <p>{currentRoom?.code}</p>
       <p>{identity.player.name}</p>
       <p role="status">{isActive
-        ? (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…')
+        ? (currentRoom?.state === 'ROUND_INTRO'
+          ? (ru ? 'Игра начинается…' : 'Game is starting…')
+          : (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…'))
         : (ru ? 'Комната закрыта' : 'Room closed')}</p>
     </> : <>
       <form className="fields" onSubmit={(event) => {

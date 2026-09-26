@@ -67,3 +67,15 @@ export function getGameSnapshot(db: DatabaseSync, sessionId: string): GameSnapsh
   const row = db.prepare('SELECT snapshot_json FROM game_sessions WHERE id = ?').get(sessionId);
   return row?.snapshot_json == null ? null : parseGameSnapshot(String(row.snapshot_json));
 }
+
+// Navigation indexes address the ordered immutable snapshot, never editor IDs.
+export function currentContent(db: DatabaseSync, roomId: string) {
+  const navigation = db.prepare('SELECT current_round_index, current_question_index FROM game_sessions WHERE id = ?').get(roomId);
+  const snapshot = getGameSnapshot(db, roomId);
+  if (!navigation || !snapshot || navigation.current_round_index === null) throw new Error('Invalid game navigation.');
+  const roundIndex = Number(navigation.current_round_index);
+  const round = snapshot.rounds[roundIndex];
+  if (!round) throw new Error('Current round not found.');
+  const questionIndex = navigation.current_question_index === null ? null : Number(navigation.current_question_index);
+  return { snapshot, round, roundIndex, questionIndex };
+}

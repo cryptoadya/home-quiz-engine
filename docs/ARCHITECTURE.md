@@ -48,7 +48,7 @@ Use Socket.IO for active-session events:
 - Start Round state broadcast (HTTP action persists first)
 - media control
 - timer/pause/resume
-- submit
+- submit updates (HTTP accepts the final answer)
 - answered count
 - reveal
 - next question/round
@@ -211,4 +211,34 @@ No token travels over Socket.IO. Host/Screen retain the existing trusted-LAN
 surface boundary (not organizer authentication); no generic Player content
 endpoint is added. Screen options still depend on `showOptionsOnScreen`, and
 neither Screen nor Player receives correctness, future content or the snapshot.
-Player choices are noninteractive in this phase.
+Phase 3B initially renders noninteractive choices; Phase 3C adds selection and Submit below.
+
+## Final Single Choice submission (Phase 3C)
+
+Migration 9 adds `player_answers`, keyed by `(session_id, question_id, player_id)`.
+It stores only frozen question/option IDs and the server submission timestamp;
+there are no draft choices, correctness, scores or synthetic timeout rows. These
+active-session records belong to the durable player identity, not a connection.
+Existing sessions, snapshots, roster and deadlines are untouched.
+
+`POST /api/rooms/:roomId/answers` accepts `{ token, questionId, optionId }` over
+HTTP. One `BEGIN IMMEDIATE` transaction verifies the open Answering session,
+room-scoped token, locked roster, current frozen question and option membership.
+After obtaining the write lock and validating, it samples server time immediately
+before insertion and requires `now < answer_deadline_at`. Commit precedes any
+broadcast. A valid retry returns the original accepted option even with a different
+valid option or after the deadline; it never updates the row or increments counts.
+Malformed, unauthorized, noncurrent-question or invalid-option retries still fail.
+
+`answers.ts` centralizes submission lookup and counts. Host/Screen receive only
+`answers: { answered, expected }`, where expected is the locked roster size.
+Player sockets still carry only room metadata; token-authenticated reconnect adds
+only that player's `submission: { submitted, optionId? }`. Player keeps its draft
+selection locally, locks after acknowledgement/restoration, and disables Submit
+when its displayed countdown reaches zero. The server remains authoritative.
+Existing Host correctness display is unchanged; Player/Screen receive no
+correctness or individual answer mappings.
+
+Every new acceptance broadcasts updated state. Neither all players submitting nor
+timeout transitions the session: it deliberately remains `ANSWERING`. Completion,
+Reveal, scoring, disconnect handling and further navigation belong to later slices.

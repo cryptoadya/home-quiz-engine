@@ -69,3 +69,8 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 
 .countdown { margin-block: 1rem; }
 .countdown [role="timer"] { display: block; font-size: clamp(2.5rem, 8vw, 6rem); font-variant-numeric: tabular-nums; }
+
+.answer-choices { display: grid; gap: 0.75rem; margin: 1rem 0; }
+.answer-choices label { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; cursor: pointer; }
+.answer-choices input { width: auto; flex-shrink: 0; }
+.answer-choices label:has(input:checked) { outline: 2px solid currentColor; border-radius: 0.4rem; }

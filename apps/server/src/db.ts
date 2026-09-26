@@ -183,6 +183,17 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
       DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY';
     END`,
   },
+  {
+    version: 9,
+    sql: `CREATE TABLE player_answers (
+      session_id TEXT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+      player_id TEXT NOT NULL REFERENCES session_players(id) ON DELETE CASCADE,
+      question_id TEXT NOT NULL,
+      option_id TEXT NOT NULL,
+      submitted_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, question_id, player_id)
+    )`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

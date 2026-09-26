@@ -1,22 +1,11 @@
+import { getSubmission, getAnswerCounts } from './answers.js';
 import type { DatabaseSync } from 'node:sqlite';
-import { getGameSnapshot } from './snapshot.js';
+import { currentContent } from './snapshot.js';
 import { getRoom } from './rooms.js';
 import { effectiveDuration, createAnswerTimer, projectAnswerTimer } from './timer.js';
 import { listPlayers } from './players.js';
 
 export type Audience = 'host' | 'screen' | 'player';
-
-// Navigation indexes address the ordered immutable snapshot, never editor IDs.
-function currentContent(db: DatabaseSync, roomId: string) {
-  const navigation = db.prepare('SELECT current_round_index, current_question_index FROM game_sessions WHERE id = ?').get(roomId);
-  const snapshot = getGameSnapshot(db, roomId);
-  if (!navigation || !snapshot || navigation.current_round_index === null) throw new Error('Invalid game navigation.');
-  const roundIndex = Number(navigation.current_round_index);
-  const round = snapshot.rounds[roundIndex];
-  if (!round) throw new Error('Current round not found.');
-  const questionIndex = navigation.current_question_index === null ? null : Number(navigation.current_question_index);
-  return { snapshot, round, roundIndex, questionIndex };
-}
 
 function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: number) {
   const room = getRoom(db, roomId)!;
@@ -30,7 +19,7 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   };
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
-  const timer = room.state === 'ANSWERING' ? { timer: readTimer(db, roomId, now) } : {};
+  const timer = room.state === 'ANSWERING' ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
   const common = { state: room.state as 'QUESTION' | 'ANSWERING', ...timer, ...numbering, questionNumber: questionIndex! + 1,
     textRu: question.textRu, textEn: question.textEn };
   if (audience === 'host') return { ...common, points: question.points,
@@ -74,7 +63,7 @@ function readTimer(db: DatabaseSync, roomId: string, now: number) {
 }
 
 // Only call after reconnectPlayer verifies the token, room and locked roster.
-export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' | 'en', now = Date.now()) {
+export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' | 'en', playerId: string, now = Date.now()) {
   const room = getRoom(db, roomId);
   if (!room || room.closedAt || room.state !== 'ANSWERING') return null;
   const { round, questionIndex } = currentContent(db, roomId);
@@ -82,6 +71,7 @@ export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' |
   if (!question) throw new Error('Current question not found.');
   return {
     state: 'ANSWERING' as const, questionId: question.id,
+    submission: getSubmission(db, roomId, question.id, playerId),
     text: language === 'ru' ? question.textRu : question.textEn,
     options: question.options.map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),
     timer: readTimer(db, roomId, now),

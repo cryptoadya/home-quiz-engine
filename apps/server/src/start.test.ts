@@ -362,3 +362,121 @@ test('injected server time sets the exact deadline; projections and repeat actio
     assert.equal(state.room.state, 'ANSWERING');
   } finally { db.close(); }
 });
+
+// Phase 3C: exercise HTTP authorization and durable submissions together.
+test('answers are immutable, private, counted once and restored after DB reopen', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-answers-'));
+  const path = join(directory, 'quiz.sqlite');
+  let db = initializeDatabase(path);
+  try {
+    const { room, identities, api, rounds } = await lobby(db, 2);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const q = rounds[0].questions[0];
+    const deadline = Date.parse(String(db.prepare('SELECT answer_deadline_at FROM game_sessions').get()!.answer_deadline_at));
+    t.mock.method(Date, 'now', () => deadline - 1);
+    let broadcasts = 0;
+    const submitApi = request(createApp(db, () => {
+      broadcasts++;
+      const observer = initializeDatabase(path);
+      try { assert.equal(observer.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, 1); } finally { observer.close(); }
+    }));
+    const body = { token: identities[0].token, questionId: q.id, optionId: q.options[0].id };
+    const initial = (await api.get(`/api/rooms/${room.id}/game/host`)).body;
+    assert.deepEqual(initial.game.answers, { answered: 0, expected: 2 });
+    const accepted = (await submitApi.post(`/api/rooms/${room.id}/answers`).send(body).expect(200)).body;
+    assert.deepEqual(accepted, { submitted: true, optionId: body.optionId });
+    for (const optionId of [body.optionId, q.options[1].id]) {
+      assert.deepEqual((await submitApi.post(`/api/rooms/${room.id}/answers`).send({ ...body, optionId }).expect(200)).body, accepted);
+    }
+    t.mock.method(Date, 'now', () => deadline + 1);
+    assert.deepEqual((await submitApi.post(`/api/rooms/${room.id}/answers`).send(body).expect(200)).body, accepted);
+    await submitApi.post(`/api/rooms/${room.id}/answers`).send({ ...body, optionId: 'missing' }).expect(400);
+    await submitApi.post(`/api/rooms/${room.id}/answers`).send({ ...body, questionId: rounds[0].questions[1].id }).expect(409);
+    const late = await submitApi.post(`/api/rooms/${room.id}/answers`).send({ ...body, token: identities[1].token }).expect(409);
+    assert.equal(late.body.code, 'DEADLINE_REACHED');
+    assert.equal(broadcasts, 1);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, 1);
+    assert.equal(db.prepare('SELECT option_id FROM player_answers').get()!.option_id, body.optionId);
+    for (const audience of ['host', 'screen']) {
+      const state = (await api.get(`/api/rooms/${room.id}/game/${audience}`)).body;
+      assert.deepEqual(state.game.answers, { answered: 1, expected: 2 });
+      assert.equal(state.room.state, 'ANSWERING');
+      assert.doesNotMatch(JSON.stringify(state), /optionId|option_id|submitted|playerId/);
+    }
+    db.close(); db = initializeDatabase(path);
+    const restored = (await request(createApp(db)).post(`/api/rooms/${room.id}/reconnect`).send({ token: body.token }).expect(200)).body;
+    assert.deepEqual(restored.game.submission, accepted);
+    assert.doesNotMatch(JSON.stringify(restored), /isCorrect|correctOption|score|answered/);
+    assert.throws(() => db.prepare('INSERT INTO player_answers SELECT * FROM player_answers').run(), /UNIQUE/);
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+for (const offset of [-1, 0, 1]) test(`submission deadline offset ${offset} is decided by server time`, async (t) => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, room, identities, rounds } = await lobby(db);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const deadline = Date.parse(String(db.prepare('SELECT answer_deadline_at FROM game_sessions').get()!.answer_deadline_at));
+    t.mock.method(Date, 'now', () => deadline + offset);
+    const q = rounds[0].questions[0];
+    const response = await api.post(`/api/rooms/${room.id}/answers`).send({ token: identities[0].token, questionId: q.id, optionId: q.options[0].id }).expect(offset < 0 ? 200 : 409);
+    if (offset >= 0) assert.equal(response.body.code, 'DEADLINE_REACHED');
+    assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, offset < 0 ? 1 : 0);
+    assert.equal(db.prepare('SELECT state FROM game_sessions').get()!.state, 'ANSWERING');
+  } finally { db.close(); }
+});
+
+for (const scenario of ['missing', 'invalid-token', 'other-room-token', 'non-roster', 'lobby', 'question', 'closed', 'wrong-question', 'missing-option', 'other-question-option', 'malformed']) {
+  test(`Submit rejects ${scenario} without inserting`, async () => {
+    const db = initializeDatabase(':memory:');
+    try {
+      const { api, room, identities, rounds } = await lobby(db);
+      if (scenario !== 'lobby') {
+        await api.post(`/api/rooms/${room.id}/start`).expect(200);
+        await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+        if (scenario !== 'question') await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+      }
+      const q = rounds[0].questions[0];
+      const body = { token: identities[0].token, questionId: q.id, optionId: q.options[0].id };
+      let status = 409;
+      if (scenario === 'missing') status = 404;
+      if (scenario === 'invalid-token') { body.token = 'invalid'; status = 401; }
+      if (scenario === 'other-room-token') { body.token = (await lobby(db)).identities[0].token; status = 401; }
+      if (scenario === 'non-roster') { db.exec('UPDATE session_players SET in_roster = 0'); status = 401; }
+      if (scenario === 'closed') await api.post(`/api/rooms/${room.id}/close`).expect(200);
+      if (scenario === 'wrong-question') body.questionId = rounds[0].questions[1].id;
+      if (scenario === 'missing-option') { body.optionId = 'missing'; status = 400; }
+      if (scenario === 'other-question-option') { body.optionId = rounds[0].questions[1].options[0].id; status = 400; }
+      if (scenario === 'malformed') status = 400;
+      await api.post(`/api/rooms/${scenario === 'missing' ? 'missing' : room.id}/answers`).send(scenario === 'malformed' ? { ...body, optionId: [] } : body).expect(status);
+      assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, 0);
+    } finally { db.close(); }
+  });
+}
+
+test('Phase 3B migration preserves every phase, frozen state, roster and timer without fake answers', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-answer-migration-'));
+  const path = join(directory, 'quiz.sqlite');
+  let db = initializeDatabase(path);
+  try {
+    for (const phase of ['LOBBY', 'ROUND_INTRO', 'QUESTION', 'ANSWERING']) {
+      const { api, room } = await lobby(db);
+      if (phase !== 'LOBBY') await api.post(`/api/rooms/${room.id}/start`).expect(200);
+      if (phase === 'QUESTION' || phase === 'ANSWERING') await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+      if (phase === 'ANSWERING') await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    }
+    // Remove only migration 9's additive schema to reproduce an actual 3B DB.
+    db.exec('DROP TABLE player_answers; DELETE FROM schema_migrations WHERE version = 9');
+    const sessions = db.prepare('SELECT * FROM game_sessions ORDER BY id').all();
+    const players = db.prepare('SELECT * FROM session_players ORDER BY id').all();
+    db.close(); db = initializeDatabase(path);
+    assert.deepEqual(db.prepare('SELECT * FROM game_sessions ORDER BY id').all(), sessions);
+    assert.deepEqual(db.prepare('SELECT * FROM session_players ORDER BY id').all(), players);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, 0);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});

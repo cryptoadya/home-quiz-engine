@@ -182,6 +182,21 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
     for (const identity of identities) {
       assert.equal((await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body.game.timer.deadlineAt, deadline);
     }
+    for (const [index, identity] of identities.entries()) {
+      const restored = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body;
+      const updates = sockets.map(nextState);
+      const answer = { token: identity.token, questionId: restored.game.questionId, optionId: restored.game.options[0].id };
+      await api.post(`/api/rooms/${room.id}/answers`).send(answer).expect(200);
+      for (const [audience, payload] of (await Promise.all(updates)).entries()) {
+        assert.equal(payload.room.state, 'ANSWERING');
+        if (audience < 2) assert.deepEqual(payload.game.answers, { answered: index + 1, expected: 2 });
+        else assert.deepEqual(Object.keys(payload), ['room']);
+        assert.doesNotMatch(JSON.stringify(payload), /optionId|playerId|submitted|token/);
+      }
+      const reconnected = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body;
+      assert.deepEqual(reconnected.game.submission, { submitted: true, optionId: answer.optionId });
+    }
+
   } finally {
     sockets.forEach(socket => socket.disconnect());
     await new Promise<void>(resolve => io.close(() => resolve()));

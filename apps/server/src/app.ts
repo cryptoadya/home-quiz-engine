@@ -1,3 +1,4 @@
+import { submitAnswer } from './answers.js';
 import { getSurfaceState, getPlayerGame, startRound, startQuestion } from './game.js';
 import { joinPlayer, reconnectPlayer, listPlayers } from './players.js';
 import { createRoom, getRoom, getRoomByCode, closeRoom, startRoom } from './rooms.js';
@@ -78,11 +79,21 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
     lobbyChanged(result.room.id);
     return response.status(201).json(result);
   });
+  app.post('/api/rooms/:roomId/answers', (request, response) => {
+    const result = submitAnswer(db, request.params.roomId, request.body);
+    response.set('Cache-Control', 'no-store');
+    if ('status' in result) {
+      const { status, ...body } = result;
+      return response.status(status).json(body);
+    }
+    if (result.inserted) lobbyChanged(request.params.roomId);
+    return response.json(result.submission);
+  });
   app.post('/api/rooms/:roomId/reconnect', (request, response) => {
     const result = reconnectPlayer(db, request.params.roomId, request.body?.token);
     response.set('Cache-Control', 'no-store');
     if ('status' in result) return response.status(result.status).json({ error: result.error });
-    return response.json({ ...result, game: getPlayerGame(db, result.room.id, result.player.language) });
+    return response.json({ ...result, game: getPlayerGame(db, result.room.id, result.player.language, result.player.id) });
   });
   app.get('/api/rooms/:roomId/players', (request, response) => {
     const room = getRoom(db, request.params.roomId);

@@ -309,7 +309,7 @@ for (const showOptionsOnScreen of [false, true]) test(`Screen Answering resyncs 
   assert.equal(view.queryByRole('timer'), null);
 });
 
-for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering content with its token and renders noninteractive choices`, async () => {
+for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering content with its token and renders selectable choices`, async () => {
   const live = socket();
   dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
   let answering = false;
@@ -329,8 +329,8 @@ for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering 
   await waitFor(() => assert.ok(view.getByText(text)));
   assert.equal(view.getByRole('timer').textContent, '12');
   assert.ok(view.getByText(language === 'ru' ? 'Да' : 'Yes'));
-  assert.equal(view.queryByRole('button'), null);
-  assert.equal(view.queryByRole('radio'), null);
+  assert.equal((view.getByRole('button', { name: language === 'ru' ? 'Отправить' : 'Submit' }) as HTMLButtonElement).disabled, true);
+  assert.ok(view.getByRole('radio'));
   assert.doesNotMatch(view.container.innerHTML, /isCorrect|Correct answer|Personal question.*Личный вопрос/);
   view.unmount();
   timer = { ...answerTimer, serverNow: answerTimer.deadlineAt, remainingMs: 0, expired: true };
@@ -340,4 +340,96 @@ for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering 
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWERING', closedAt: 'now' } }); });
   assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
   assert.equal(view.queryByText(text), null);
+});
+
+for (const outcome of ['accepted', 'timeout', 'local-timeout']) test(`Player draft selection and ${outcome}`, async () => {
+  socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let elapsed = 0;
+  mock.method(performance, 'now', () => elapsed);
+  let submitted = false;
+  let calls = 0;
+  const game = () => ({ state: 'ANSWERING', questionId: 'q', text: 'Choose one', options: [{ id: 'a', text: 'Apple' }, { id: 'b', text: 'Berry' }], timer: answerTimer,
+    submission: submitted ? { submitted: true, optionId: 'b' } : { submitted: false } });
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith('/answers')) {
+      calls++;
+      assert.deepEqual(JSON.parse(String(init?.body)), { token: 'secret', questionId: 'q', optionId: 'b' });
+      if (outcome === 'timeout') return Response.json({ code: 'DEADLINE_REACHED', error: 'Time is up.' }, { status: 409 });
+      submitted = true;
+      return Response.json({ submitted: true, optionId: 'b' });
+    }
+    return Response.json({ room: { ...room, state: 'ANSWERING' }, player, active: true, game: game() });
+  };
+  let view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Choose one')));
+  const submit = view.getByRole('button', { name: 'Submit' }) as HTMLButtonElement;
+  assert.equal(submit.disabled, true);
+  fireEvent.click(view.getByRole('radio', { name: 'Apple' }));
+  assert.equal(submit.disabled, false);
+  fireEvent.click(view.getByRole('radio', { name: 'Berry' }));
+  assert.equal((view.getByRole('radio', { name: 'Apple' }) as HTMLInputElement).checked, false);
+  assert.equal((view.getByRole('radio', { name: 'Berry' }) as HTMLInputElement).checked, true);
+  assert.equal(calls, 0);
+  if (outcome === 'local-timeout') {
+    // Re-render using the real interval with a deterministic monotonic clock.
+    elapsed = 12000;
+    await waitFor(() => assert.equal(submit.disabled, true));
+    assert.equal(calls, 0);
+  } else {
+    await act(async () => { fireEvent.click(submit); });
+    assert.equal(submit.disabled, true);
+    assert.equal(calls, 1);
+    assert.ok(view.getByText(outcome === 'accepted' ? 'Answer submitted' : 'Time is up'));
+    assert.equal((view.getByRole('radio', { name: 'Apple' }) as HTMLInputElement).disabled, true);
+  }
+  assert.doesNotMatch(view.container.innerHTML, /isCorrect|Correct answer|points|rank/);
+  if (outcome === 'accepted') {
+    view.unmount(); view = show('/play/ABCDE');
+    await waitFor(() => assert.ok(view.getByText('Answer submitted')));
+    assert.equal((view.getByRole('radio', { name: 'Berry' }) as HTMLInputElement).checked, true);
+    assert.equal((view.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled, true);
+  }
+});
+
+for (const audience of ['host', 'screen']) test(`${audience} updates aggregate answer counts live`, async () => {
+  const live = socket();
+  const state = (answered: number) => ({ room: { ...room, state: 'ANSWERING' }, game: { ...questionGame, state: 'ANSWERING', timer: answerTimer, answers: { answered, expected: 2 } } });
+  globalThis.fetch = async () => Response.json(state(0));
+  const view = show(`/${audience}/room`);
+  await waitFor(() => assert.ok(view.getByText(/Answered: 0 \/ 2/)));
+  await act(async () => { live.emit('lobby:state', state(1)); });
+  assert.ok(view.getByText(/Answered: 1 \/ 2/));
+  await act(async () => { live.emit('lobby:state', state(2)); });
+  assert.ok(view.getByText(/Answered: 2 \/ 2/));
+  assert.equal(view.queryByRole('button', { name: /Reveal|Next/ }), null);
+});
+
+test('lost Submit response can retry and recover the original choice; stale refresh cannot unlock it', async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  const game = { state: 'ANSWERING', questionId: 'q', text: 'Pick', options: [{ id: 'a', text: 'Apple' }, { id: 'b', text: 'Berry' }], timer: answerTimer, submission: { submitted: false } };
+  let submissions = 0;
+  let reconnects = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/answers')) {
+      if (++submissions === 1) throw new Error('Response lost');
+      return Response.json({ submitted: true, optionId: 'a' });
+    }
+    reconnects++;
+    return Response.json({ room: { ...room, state: 'ANSWERING' }, player, active: true, game });
+  };
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Pick')));
+  fireEvent.click(view.getByRole('radio', { name: 'Apple' }));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Submit' })); });
+  assert.ok(view.getByRole('alert'));
+  fireEvent.click(view.getByRole('radio', { name: 'Berry' }));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Submit' })); });
+  assert.ok(view.getByText('Answer submitted'));
+  assert.equal((view.getByRole('radio', { name: 'Apple' }) as HTMLInputElement).checked, true);
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWERING' } }); });
+  await waitFor(() => assert.equal(reconnects, 2));
+  assert.ok(view.getByText('Answer submitted'));
+  assert.equal((view.getByRole('radio', { name: 'Berry' }) as HTMLInputElement).disabled, true);
 });

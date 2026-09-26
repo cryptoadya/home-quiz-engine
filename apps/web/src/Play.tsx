@@ -1,4 +1,4 @@
-import { Countdown } from './Countdown';
+import { PlayerAnswer } from './PlayerAnswer';
 import { useLobby, type Room, type PlayerQuestion } from './lobby';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -108,12 +108,8 @@ function PlayerRoom({ code }: { code: string }) {
       <p>{currentRoom?.code}</p>
       <p>{identity.player.name}</p>
       {isActive && currentRoom?.state === 'ANSWERING' ? <section>
-        {identity.game ? <>
-          <h2>{identity.game.text}</h2>
-          <Countdown timer={identity.game.timer} language={identity.player.language} />
-          <ol className="game-options">{identity.game.options.map(option => <li key={option.id}>{option.text}</li>)}</ol>
-          <p>{ru ? 'Отправка ответов будет доступна на следующем этапе' : 'Answering will be enabled next'}</p>
-        </> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
+        {identity.game && token ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
+          token={token} roomId={identity.room.id} language={identity.player.language} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
         {error && <button onClick={() => setRetry(value => value + 1)}>Retry</button>}
       </section> : <p role="status">{isActive
         ? (currentRoom?.state === 'ROUND_INTRO'

@@ -12,6 +12,7 @@ export function RoundIntroContent({ round }: { round: RoundIntro }) {
 
 export function QuestionContent({ question, host = false }: { question: CurrentQuestion; host?: boolean }) {
   return <>
+    {question.state === 'ANSWERING' && question.answers && <p>Ответили / Answered: {question.answers.answered} / {question.answers.expected}</p>}
     <p>Раунд {question.roundNumber} / Round {question.roundNumber} · Вопрос / Question {question.questionNumber} / {question.questionCount}</p>
     <h2 lang="ru">{question.textRu}</h2>
     <h2 lang="en">{question.textEn}</h2>

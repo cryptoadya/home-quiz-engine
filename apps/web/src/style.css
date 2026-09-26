@@ -53,3 +53,12 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 
 .player { max-width: 28rem; margin-top: 3rem; }
 .player .fields input, .player .fields select { min-width: 0; width: 100%; box-sizing: border-box; }
+
+.screen-lobby { max-width: 80rem; margin: 2rem auto; text-align: center; font-size: clamp(1.1rem, 2vw, 1.6rem); }
+.screen-lobby h1 { font-size: clamp(2rem, 4vw, 3rem); }
+.screen-lobby h2 { overflow-wrap: anywhere; }
+.room-code { display: block; font-size: clamp(3rem, 8vw, 6rem); letter-spacing: 0.12em; }
+.join-codes { display: flex; justify-content: center; flex-wrap: wrap; gap: 2rem; }
+.join-codes a { display: grid; justify-items: center; padding: 1rem; background: white; color: #1c2430; border-radius: 0.5rem; font-weight: bold; }
+.join-codes svg { max-width: 100%; height: auto; }
+.screen-roster { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.7rem 1.5rem; padding: 0; list-style: none; }

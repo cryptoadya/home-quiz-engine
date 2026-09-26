@@ -9,7 +9,7 @@ import { createQuestion, deleteQuestion, getQuestion, listQuestions, reorderQues
 import { getRound } from './rounds.js';
 import { validateQuizReadiness } from './validation.js';
 
-export function createApp(db: DatabaseSync) {
+export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}) {
   const app = express();
   app.use(express.json());
 
@@ -27,8 +27,14 @@ export function createApp(db: DatabaseSync) {
     const room = getRoom(db, request.params.roomId);
     return room ? response.json(room) : response.status(404).json({ error: 'Room not found.' });
   });
+  app.get('/api/rooms/:roomId/lobby', (request, response) => {
+    const room = getRoom(db, request.params.roomId);
+    response.set('Cache-Control', 'no-store');
+    return room ? response.json({ room, players: listPlayers(db, room.id) }) : response.status(404).json({ error: 'Room not found.' });
+  });
   app.post('/api/rooms/:roomId/close', (request, response) => {
     const room = closeRoom(db, request.params.roomId);
+    if (room) lobbyChanged(room.id);
     return room ? response.json(room) : response.status(404).json({ error: 'Room not found.' });
   });
 
@@ -36,6 +42,7 @@ export function createApp(db: DatabaseSync) {
     const result = joinPlayer(db, request.params.code, request.body);
     response.set('Cache-Control', 'no-store');
     if ('status' in result) return response.status(result.status).json({ error: result.error });
+    lobbyChanged(result.room.id);
     return response.status(201).json(result);
   });
   app.post('/api/rooms/:roomId/reconnect', (request, response) => {

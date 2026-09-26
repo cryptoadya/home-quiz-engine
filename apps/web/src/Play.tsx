@@ -1,5 +1,6 @@
+import { useLobby } from './lobby';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 type Room = { id: string; code: string; quizTitle: string; state: string; closedAt: string | null };
 type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean };
@@ -17,7 +18,9 @@ function PlayerRoom({ code }: { code: string }) {
   const [room, setRoom] = useState<Room | null>(null);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [name, setName] = useState('');
-  const [language, setLanguage] = useState<'ru' | 'en'>('ru');
+  const [searchParams] = useSearchParams();
+  const [language, setLanguage] = useState<'ru' | 'en'>(() => searchParams.get('lang') === 'en' ? 'en' : 'ru');
+  const { state: live } = useLobby(identity?.room.id, 'player');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(Boolean(code));
   const [retry, setRetry] = useState(0);
@@ -77,14 +80,16 @@ function PlayerRoom({ code }: { code: string }) {
   }
 
   const ru = identity?.player.language === 'ru';
+  const currentRoom = live?.room ?? identity?.room;
+  const isActive = live ? live.room.closedAt === null : identity?.active;
   return <main className="player">
     <h1>Player</h1>
     {error && <p role="alert">{error}</p>}
     {identity ? <>
-      <h2>{identity.room.quizTitle}</h2>
-      <p>{identity.room.code}</p>
+      <h2>{currentRoom?.quizTitle}</h2>
+      <p>{currentRoom?.code}</p>
       <p>{identity.player.name}</p>
-      <p role="status">{identity.active
+      <p role="status">{isActive
         ? (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…')
         : (ru ? 'Комната закрыта' : 'Room closed')}</p>
     </> : <>

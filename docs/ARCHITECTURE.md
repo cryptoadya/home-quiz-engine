@@ -99,3 +99,30 @@ Each quiz owns its own copied media. No cross-quiz dedup/reference counting in V
 ## Themes
 
 Game components are shared. Theme configuration/assets modify presentation only. Missing theme parts fall back to Default.
+
+## Realtime Lobby (Phase 2C)
+
+Express and Socket.IO share one HTTP server. HTTP join/close mutations persist
+first, then publish current SQLite state. `GET /api/rooms/:roomId/lobby` returns
+`{ room, players }` for initial Host/Screen reads, including closed rooms. Existing
+room, player roster, join and identity restoration endpoints remain available.
+
+Socket protocol:
+- Client `lobby:subscribe`: `{ roomId, audience: 'host' | 'screen' | 'player' }`.
+  Validates the ID and room existence; replaces the socket's previous subscription.
+- Server `lobby:state`: `{ room, players }` for Host/Screen, `{ room }` for Player.
+  `room.closedAt` communicates closure. Player entries use the public HTTP roster
+  fields only: `id`, `name`, `language`, `joinedAt`.
+- Server `lobby:error`: `{ error }` for invalid or nonexistent subscriptions.
+
+Each subscribe/reconnect reads a fresh SQLite snapshot and joins a room-ID-scoped
+channel in one synchronous turn using the local Socket.IO adapter. This avoids a
+snapshot/subscription gap; clients never replay event history as durable state.
+Host/Screen also load an HTTP snapshot, discarding it if a newer socket snapshot
+arrives first. Player subscribes only after HTTP join/identity restoration, and
+never sends its reconnect token over Socket.IO. Surface selection is a payload
+boundary, not authentication, in this trusted LAN application.
+
+Screen QR codes are generated locally and use the browser origin with the same
+room code and `?lang=ru` / `?lang=en`. Opening Screen on loopback displays a LAN
+address warning. Start Game and gameplay events are outside this slice.

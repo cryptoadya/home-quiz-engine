@@ -1,14 +1,15 @@
-import { createApp } from './app.js';
+import { createQuizServer } from './realtime.js';
 import { initializeDatabase } from './db.js';
 
 const db = initializeDatabase();
 const port = Number(process.env.PORT ?? 3001);
-const server = createApp(db).listen(port, '0.0.0.0', () => {
+const { server, io } = createQuizServer(db);
+server.listen(port, '0.0.0.0', () => {
   console.log(`Quiz server listening on http://localhost:${port}`);
 });
 
 function shutdown() {
-  server.close(() => {
+  io.close(() => {
     db.close();
     process.exit(0);
   });

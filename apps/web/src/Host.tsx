@@ -1,24 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-type Room = { id: string; code: string; quizId: string; quizTitle: string; state: 'LOBBY'; createdAt: string; closedAt: string | null };
+import { useLobby } from './lobby';
 
 export function Host() {
   const { roomId } = useParams();
-  const [room, setRoom] = useState<Room | null>(null);
+  const { state, setState, error: loadError, connected } = useLobby(roomId, 'host');
+  const room = state?.room;
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let active = true;
-    setRoom(null);
-    setError('');
-    fetch(`/api/rooms/${roomId}`).then(async (response) => {
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Could not load room.');
-      if (active) setRoom(body);
-    }).catch((cause: Error) => { if (active) setError(cause.message); });
-    return () => { active = false; };
-  }, [roomId]);
 
   async function close() {
     if (!window.confirm('Close this room and release its code?')) return;
@@ -28,7 +18,7 @@ export function Host() {
       const response = await fetch(`/api/rooms/${roomId}/close`, { method: 'POST' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not close room.');
-      setRoom(body);
+      setState(current => ({ room: body, players: current?.players ?? [] }));
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
@@ -36,10 +26,14 @@ export function Host() {
   return <main>
     <h1>Host</h1>
     <Link to="/admin">Quiz list</Link>
-    {error && <p role="alert">{error}</p>}
-    {!room && !error && <p>Loading room...</p>}
+    {(error || loadError) && <p role="alert">{error || loadError}</p>}
+    {!room && !error && !loadError && <p>Loading room...</p>}
     {room && <>
       <h2>{room.quizTitle}</h2>
+      <Link to={`/screen/${room.id}`}>Open Screen</Link>
+      <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
+      <p>Players: {state?.players?.length ?? 0} / 30</p>
+      <ul>{state?.players?.map(player => <li key={player.id}>{player.name} — {player.language.toUpperCase()}</li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
       <p>State: <span>Lobby</span></p>
       {room.closedAt ? <p role="status">Room closed</p> : <button onClick={() => void close()} disabled={busy}>Close room</button>}

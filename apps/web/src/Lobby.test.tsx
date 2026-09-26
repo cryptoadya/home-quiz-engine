@@ -72,6 +72,7 @@ test('query preference initializes language and restored Player reacts to live c
   globalThis.fetch = async () => Response.json({ room, player, active: true });
   view = show('/play/ABCDE?lang=ru');
   await waitFor(() => assert.ok(view.getByText('Waiting for the host…')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   live.on('lobby:subscribe', input => assert.deepEqual(input, { roomId: 'room', audience: 'player' }));
   await act(async () => { live.emit('connect'); live.emit('lobby:state', { room: { ...room, closedAt: 'now' } }); });
   assert.ok(view.getByText('Room closed'));
@@ -110,7 +111,7 @@ test('Host requires players and confirmation; Start success removes control and 
       starts++;
       return Response.json({ ...room, state: 'ROUND_INTRO' });
     }
-    return Response.json({ room, players: [] });
+    return Response.json({ room: starts ? { ...room, state: 'ROUND_INTRO' } : room, players: [] });
   };
   const view = show('/host/room');
   await waitFor(() => assert.ok(view.getByText(/Players: 0/)));
@@ -144,16 +145,17 @@ test('Screen leaves QR and join instructions when Start is broadcast and on relo
   globalThis.fetch = async () => Response.json({ room, players: [player] });
   let view = show('/screen/room');
   await waitFor(() => assert.ok(view.getByRole('link', { name: 'RU' })));
-  const started = { room: { ...room, state: 'ROUND_INTRO', quizTitle: 'Frozen title' }, players: [player] };
+  const started = { room: { ...room, state: 'ROUND_INTRO', quizTitle: 'Frozen title' }, players: [player], game: introGame };
   await act(async () => { live.emit('lobby:state', started); });
-  assert.ok(view.getByText(/Game starting/));
+  assert.ok(view.getByText('Frozen round'));
+  assert.ok(view.getByText('Замороженный раунд'));
   assert.equal(view.queryByRole('link', { name: 'RU' }), null);
   assert.equal(view.queryByText(/scan a QR/), null);
   assert.equal(view.container.querySelector('svg'), null);
   view.unmount();
   globalThis.fetch = async () => Response.json(started);
   view = show('/screen/room');
-  await waitFor(() => assert.ok(view.getByText(/Game starting/)));
+  await waitFor(() => assert.ok(view.getByText('Frozen round')));
   assert.ok(view.getByText('Frozen title'));
   assert.equal(view.container.querySelector('svg'), null);
 });
@@ -166,11 +168,11 @@ for (const language of ['ru', 'en']) test(`Player ${language} leaves waiting on 
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Ожидайте ведущего…' : 'Waiting for the host…')));
   const started = { ...room, state: 'ROUND_INTRO' };
   await act(async () => { live.emit('lobby:state', { room: started }); });
-  assert.ok(view.getByText(language === 'ru' ? 'Игра начинается…' : 'Game is starting…'));
+  assert.ok(view.getByText(language === 'ru' ? 'Раунд начинается…' : 'Round is starting…'));
   view.unmount();
   globalThis.fetch = async () => Response.json({ room: started, player: { ...player, language }, active: true });
   view = show('/play/ABCDE');
-  await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Игра начинается…' : 'Game is starting…')));
+  await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Раунд начинается…' : 'Round is starting…')));
 });
 
 test('direct code identifies a started game and does not offer joining', async () => {
@@ -179,4 +181,73 @@ test('direct code identifies a started game and does not offer joining', async (
   const view = show('/play/ABCDE');
   await waitFor(() => assert.match(view.getByRole('alert').textContent!, /started|accepting players/i));
   assert.equal(view.queryByRole('button', { name: 'Join' }), null);
+});
+
+const introGame = { state: 'ROUND_INTRO', roundNumber: 1, titleRu: 'Замороженный раунд', titleEn: 'Frozen round', descriptionRu: 'Описание', descriptionEn: 'Description', questionCount: 2 };
+const questionGame = { state: 'QUESTION', roundNumber: 1, questionNumber: 1, questionCount: 2, textRu: 'Первый вопрос', textEn: 'First question', points: 3, answerTimeSeconds: 12,
+  options: [{ textRu: 'Один', textEn: 'One', isCorrect: false }, { textRu: 'Два', textEn: 'Two', isCorrect: true }] };
+
+test('Host reload restores Round Intro and Start Round displays current question and correct option', async () => {
+  socket();
+  let started = false;
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === 'POST') {
+      assert.equal(String(url), '/api/rooms/room/start-round');
+      started = true;
+      return Response.json({ ...room, state: 'QUESTION' });
+    }
+    assert.equal(String(url), '/api/rooms/room/game/host');
+    return Response.json({ room: { ...room, state: started ? 'QUESTION' : 'ROUND_INTRO' }, players: [player], game: started ? questionGame : introGame });
+  };
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByText('Frozen round')));
+  assert.ok(view.getByText('Замороженный раунд'));
+  assert.ok(view.getByText('Description'));
+  assert.ok(view.getByText(/Questions: 2/));
+  fireEvent.click(view.getByRole('button', { name: 'Start Round' }));
+  await waitFor(() => assert.ok(view.getByText('First question')));
+  assert.ok(view.getByText('Первый вопрос'));
+  assert.match(view.getByText('Correct answer').parentElement!.textContent!, /Two/);
+  assert.ok(view.getByText(/Points: 3/));
+  assert.ok(view.getByText(/Answer time: 12/));
+  assert.equal(view.queryByRole('button', { name: 'Start Round' }), null);
+});
+
+for (const showOptionsOnScreen of [false, true]) test(`Screen reload presents bilingual question, options ${showOptionsOnScreen}, no correctness`, async () => {
+  socket();
+  const { points, answerTimeSeconds, options, ...question } = questionGame;
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'QUESTION' }, players: [player], game: {
+    ...question, showOptionsOnScreen, ...(showOptionsOnScreen ? { options: options.map(({ textRu, textEn }) => ({ textRu, textEn })) } : {}),
+  } });
+  const view = show('/screen/room');
+  await waitFor(() => assert.ok(view.getByText('First question')));
+  assert.ok(view.getByText('Первый вопрос'));
+  assert.equal(Boolean(view.queryByText('One')), showOptionsOnScreen);
+  assert.equal(Boolean(view.queryByText('Один')), showOptionsOnScreen);
+  assert.equal(view.queryByText(/correct/i), null);
+  assert.equal(view.queryByRole('button'), null);
+});
+
+test('closed Round Intro hides Start Round', async () => {
+  socket();
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'ROUND_INTRO', closedAt: 'now' }, players: [player], game: introGame });
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByText('Room closed')));
+  assert.equal(view.queryByRole('button', { name: 'Start Round' }), null);
+});
+
+for (const language of ['ru', 'en']) test(`Player ${language} receives Question and reloads get-ready without controls`, async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let phase = 'ROUND_INTRO';
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: phase }, player: { ...player, language }, active: true });
+  let view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Раунд начинается…' : 'Round is starting…')));
+  phase = 'QUESTION';
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
+  assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question'));
+  assert.equal(view.queryByRole('button'), null);
+  view.unmount();
+  view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question')));
 });

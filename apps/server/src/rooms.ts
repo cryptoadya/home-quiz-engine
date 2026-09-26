@@ -8,7 +8,7 @@ export type Room = {
   code: string;
   quizId: string | null;
   quizTitle: string;
-  state: 'LOBBY' | 'ROUND_INTRO';
+  state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION';
   createdAt: string;
   closedAt: string | null;
 };
@@ -78,7 +78,7 @@ export function startRoom(db: DatabaseSync, id: string): { room: Room } | { stat
     if (Number(count.n) === 0) return { status: 409, error: 'At least one active player is required.' };
     const snapshot = createGameSnapshot(db, room.quizId!);
     db.prepare('UPDATE session_players SET in_roster = 1 WHERE session_id = ? AND removed_at IS NULL').run(id);
-    db.prepare(`UPDATE game_sessions SET snapshot_json = ?, roster_locked_at = ?, state = 'ROUND_INTRO' WHERE id = ?`)
+    db.prepare(`UPDATE game_sessions SET snapshot_json = ?, roster_locked_at = ?, state = 'ROUND_INTRO', current_round_index = 0, current_question_index = NULL WHERE id = ?`)
       .run(JSON.stringify(snapshot), new Date().toISOString(), id);
     const started = getRoom(db, id)!;
     db.exec('COMMIT');

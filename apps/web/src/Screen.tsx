@@ -1,20 +1,21 @@
 import { useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useLobby } from './lobby';
+import { RoundIntroContent, QuestionContent } from './GameContent';
 
 export function Screen() {
   const { roomId } = useParams();
   const { state, error, connected } = useLobby(roomId, 'screen');
   const local = /^(localhost|127(?:\.\d+){3}|\[::1\]|0\.0\.0\.0)$/.test(window.location.hostname);
   return <main className="screen-lobby">
-    <h1>{state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : 'Лобби / Lobby'}</h1>
+    <h1>{state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : state?.room.state === 'QUESTION' ? 'Вопрос / Question' : 'Лобби / Lobby'}</h1>
     {error && <p role="alert">{error}</p>}
     {!state && !error && <p>Загрузка / Loading…</p>}
     {state && <>
       <h2>{state.room.quizTitle}</h2>
       <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
-      {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state === 'ROUND_INTRO'
-        ? <p role="status">Игра начинается… / Game starting…</p> : <>
+      {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state !== 'LOBBY'
+        ? <section className="game-content">{state.game?.state === 'ROUND_INTRO' && <RoundIntroContent round={state.game} />}{state.game?.state === 'QUESTION' && <QuestionContent question={state.game} />}</section> : <>
         <p>Код комнаты / Room code</p>
         <strong className="room-code">{state.room.code}</strong>
         <p>Подключитесь к Wi-Fi и сканируйте QR / Join the Wi-Fi and scan a QR code</p>
@@ -28,8 +29,8 @@ export function Screen() {
           </a>;
         })}</div>
       </>}
-      <p>Игроки / Players: {state.players?.length ?? 0} / 30</p>
-      <ul className="screen-roster">{state.players?.map(player => <li key={player.id}>{player.name}</li>)}</ul>
+      {state.room.state === 'LOBBY' && <><p>Игроки / Players: {state.players?.length ?? 0} / 30</p>
+      <ul className="screen-roster">{state.players?.map(player => <li key={player.id}>{player.name}</li>)}</ul></>}
     </>}
   </main>;
 }

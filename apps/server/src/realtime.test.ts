@@ -76,7 +76,7 @@ test('shared HTTP/socket server validates subscriptions, broadcasts safe state a
     state = nextState(host);
     host.emit('lobby:subscribe', { roomId: 'other', audience: 'screen' });
     assert.equal((await state).room.id, 'other');
-    assert.deepEqual([...io.sockets.sockets.get(host.id!)!.rooms].filter(r => r !== host.id), ['lobby:other:roster']);
+    assert.deepEqual([...io.sockets.sockets.get(host.id!)!.rooms].filter(r => r !== host.id), ['lobby:other:screen']);
   } finally {
     host.disconnect(); player.disconnect(); invalid.disconnect();
     await new Promise<void>(resolve => io.close(() => resolve()));
@@ -137,8 +137,31 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
       assert.equal(refreshed.room.state, 'ROUND_INTRO');
       assert.equal(refreshed.room.quizTitle, 'Final Lobby title');
     }
+    const questionStates = sockets.map(nextState);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    const questionPayloads = await Promise.all(questionStates);
+    for (const [i, payload] of questionPayloads.entries()) {
+      assert.equal(payload.room.state, 'QUESTION');
+      if (i === 0) {
+        assert.equal(payload.game.textEn, 'Question');
+        assert.equal(payload.game.answerTimeSeconds, 30);
+        assert.equal(payload.game.options[0].isCorrect, true);
+      } else {
+        assert.doesNotMatch(JSON.stringify(payload), /isCorrect|snapshot|options|points|answerTimeSeconds/);
+        if (i === 1) assert.equal(payload.game.textRu, 'Вопрос');
+        else assert.equal(payload.game, undefined);
+      }
+      const socket = sockets[i];
+      socket.disconnect();
+      const connected = once(socket, 'connect');
+      socket.connect();
+      await connected;
+      const refreshed = nextState(socket);
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      assert.deepEqual(await refreshed, payload);
+    }
     for (const identity of identities) {
-      assert.equal((await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body.room.state, 'ROUND_INTRO');
+      assert.equal((await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body.room.state, 'QUESTION');
     }
   } finally {
     sockets.forEach(socket => socket.disconnect());

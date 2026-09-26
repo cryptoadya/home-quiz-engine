@@ -90,7 +90,8 @@ function PlayerRoom({ code }: { code: string }) {
       <p>{identity.player.name}</p>
       <p role="status">{isActive
         ? (currentRoom?.state === 'ROUND_INTRO'
-          ? (ru ? 'Игра начинается…' : 'Game is starting…')
+          ? (ru ? 'Раунд начинается…' : 'Round is starting…')
+          : currentRoom?.state === 'QUESTION' ? (ru ? 'Приготовьтесь к вопросу' : 'Get ready for the question')
           : (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…'))
         : (ru ? 'Комната закрыта' : 'Room closed')}</p>
     </> : <>

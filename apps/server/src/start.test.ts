@@ -188,3 +188,80 @@ test('snapshot access validates stored version and nested types instead of trust
     assert.throws(() => getGameSnapshot(db, room.id), /Invalid game snapshot/);
   } finally { db.close(); }
 });
+
+for (const showOptions of [true, false]) test(`Round navigation restores frozen content with screen options ${showOptions}`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-game-'));
+  const path = join(directory, 'quiz.sqlite');
+  let db = initializeDatabase(path);
+  try {
+    const { api, room, quiz, identities } = await lobby(db);
+    db.prepare('UPDATE questions SET show_options_on_screen = ?, answer_time_seconds = ?').run(Number(showOptions), showOptions ? 12 : null);
+    db.exec("UPDATE answer_options SET text_en = CASE WHEN is_correct = 1 THEN 'Correct option' ELSE 'Other option' END");
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(409);
+    await api.post('/api/rooms/missing/start-round').expect(404);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    assert.deepEqual({ ...db.prepare('SELECT current_round_index, current_question_index FROM game_sessions').get() },
+      { current_round_index: 0, current_question_index: null });
+    const intro = (await api.get(`/api/rooms/${room.id}/game/host`).expect(200)).body;
+    assert.deepEqual(intro.game, { state: 'ROUND_INTRO', roundNumber: 1, titleRu: 'Новый раунд', titleEn: 'New Round', descriptionRu: 'Описание', descriptionEn: 'Description', questionCount: 2 });
+    db.exec("UPDATE rounds SET title_en = 'Edited'; UPDATE questions SET text_en = 'Edited'");
+    assert.deepEqual((await api.get(`/api/rooms/${room.id}/game/host`)).body, intro);
+    await api.delete(`/api/quizzes/${quiz.id}`).expect(204);
+    assert.deepEqual((await api.get(`/api/rooms/${room.id}/game/screen`)).body.game, intro.game);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(409);
+    const host = (await api.get(`/api/rooms/${room.id}/game/host`).expect(200)).body;
+    assert.equal(host.game.state, 'QUESTION');
+    assert.equal(host.game.textEn, 'Question 1/1');
+    assert.equal(host.game.questionNumber, 1);
+    assert.equal(host.game.roundNumber, 1);
+    assert.equal(host.game.questionCount, 2);
+    assert.equal(host.game.answerTimeSeconds, showOptions ? 12 : 45);
+    assert.equal(host.game.points, 3);
+    assert.deepEqual(host.game.options.map((o: any) => o.isCorrect), [false, true]);
+    const screen = (await api.get(`/api/rooms/${room.id}/game/screen`).expect(200)).body;
+    assert.equal(screen.game.textRu, 'Вопрос 1/1');
+    assert.deepEqual(screen.game.options, showOptions ? [{ textRu: 'Ответ', textEn: 'Other option' }, { textRu: 'Ответ', textEn: 'Correct option' }] : undefined);
+    assert.doesNotMatch(JSON.stringify(screen), /isCorrect|snapshot|Question 1\/0|points|answerTimeSeconds/);
+    const player = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token }).expect(200)).body;
+    assert.equal(player.room.state, 'QUESTION');
+    assert.doesNotMatch(JSON.stringify(player), /isCorrect|snapshot|options|Question 1\/|questions/);
+    db.close();
+    db = initializeDatabase(path);
+    const restored = request(createApp(db));
+    assert.deepEqual((await restored.get(`/api/rooms/${room.id}/game/host`)).body, host);
+    assert.deepEqual((await restored.get(`/api/rooms/${room.id}/game/screen`)).body, screen);
+    await restored.post(`/api/rooms/${room.id}/close`).expect(200);
+    await restored.post(`/api/rooms/${room.id}/start-round`).expect(409);
+    assert.equal((await restored.get(`/api/rooms/${room.id}/game/host`)).body.game, null);
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+for (const invalid of ['closed', 'snapshot', 'round']) test(`Start Round rejects ${invalid} without changing navigation`, async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, room } = await lobby(db);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    if (invalid === 'closed') await api.post(`/api/rooms/${room.id}/close`).expect(200);
+    if (invalid === 'snapshot') db.exec(`UPDATE game_sessions SET snapshot_json = '{}'`);
+    if (invalid === 'round') db.exec('UPDATE game_sessions SET current_round_index = 99');
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(409);
+    assert.equal(db.prepare('SELECT state FROM game_sessions').get()!.state, 'ROUND_INTRO');
+    assert.equal(db.prepare('SELECT current_question_index FROM game_sessions').get()!.current_question_index, null);
+  } finally { db.close(); }
+});
+
+test('Start Round rolls back state and question navigation together on a database failure', async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, room } = await lobby(db);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    db.exec(`CREATE TRIGGER fail_round AFTER UPDATE OF state ON game_sessions
+      WHEN NEW.state = 'QUESTION' BEGIN SELECT RAISE(ABORT, 'round failure'); END`);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(500);
+    assert.deepEqual({ ...db.prepare('SELECT state, current_round_index, current_question_index FROM game_sessions').get() },
+      { state: 'ROUND_INTRO', current_round_index: 0, current_question_index: null });
+    db.exec('DROP TRIGGER fail_round');
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+  } finally { db.close(); }
+});

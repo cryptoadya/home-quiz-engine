@@ -22,7 +22,7 @@ test('SQLite initializes its migration ledger and reopens cleanly', () => {
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)?.name, name);
       }
       const migration = db.prepare('SELECT version FROM schema_migrations').all();
-      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6]);
+      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
       db.close();
     }
   } finally {
@@ -69,5 +69,56 @@ test('migration from Phase 2C preserves existing players, tokens, closed rooms a
     } finally { db.close(); }
     const reopened = initializeDatabase(path);
     reopened.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('Phase 2D Lobby and started sessions migrate navigation without changing snapshots or roster', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-navigation-'));
+  const path = join(directory, 'quiz.sqlite');
+  const old = new DatabaseSync(path);
+  const snapshot = JSON.stringify({ schemaVersion: 1, title: 'Frozen', themeId: 'default', defaultAnswerTimeSeconds: 30, shuffleAnswers: false,
+    rounds: [{ id: 'r', titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '', showLeaderboardAfter: false, position: 0,
+      questions: [{ id: 'q', type: 'single_choice', textRu: 'Вопрос', textEn: 'Question', points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, position: 0,
+        options: [{ id: 'a', textRu: 'Да', textEn: 'Yes', isCorrect: true, position: 0 }, { id: 'b', textRu: 'Нет', textEn: 'No', isCorrect: false, position: 1 }] }] }] });
+  old.exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+    INSERT INTO schema_migrations VALUES (1), (2), (3), (4), (5), (6);
+    CREATE TABLE quizzes (id TEXT PRIMARY KEY, title TEXT);
+    INSERT INTO quizzes VALUES ('quiz', 'Editable');
+    CREATE TABLE game_sessions (id TEXT PRIMARY KEY, code TEXT NOT NULL, quiz_id TEXT REFERENCES quizzes(id) ON DELETE SET NULL,
+      state TEXT NOT NULL CHECK (state IN ('LOBBY', 'ROUND_INTRO')), created_at TEXT NOT NULL, closed_at TEXT,
+      snapshot_json TEXT CHECK (snapshot_json IS NULL OR json_valid(snapshot_json)), roster_locked_at TEXT,
+      CHECK ((state = 'LOBBY' AND quiz_id IS NOT NULL AND snapshot_json IS NULL AND roster_locked_at IS NULL)
+        OR (state = 'ROUND_INTRO' AND snapshot_json IS NOT NULL AND roster_locked_at IS NOT NULL)));
+    CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
+    CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN
+      DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
+    INSERT INTO game_sessions VALUES ('lobby', 'ABCDE', 'quiz', 'LOBBY', 'now', NULL, NULL, NULL);
+    CREATE TABLE session_players (id TEXT PRIMARY KEY, session_id TEXT REFERENCES game_sessions(id) ON DELETE CASCADE,
+      token_hash TEXT, in_roster INTEGER);`);
+  old.prepare("INSERT INTO game_sessions VALUES ('started', 'FGHJK', NULL, 'ROUND_INTRO', 'now', NULL, ?, 'locked')").run(snapshot);
+  old.exec("INSERT INTO session_players VALUES ('player', 'started', 'unchanged-hash', 1)");
+  old.close();
+  try {
+    const db = initializeDatabase(path);
+    try {
+      assert.equal(db.prepare('PRAGMA foreign_keys').get()!.foreign_keys, 1);
+      assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+      const read = (id: string) => ({ ...db.prepare('SELECT current_round_index, current_question_index FROM game_sessions WHERE id = ?').get(id) });
+      assert.deepEqual(read('lobby'), { current_round_index: null, current_question_index: null });
+      assert.deepEqual(read('started'), { current_round_index: 0, current_question_index: null });
+      assert.equal(db.prepare("SELECT snapshot_json FROM game_sessions WHERE id = 'started'").get()!.snapshot_json, snapshot);
+      assert.deepEqual({ ...db.prepare('SELECT * FROM session_players').get() }, { id: 'player', session_id: 'started', token_hash: 'unchanged-hash', in_roster: 1 });
+      for (const sql of [
+        "UPDATE game_sessions SET current_round_index = 0 WHERE id = 'lobby'",
+        "UPDATE game_sessions SET current_round_index = NULL WHERE id = 'started'",
+        "UPDATE game_sessions SET current_round_index = -1 WHERE id = 'started'",
+        "UPDATE game_sessions SET current_round_index = 0.5 WHERE id = 'started'",
+        "UPDATE game_sessions SET state = 'QUESTION' WHERE id = 'started'",
+      ]) assert.throws(() => db.exec(sql), /CHECK/);
+      const { startRound } = await import('./game.js');
+      assert.equal(startRound(db, 'started').room?.state, 'QUESTION');
+      assert.deepEqual(read('started'), { current_round_index: 0, current_question_index: 0 });
+    } finally { db.close(); }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

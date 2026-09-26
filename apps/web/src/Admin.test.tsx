@@ -237,7 +237,7 @@ test('ready Admin opens Host, reload recovers the room, and confirmed close upda
     if (path.endsWith('/rounds')) return Response.json([]);
     if (path === `/api/quizzes/${quiz.id}/rooms` && init?.method === 'POST') return Response.json(room, { status: 201 });
     if (path === '/api/rooms/room-1/close' && init?.method === 'POST') { room.closedAt = quiz.createdAt; return Response.json(room); }
-    if (path === '/api/rooms/room-1/lobby') return Response.json({ room, players: [] });
+    if (path === '/api/rooms/room-1/game/host') return Response.json({ room, players: [] });
     if (path === `/api/quizzes/${quiz.id}`) return Response.json(quiz);
     throw new Error(`Unexpected request: ${path}`);
   };

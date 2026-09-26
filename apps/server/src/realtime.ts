@@ -3,16 +3,16 @@ import type { DatabaseSync } from 'node:sqlite';
 import { Server } from 'socket.io';
 import { createApp } from './app.js';
 import { getRoom } from './rooms.js';
-import { listPlayers } from './players.js';
+import { getSurfaceState, type Audience } from './game.js';
 
-const channel = (roomId: string, roster: boolean) => `lobby:${roomId}:${roster ? 'roster' : 'player'}`;
+const channel = (roomId: string, audience: Audience) => `lobby:${roomId}:${audience}`;
 
 export function createQuizServer(db: DatabaseSync) {
   const app = createApp(db, roomId => {
-    const room = getRoom(db, roomId);
-    if (!room) return;
-    io.to(channel(roomId, true)).emit('lobby:state', { room, players: listPlayers(db, roomId) });
-    io.to(channel(roomId, false)).emit('lobby:state', { room });
+    for (const audience of ['host', 'screen', 'player'] as const) {
+      const state = getSurfaceState(db, roomId, audience);
+      if (state) io.to(channel(roomId, audience)).emit('lobby:state', state);
+    }
   });
   const server = createServer(app);
   const io = new Server(server);
@@ -28,11 +28,11 @@ export function createQuizServer(db: DatabaseSync) {
       }
       const room = getRoom(db, request.roomId);
       if (!room) { socket.emit('lobby:error', { error: 'Room not found.' }); return; }
-      const roster = request.audience !== 'player';
+      const audience = request.audience as Audience;
       // SQLite reads and the local adapter are synchronous: no mutation can interleave
       // this fresh snapshot and subscription. Every reconnect repeats this operation.
-      const state = roster ? { room, players: listPlayers(db, room.id) } : { room };
-      void socket.join(channel(room.id, roster));
+      const state = getSurfaceState(db, room.id, audience);
+      void socket.join(channel(room.id, audience));
       socket.emit('lobby:state', state);
     });
   });

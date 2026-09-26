@@ -2,23 +2,24 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { useLobby } from './lobby';
+import { RoundIntroContent, QuestionContent } from './GameContent';
 
 export function Host() {
   const { roomId } = useParams();
-  const { state, setState, error: loadError, connected } = useLobby(roomId, 'host');
+  const { state, refresh, error: loadError, connected } = useLobby(roomId, 'host');
   const room = state?.room;
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function start() {
-    if (!window.confirm('Start game? The player list and quiz content will be locked.')) return;
+  async function start(round = false) {
+    if (!round && !window.confirm('Start game? The player list and quiz content will be locked.')) return;
     setBusy(true);
     setError('');
     try {
-      const response = await fetch(`/api/rooms/${roomId}/start`, { method: 'POST' });
+      const response = await fetch(`/api/rooms/${roomId}/${round ? 'start-round' : 'start'}`, { method: 'POST' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not start game.');
-      setState(current => ({ room: body, players: current?.players ?? [] }));
+      await refresh();
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
@@ -31,7 +32,7 @@ export function Host() {
       const response = await fetch(`/api/rooms/${roomId}/close`, { method: 'POST' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not close room.');
-      setState(current => ({ room: body, players: current?.players ?? [] }));
+      await refresh();
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
@@ -48,9 +49,19 @@ export function Host() {
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       <ul>{state?.players?.map(player => <li key={player.id}>{player.name} — {player.language.toUpperCase()}</li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
-      <p>State: <span>{room.state === 'ROUND_INTRO' ? 'Round Intro' : 'Lobby'}</span></p>
+      <p>State: <span>{room.state === 'ROUND_INTRO' ? 'Round Intro' : room.state === 'QUESTION' ? 'Question' : 'Lobby'}</span></p>
       {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
         <button onClick={() => void start()} disabled={busy}>Start Game</button>}
+      {!room.closedAt && state?.game?.state === 'ROUND_INTRO' && <section className="game-content">
+        <RoundIntroContent round={state.game} />
+        <p>Questions: {state.game.questionCount}</p>
+        <button onClick={() => void start(true)} disabled={busy}>Start Round</button>
+      </section>}
+      {!room.closedAt && state?.game?.state === 'QUESTION' && <section className="game-content">
+        <QuestionContent question={state.game} host />
+        <p>Points: {state.game.points}</p>
+        <p>Answer time: {state.game.answerTimeSeconds} seconds</p>
+      </section>}
       {room.closedAt ? <p role="status">Room closed</p> : <button onClick={() => void close()} disabled={busy}>Close room</button>}
     </>}
   </main>;

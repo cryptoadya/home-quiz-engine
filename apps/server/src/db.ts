@@ -114,6 +114,37 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
       DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY';
     END`,
   },
+  {
+    version: 7,
+    rebuildForeignKeys: true,
+    sql: `CREATE TABLE game_sessions_new (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL CHECK (length(code) = 5 AND code NOT GLOB '*[^ABCDEFGHJKMNPQRSTUVWXYZ23456789]*'),
+      quiz_id TEXT REFERENCES quizzes(id) ON DELETE SET NULL,
+      state TEXT NOT NULL CHECK (state IN ('LOBBY', 'ROUND_INTRO', 'QUESTION')),
+      created_at TEXT NOT NULL,
+      closed_at TEXT,
+      snapshot_json TEXT CHECK (snapshot_json IS NULL OR json_valid(snapshot_json)),
+      roster_locked_at TEXT,
+      current_round_index INTEGER CHECK (current_round_index IS NULL OR (typeof(current_round_index) = 'integer' AND current_round_index >= 0)),
+      current_question_index INTEGER CHECK (current_question_index IS NULL OR (typeof(current_question_index) = 'integer' AND current_question_index >= 0)),
+      CHECK ((state = 'LOBBY' AND current_round_index IS NULL AND current_question_index IS NULL)
+        OR (state = 'ROUND_INTRO' AND current_round_index IS NOT NULL AND current_question_index IS NULL)
+        OR (state = 'QUESTION' AND current_round_index IS NOT NULL AND current_question_index IS NOT NULL)),
+      CHECK ((state = 'LOBBY' AND quiz_id IS NOT NULL AND snapshot_json IS NULL AND roster_locked_at IS NULL)
+        OR (state IN ('ROUND_INTRO', 'QUESTION') AND snapshot_json IS NOT NULL AND roster_locked_at IS NOT NULL))
+    );
+    INSERT INTO game_sessions_new
+      SELECT id, code, quiz_id, state, created_at, closed_at, snapshot_json, roster_locked_at,
+        CASE WHEN state = 'ROUND_INTRO' THEN 0 ELSE NULL END, NULL FROM game_sessions;
+    DROP TRIGGER delete_quiz_lobbies;
+    DROP TABLE game_sessions;
+    ALTER TABLE game_sessions_new RENAME TO game_sessions;
+    CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
+    CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN
+      DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY';
+    END`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

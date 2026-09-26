@@ -45,7 +45,7 @@ Use Socket.IO for active-session events:
 
 - player join/reconnect/disconnect
 - room/session state broadcasts (including Start Game)
-- start round/question (future gameplay)
+- Start Round state broadcast (HTTP action persists first)
 - media control
 - timer/pause/resume
 - submit
@@ -75,7 +75,7 @@ Lobby references the editable quiz. `POST /api/rooms/:roomId/start` runs one SQL
 `BEGIN IMMEDIATE` transaction: require an existing active Lobby, revalidate the
 persisted quiz, require at least one active player, create the snapshot, mark the
 Start-time roster, and transition to `ROUND_INTRO`. Failure rolls everything back;
-repeat Start returns 409. No progression beyond Round Intro exists yet.
+repeat Start returns 409. Start initializes the first frozen round.
 
 `game_sessions.snapshot_json` stores a version-1 typed quiz tree, with ordered
 rounds, questions and options (including correctness), quiz settings and original
@@ -133,7 +133,8 @@ room, player roster, join and identity restoration endpoints remain available.
 Socket protocol:
 - Client `lobby:subscribe`: `{ roomId, audience: 'host' | 'screen' | 'player' }`.
   Validates the ID and room existence; replaces the socket's previous subscription.
-- Server `lobby:state`: `{ room, players }` for Host/Screen, `{ room }` for Player.
+- Server `lobby:state`: `{ room, players, game }` for Host/Screen, `{ room }` for Player.
+  Host and Screen use separate audience channels; `game` is an audience-specific projection.
   `room.closedAt` communicates closure. Player entries use the public HTTP roster
   fields only: `id`, `name`, `language`, `joinedAt`.
 - Server `lobby:error`: `{ error }` for invalid or nonexistent subscriptions.
@@ -151,5 +152,29 @@ room code and `?lang=ru` / `?lang=en`. Opening Screen on loopback displays a LAN
 address warning. Start Game publishes the new state through the same `lobby:state`
 channel after commit. Host confirms the content/roster lock and shows Round Intro;
 Screen removes the Lobby QR/join UI; Player replaces waiting text with a localized
-game-starting message. Refresh and socket reconnect load current durable state.
-Question presentation, timers and Round Intro progression remain out of scope.
+round-starting message. Refresh and socket reconnect load current durable state.
+
+## Gameplay foundation (Phase 3A)
+
+Migration 7 adds zero-based `current_round_index` and `current_question_index`
+to `game_sessions`, addressing the frozen snapshot. Lobby has both null; `ROUND_INTRO` has a round index
+and null question index; `QUESTION` has both indexes. Existing started sessions
+migrate to round 0 with no current question; snapshot JSON and roster remain intact.
+
+`POST /api/rooms/:roomId/start-round` atomically transitions an open `ROUND_INTRO`
+to `QUESTION`, question index 0, after validating the snapshot/current round.
+Invalid state, closed rooms, or invalid content return conflict. No timer starts.
+
+`game.ts` centralizes navigation and allowlisted projections, reading gameplay
+content only via `getGameSnapshot`. Host receives current round/question content,
+points, effective answer duration and correctness. Screen receives bilingual
+current content and ordered option text only when enabled; Player receives only
+safe room state. Neither Screen nor Player receives correctness, full snapshots,
+or future questions. This retains the trusted-LAN surface-selection boundary;
+it does not introduce organizer authentication.
+
+`GET /api/rooms/:roomId/game/host` and `/game/screen` restore each surface from
+SQLite. The existing `lobby:state` protocol broadcasts projections after commit
+and resends them on subscription/reconnect. Player's authenticated HTTP reconnect
+restores its safe state. Closed-room behavior takes precedence. Answering, timers,
+scoring, reveal and further navigation are reserved for later slices.

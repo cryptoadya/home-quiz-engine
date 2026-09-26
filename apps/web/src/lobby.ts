@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-export type Room = { id: string; code: string; quizTitle: string; state: 'LOBBY' | 'ROUND_INTRO'; closedAt: string | null };
-export type LobbyState = { room: Room; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
+export type Room = { id: string; code: string; quizTitle: string; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION'; closedAt: string | null };
+export type RoundIntro = { state: 'ROUND_INTRO'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string };
+export type CurrentQuestion = { state: 'QUESTION'; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
+export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };
 
@@ -10,20 +12,30 @@ export function useLobby(roomId: string | undefined, audience: Audience) {
   const [state, setState] = useState<LobbyState | null>(null);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
+  const revision = useRef(0);
+  const refresh = useCallback(async () => {
+    const expected = ++revision.current;
+    const response = await fetch(`/api/rooms/${encodeURIComponent(roomId!)}/game/${audience}`, { cache: 'no-store' });
+    const body = await response.json();
+    if (expected !== revision.current) return;
+    if (!response.ok) throw new Error(body.error || 'Could not load room.');
+    setState(body);
+  }, [roomId, audience]);
   useEffect(() => {
     setState(null); setError(''); setConnected(false);
     if (!roomId) return;
+    const initialRevision = ++revision.current;
     let active = true;
     let receivedSnapshot = false;
     // HTTP provides initial/reload state even before the realtime connection is ready.
     // A socket snapshot always supersedes any earlier, slower HTTP response.
     if (audience !== 'player') {
-      void fetch(`/api/rooms/${encodeURIComponent(roomId)}/lobby`, { cache: 'no-store' })
+      void fetch(`/api/rooms/${encodeURIComponent(roomId)}/game/${audience}`, { cache: 'no-store' })
         .then(async response => {
           const body = await response.json();
           if (!response.ok) throw new Error(body.error || 'Could not load room.');
-          if (active && !receivedSnapshot) setState(body);
-        }).catch((cause: Error) => { if (active && !receivedSnapshot) setError(cause.message); });
+          if (active && !receivedSnapshot && initialRevision === revision.current) setState(body);
+        }).catch((cause: Error) => { if (active && !receivedSnapshot && initialRevision === revision.current) setError(cause.message); });
     }
     const socket = lobbyTransport.connect();
     socket.on('connect', () => {
@@ -33,6 +45,7 @@ export function useLobby(roomId: string | undefined, audience: Audience) {
     });
     socket.on('lobby:state', (snapshot: LobbyState) => {
       if (!active || snapshot.room.id !== roomId) return;
+      revision.current++;
       receivedSnapshot = true;
       setState(snapshot); setError(''); setConnected(true);
     });
@@ -40,7 +53,7 @@ export function useLobby(roomId: string | undefined, audience: Audience) {
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', () => setConnected(false));
     socket.connect();
-    return () => { active = false; socket.removeAllListeners(); socket.disconnect(); };
+    return () => { revision.current++; active = false; socket.removeAllListeners(); socket.disconnect(); };
   }, [roomId, audience]);
-  return { state, setState, error, connected };
+  return { state, refresh, error, connected };
 }

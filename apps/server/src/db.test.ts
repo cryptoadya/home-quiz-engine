@@ -22,7 +22,7 @@ test('SQLite initializes its migration ledger and reopens cleanly', () => {
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)?.name, name);
       }
       const migration = db.prepare('SELECT version FROM schema_migrations').all();
-      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
+      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8]);
       db.close();
     }
   } finally {
@@ -119,6 +119,51 @@ test('Phase 2D Lobby and started sessions migrate navigation without changing sn
       const { startRound } = await import('./game.js');
       assert.equal(startRound(db, 'started').room?.state, 'QUESTION');
       assert.deepEqual(read('started'), { current_round_index: 0, current_question_index: 0 });
+    } finally { db.close(); }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('Phase 3A migration preserves all navigation, snapshots and roster and constrains active timers', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-timer-migration-'));
+  const path = join(directory, 'quiz.sqlite');
+  const old = new DatabaseSync(path);
+  old.exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+    INSERT INTO schema_migrations VALUES (1), (2), (3), (4), (5), (6), (7);
+    CREATE TABLE quizzes (id TEXT PRIMARY KEY);
+    INSERT INTO quizzes VALUES ('quiz');
+    CREATE TABLE game_sessions (id TEXT PRIMARY KEY, code TEXT NOT NULL, quiz_id TEXT REFERENCES quizzes(id) ON DELETE SET NULL,
+      state TEXT NOT NULL, created_at TEXT NOT NULL, closed_at TEXT, snapshot_json TEXT, roster_locked_at TEXT,
+      current_round_index INTEGER, current_question_index INTEGER);
+    CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
+    CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN
+      DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
+    INSERT INTO game_sessions VALUES ('lobby', 'ABCDE', 'quiz', 'LOBBY', 'now', NULL, NULL, NULL, NULL, NULL),
+      ('intro', 'FGHJK', 'quiz', 'ROUND_INTRO', 'now', NULL, '{"frozen":true}', 'locked', 1, NULL),
+      ('question', 'MNPQR', 'quiz', 'QUESTION', 'now', NULL, '{"frozen":true}', 'locked', 1, 2);
+    CREATE TABLE session_players (id TEXT PRIMARY KEY, session_id TEXT REFERENCES game_sessions(id) ON DELETE CASCADE, token_hash TEXT, in_roster INTEGER);
+    INSERT INTO session_players VALUES ('player', 'question', 'same-hash', 1);`);
+  const sessions = old.prepare('SELECT * FROM game_sessions ORDER BY id').all();
+  old.close();
+  try {
+    const db = initializeDatabase(path);
+    try {
+      for (const [i, row] of db.prepare('SELECT * FROM game_sessions ORDER BY id').all().entries()) {
+        const { answer_started_at, answer_deadline_at, ...rest } = row;
+        assert.deepEqual(rest, { ...sessions[i] });
+        assert.equal(answer_started_at, null); assert.equal(answer_deadline_at, null);
+      }
+      assert.deepEqual({ ...db.prepare('SELECT * FROM session_players').get() }, { id: 'player', session_id: 'question', token_hash: 'same-hash', in_roster: 1 });
+      assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+      for (const sql of [
+        "UPDATE game_sessions SET state = 'ANSWERING' WHERE id = 'question'",
+        "UPDATE game_sessions SET answer_deadline_at = '2026-09-26T12:00:12.000Z' WHERE id = 'question'",
+        "UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = 'bad', answer_deadline_at = 'bad' WHERE id = 'question'",
+        "UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = '2026-09-26T12:00:12.000Z', answer_deadline_at = '2026-09-26T12:00:00.000Z' WHERE id = 'question'",
+      ]) assert.throws(() => db.exec(sql), /CHECK/);
+      db.exec("UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = '2026-09-26T12:00:00.000Z', answer_deadline_at = '2026-09-26T12:00:12.000Z' WHERE id = 'question'");
+      assert.throws(() => db.exec("UPDATE game_sessions SET current_question_index = NULL WHERE id = 'question'"), /CHECK/);
+      assert.throws(() => db.exec("UPDATE game_sessions SET state = 'QUESTION' WHERE id = 'question'"), /CHECK/);
     } finally { db.close(); }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

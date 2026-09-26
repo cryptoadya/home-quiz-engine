@@ -176,5 +176,39 @@ it does not introduce organizer authentication.
 `GET /api/rooms/:roomId/game/host` and `/game/screen` restore each surface from
 SQLite. The existing `lobby:state` protocol broadcasts projections after commit
 and resends them on subscription/reconnect. Player's authenticated HTTP reconnect
-restores its safe state. Closed-room behavior takes precedence. Answering, timers,
-scoring, reveal and further navigation are reserved for later slices.
+restores its safe state. Closed-room behavior takes precedence. Phase 3B extends
+this foundation with Answering and timers below; scoring, reveal and further
+navigation remain reserved for later slices.
+
+## Answer timer (Phase 3B)
+
+Migration 8 adds `ANSWERING`, `answer_started_at` and `answer_deadline_at` (UTC ISO
+timestamps). Existing navigation, snapshots and roster survive unchanged with null
+timers. SQLite requires both valid, ordered timestamps for Answering and null
+timer fields in every other state.
+
+`POST /api/rooms/:roomId/start-question` runs one `BEGIN IMMEDIATE` transaction:
+require an open `QUESTION`, resolve the current frozen question and its override
+or snapshot default duration, persist server start/deadline, and enter `ANSWERING`.
+Only after commit does it broadcast. Repeats return 409 and cannot reset the timer.
+`timer.ts` centralizes duration, deadline and expiry calculations with explicit
+`now` inputs. Expiry is computed as `now >= deadline`, with remaining milliseconds
+clamped to zero. There is no expiry scheduler or DB mutation: state stays
+`ANSWERING` at zero until later phases implement completion/reveal.
+
+Host/Screen projections carry `serverNow`, `deadlineAt`, `durationSeconds`,
+`remainingMs` and `expired`. Clients anchor server time to a monotonic browser
+clock, refresh the display every 250ms, and resync on new server projections.
+This display cannot authorize future submissions. Reload/reconnect reads the same
+SQLite deadline; it never starts or extends it. Closed state takes precedence.
+
+Player sockets still carry only safe room metadata. On Answering updates or
+socket reconnect, Player refetches the existing HTTP `POST /reconnect` using its
+stored token; initial reload uses that endpoint too. The server validates the
+room-scoped token and locked roster before returning `game`: only current frozen
+question ID, selected-language text, ordered option IDs/text and timer metadata.
+No token travels over Socket.IO. Host/Screen retain the existing trusted-LAN
+surface boundary (not organizer authentication); no generic Player content
+endpoint is added. Screen options still depend on `showOptionsOnScreen`, and
+neither Screen nor Player receives correctness, future content or the snapshot.
+Player choices are noninteractive in this phase.

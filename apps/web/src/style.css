@@ -66,3 +66,6 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .game-content { overflow-wrap: anywhere; white-space: pre-wrap; }
 .game-options { text-align: left; }
 .game-options li { padding: 0.6rem; }
+
+.countdown { margin-block: 1rem; }
+.countdown [role="timer"] { display: block; font-size: clamp(2.5rem, 8vw, 6rem); font-variant-numeric: tabular-nums; }

@@ -8,7 +8,7 @@ export type Room = {
   code: string;
   quizId: string | null;
   quizTitle: string;
-  state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION';
+  state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING';
   createdAt: string;
   closedAt: string | null;
 };

@@ -251,3 +251,93 @@ for (const language of ['ru', 'en']) test(`Player ${language} receives Question 
   view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question')));
 });
+
+const timerStart = Date.parse('2026-09-26T12:00:00.000Z');
+const answerTimer = { serverNow: new Date(timerStart).toISOString(), deadlineAt: new Date(timerStart + 12000).toISOString(), durationSeconds: 12, remainingMs: 12000, expired: false };
+
+test('Host starts Question without confirmation and countdown expires without reveal or restart', async (t) => {
+  socket();
+  let started = false;
+  let elapsed = 0;
+  mock.method(performance, 'now', () => elapsed);
+  mock.method(window, 'confirm', () => { throw new Error('No confirmation for Start Question'); });
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === 'POST') {
+      assert.equal(String(url), '/api/rooms/room/start-question');
+      started = true;
+      return Response.json({ ...room, state: 'ANSWERING' });
+    }
+    return Response.json({ room: { ...room, state: started ? 'ANSWERING' : 'QUESTION' }, game: { ...questionGame, state: started ? 'ANSWERING' : 'QUESTION', ...(started ? { timer: answerTimer } : {}) } });
+  };
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Question' })));
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Start Question' })); });
+  assert.equal(view.getByRole('timer').textContent, '12');
+  assert.ok(view.getByText('Correct answer'));
+  assert.equal(view.queryByRole('button', { name: 'Start Question' }), null);
+  elapsed = 12000;
+  await act(async () => { t.mock.timers.tick(12000); });
+  assert.equal(view.getByRole('timer').textContent, '0');
+  assert.ok(view.getByText(/Time is up/));
+  assert.equal(view.queryByRole('button', { name: /Reveal|Restart|Pause|Next/ }), null);
+});
+
+for (const showOptionsOnScreen of [false, true]) test(`Screen Answering resyncs and reloads the same deadline with options ${showOptionsOnScreen}`, async () => {
+  const live = socket();
+  const { points, answerTimeSeconds, options, ...question } = questionGame;
+  let timer = answerTimer;
+  const state = () => ({ room: { ...room, state: 'ANSWERING' }, game: { ...question, state: 'ANSWERING', timer, showOptionsOnScreen,
+    ...(showOptionsOnScreen ? { options: options.map(({ textRu, textEn }) => ({ textRu, textEn })) } : {}) } });
+  globalThis.fetch = async () => Response.json(state());
+  let view = show('/screen/room');
+  await waitFor(() => assert.equal(view.getByRole('timer').textContent, '12'));
+  assert.equal(Boolean(view.queryByText('One')), showOptionsOnScreen);
+  assert.equal(view.queryByText(/Correct answer/), null);
+  timer = { ...answerTimer, serverNow: new Date(timerStart + 7000).toISOString(), remainingMs: 5000 };
+  await act(async () => { live.emit('lobby:state', state()); });
+  assert.equal(view.getByRole('timer').textContent, '5');
+  view.unmount();
+  view = show('/screen/room');
+  await waitFor(() => assert.equal(view.getByRole('timer').textContent, '5'));
+  timer = { ...timer, serverNow: answerTimer.deadlineAt, remainingMs: 0, expired: true };
+  await act(async () => { live.emit('lobby:state', state()); });
+  assert.equal(view.getByRole('timer').textContent, '0');
+  assert.ok(view.getByText(/Время вышло.*Time is up/));
+  await act(async () => { live.emit('lobby:state', { ...state(), room: { ...room, state: 'ANSWERING', closedAt: 'now' } }); });
+  assert.ok(view.getByText(/Room closed/));
+  assert.equal(view.queryByRole('timer'), null);
+});
+
+for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering content with its token and renders noninteractive choices`, async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let answering = false;
+  let timer = answerTimer;
+  const text = language === 'ru' ? 'Личный вопрос' : 'Personal question';
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), '/api/rooms/room/reconnect');
+    assert.deepEqual(JSON.parse(String(init?.body)), { token: 'secret' });
+    return Response.json({ room: { ...room, state: answering ? 'ANSWERING' : 'QUESTION' }, player: { ...player, language }, active: true,
+      game: answering ? { state: 'ANSWERING', questionId: 'q', text, options: [{ id: 'a', text: language === 'ru' ? 'Да' : 'Yes' }], timer } : null });
+  };
+  let view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question')));
+  answering = true;
+  live.on('lobby:subscribe', input => assert.deepEqual(input, { roomId: 'room', audience: 'player' }));
+  await act(async () => { live.emit('connect'); live.emit('lobby:state', { room: { ...room, state: 'ANSWERING' } }); });
+  await waitFor(() => assert.ok(view.getByText(text)));
+  assert.equal(view.getByRole('timer').textContent, '12');
+  assert.ok(view.getByText(language === 'ru' ? 'Да' : 'Yes'));
+  assert.equal(view.queryByRole('button'), null);
+  assert.equal(view.queryByRole('radio'), null);
+  assert.doesNotMatch(view.container.innerHTML, /isCorrect|Correct answer|Personal question.*Личный вопрос/);
+  view.unmount();
+  timer = { ...answerTimer, serverNow: answerTimer.deadlineAt, remainingMs: 0, expired: true };
+  view = show('/play/ABCDE');
+  await waitFor(() => assert.equal(view.getByRole('timer').textContent, '0'));
+  assert.ok(view.getByText(language === 'ru' ? 'Время вышло' : 'Time is up'));
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWERING', closedAt: 'now' } }); });
+  assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
+  assert.equal(view.queryByText(text), null);
+});

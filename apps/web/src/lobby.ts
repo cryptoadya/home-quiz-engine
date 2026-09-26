@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-export type Room = { id: string; code: string; quizTitle: string; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION'; closedAt: string | null };
+export type Room = { id: string; code: string; quizTitle: string; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING'; closedAt: string | null };
 export type RoundIntro = { state: 'ROUND_INTRO'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string };
-export type CurrentQuestion = { state: 'QUESTION'; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
+export type AnswerTimer = { serverNow: string; deadlineAt: string; durationSeconds: number; remainingMs: number; expired: boolean };
+export type PlayerQuestion = { state: 'ANSWERING'; questionId: string; text: string; options: { id: string; text: string }[]; timer: AnswerTimer };
+export type CurrentQuestion = { state: 'QUESTION' | 'ANSWERING'; timer?: AnswerTimer; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
 export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };

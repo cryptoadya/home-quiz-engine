@@ -160,8 +160,27 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
       socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
       assert.deepEqual(await refreshed, payload);
     }
+    const answeringStates = sockets.map(nextState);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const answering = await Promise.all(answeringStates);
+    const deadline = answering[0].game.timer.deadlineAt;
+    for (const [i, payload] of answering.entries()) {
+      assert.equal(payload.room.state, 'ANSWERING');
+      if (i < 2) assert.equal(payload.game.timer.deadlineAt, deadline);
+      if (i > 0) assert.doesNotMatch(JSON.stringify(payload), /isCorrect|snapshot|token|points/);
+      if (i === 2) assert.deepEqual(Object.keys(payload), ['room']);
+      const socket = sockets[i];
+      socket.disconnect();
+      const connected = once(socket, 'connect');
+      socket.connect(); await connected;
+      const refreshed = nextState(socket);
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      const restored = await refreshed;
+      assert.equal(restored.room.state, 'ANSWERING');
+      if (i < 2) assert.equal(restored.game.timer.deadlineAt, deadline);
+    }
     for (const identity of identities) {
-      assert.equal((await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body.room.state, 'QUESTION');
+      assert.equal((await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body.game.timer.deadlineAt, deadline);
     }
   } finally {
     sockets.forEach(socket => socket.disconnect());

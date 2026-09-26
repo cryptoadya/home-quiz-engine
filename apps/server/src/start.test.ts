@@ -265,3 +265,100 @@ test('Start Round rolls back state and question navigation together on a databas
     await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
   } finally { db.close(); }
 });
+
+for (const override of [12, null]) test(`Start Question persists frozen ${override === null ? 'default' : 'override'} timer and safe identity projection`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-timer-'));
+  const path = join(directory, 'quiz.sqlite');
+  let db = initializeDatabase(path);
+  try {
+    const { api, room, quiz, identities, rounds } = await lobby(db);
+    db.prepare('UPDATE questions SET answer_time_seconds = ?').run(override);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(409);
+    await api.post('/api/rooms/missing/start-question').expect(404);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(409);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    const before = Date.now();
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const stored = db.prepare('SELECT state, answer_started_at, answer_deadline_at FROM game_sessions').get()!;
+    assert.equal(stored.state, 'ANSWERING');
+    const start = Date.parse(String(stored.answer_started_at));
+    const deadline = Date.parse(String(stored.answer_deadline_at));
+    assert.ok(start >= before && start <= Date.now());
+    assert.equal(deadline - start, (override ?? 45) * 1000);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(409);
+    db.exec('UPDATE quizzes SET default_answer_time_seconds = 999; UPDATE questions SET answer_time_seconds = 999');
+    await api.delete(`/api/quizzes/${quiz.id}`).expect(204);
+    const { getSurfaceState } = await import('./game.js');
+    for (const [now, remaining, expired] of [[deadline - 1, 1, false], [deadline, 0, true], [deadline + 1000, 0, true]] as const) {
+      const projected = getSurfaceState(db, room.id, 'screen', now) as any;
+      assert.equal(projected.game.state, 'ANSWERING');
+      assert.equal(projected.game.timer.remainingMs, remaining);
+      assert.equal(projected.game.timer.expired, expired);
+      assert.equal(projected.game.timer.deadlineAt, stored.answer_deadline_at);
+      assert.doesNotMatch(JSON.stringify(projected), /isCorrect|snapshot|Question 1\/0|points/);
+    }
+    for (const language of ['en', 'ru']) {
+      db.prepare('UPDATE session_players SET language = ? WHERE id = ?').run(language, identities[0].player.id);
+      const projection = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token }).expect(200)).body;
+      assert.equal(projection.game.questionId, rounds[0].questions[0].id);
+      assert.equal(projection.game.text, language === 'en' ? 'Question 1/1' : 'Вопрос 1/1');
+      assert.deepEqual(projection.game.options.map((o: any) => o.id), rounds[0].questions[0].options.map(o => o.id));
+      assert.deepEqual(Object.keys(projection.game.options[0]).sort(), ['id', 'text']);
+      assert.doesNotMatch(JSON.stringify(projection), /isCorrect|snapshot|textRu|textEn|points|Question 1\/0/);
+    }
+    await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: 'invalid' }).expect(401);
+    await api.post('/api/rooms/other/reconnect').send({ token: identities[0].token }).expect(401);
+    db.exec('UPDATE session_players SET in_roster = 0');
+    await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token }).expect(401);
+    db.exec('UPDATE session_players SET in_roster = 1');
+    db.close(); db = initializeDatabase(path);
+    const restored = request(createApp(db));
+    const host = (await restored.get(`/api/rooms/${room.id}/game/host`).expect(200)).body;
+    assert.equal(host.game.timer.deadlineAt, stored.answer_deadline_at);
+    assert.equal(host.game.timer.durationSeconds, override ?? 45);
+    assert.equal(host.game.textEn, 'Question 1/1');
+    assert.ok(host.game.options.some((o: any) => o.isCorrect));
+    await restored.post(`/api/rooms/${room.id}/start-question`).expect(409);
+    assert.deepEqual(db.prepare('SELECT state, answer_started_at, answer_deadline_at FROM game_sessions').get(), stored);
+    await restored.post(`/api/rooms/${room.id}/close`).expect(200);
+    await restored.post(`/api/rooms/${room.id}/start-question`).expect(409);
+    assert.equal((await restored.get(`/api/rooms/${room.id}/game/host`)).body.game, null);
+    assert.equal((await restored.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token })).body.game, null);
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+for (const invalid of ['closed', 'question', 'duration', 'failure']) test(`Start Question rejects ${invalid} atomically`, async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, room } = await lobby(db);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    if (invalid === 'closed') await api.post(`/api/rooms/${room.id}/close`).expect(200);
+    if (invalid === 'question') db.exec('UPDATE game_sessions SET current_question_index = 99');
+    if (invalid === 'duration') db.exec("UPDATE game_sessions SET snapshot_json = json_set(snapshot_json, '$.rounds[0].questions[0].answerTimeSeconds', 0)");
+    if (invalid === 'failure') db.exec("CREATE TRIGGER fail_timer AFTER UPDATE ON game_sessions WHEN NEW.state = 'ANSWERING' BEGIN SELECT RAISE(ABORT, 'timer failure'); END");
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(invalid === 'failure' ? 500 : 409);
+    assert.deepEqual({ ...db.prepare('SELECT state, answer_started_at, answer_deadline_at FROM game_sessions').get() },
+      { state: 'QUESTION', answer_started_at: null, answer_deadline_at: null });
+  } finally { db.close(); }
+});
+
+test('injected server time sets the exact deadline; projections and repeat actions never extend it', async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, room } = await lobby(db);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    const { startQuestion, getSurfaceState } = await import('./game.js');
+    const now = Date.parse('2026-09-26T12:00:00.000Z');
+    assert.equal(startQuestion(db, room.id, now).room?.state, 'ANSWERING');
+    assert.deepEqual({ ...db.prepare('SELECT answer_started_at, answer_deadline_at FROM game_sessions').get() },
+      { answer_started_at: '2026-09-26T12:00:00.000Z', answer_deadline_at: '2026-09-26T12:00:12.000Z' });
+    assert.equal(startQuestion(db, room.id, now + 20000).status, 409);
+    const state = getSurfaceState(db, room.id, 'host', now + 20000) as any;
+    assert.equal(state.game.timer.deadlineAt, '2026-09-26T12:00:12.000Z');
+    assert.equal(state.game.timer.expired, true);
+    assert.equal(state.room.state, 'ANSWERING');
+  } finally { db.close(); }
+});

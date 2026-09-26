@@ -1,8 +1,9 @@
-import { useLobby, type Room } from './lobby';
+import { Countdown } from './Countdown';
+import { useLobby, type Room, type PlayerQuestion } from './lobby';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean };
+type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean; game?: PlayerQuestion | null };
 const storageKey = (code: string) => `quiz-player:${code}`;
 
 export function Play() {
@@ -15,6 +16,7 @@ function PlayerRoom({ code }: { code: string }) {
   const navigate = useNavigate();
   const [enteredCode, setEnteredCode] = useState(code);
   const [room, setRoom] = useState<Room | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [name, setName] = useState('');
   const [searchParams] = useSearchParams();
@@ -45,7 +47,7 @@ function PlayerRoom({ code }: { code: string }) {
         });
         if (!active) return;
         const body = await response.json();
-        if (response.ok) { setIdentity(body); return; }
+        if (response.ok) { if (active) { setToken(saved.token); setIdentity(body); } return; }
         if (response.status !== 401 && response.status !== 404) throw new Error(body.error || 'Could not reconnect. Please retry.');
         window.localStorage.removeItem(storageKey(code));
       }
@@ -60,6 +62,22 @@ function PlayerRoom({ code }: { code: string }) {
     return () => { active = false; };
   }, [code, retry]);
 
+  // Socket metadata invalidates the authenticated HTTP projection, including on reconnect.
+  // The token stays in HTTP and is never part of a socket subscription.
+  useEffect(() => {
+    if (!live || live.room.closedAt || live.room.state !== 'ANSWERING' || !token) return;
+    let active = true;
+    void fetch(`/api/rooms/${encodeURIComponent(live.room.id)}/reconnect`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+    }).then(async response => {
+      const body = await response.json();
+      if (!active) return;
+      if (!response.ok) throw new Error(body.error || 'Could not load question.');
+      setIdentity(body); setError('');
+    }).catch((cause: Error) => { if (active) setError(cause.message); });
+    return () => { active = false; };
+  }, [live, token]);
+
   async function join() {
     if (!room || busy) return;
     setBusy(true);
@@ -70,6 +88,7 @@ function PlayerRoom({ code }: { code: string }) {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not join room.');
+      setToken(body.token);
       setIdentity(body);
       try {
         window.localStorage.setItem(storageKey(room.code), JSON.stringify({ roomId: body.room.id, token: body.token }));
@@ -80,7 +99,7 @@ function PlayerRoom({ code }: { code: string }) {
 
   const ru = identity?.player.language === 'ru';
   const currentRoom = live?.room ?? identity?.room;
-  const isActive = live ? live.room.closedAt === null : identity?.active;
+  const isActive = identity?.active && currentRoom?.closedAt === null;
   return <main className="player">
     <h1>Player</h1>
     {error && <p role="alert">{error}</p>}
@@ -88,12 +107,20 @@ function PlayerRoom({ code }: { code: string }) {
       <h2>{currentRoom?.quizTitle}</h2>
       <p>{currentRoom?.code}</p>
       <p>{identity.player.name}</p>
-      <p role="status">{isActive
+      {isActive && currentRoom?.state === 'ANSWERING' ? <section>
+        {identity.game ? <>
+          <h2>{identity.game.text}</h2>
+          <Countdown timer={identity.game.timer} language={identity.player.language} />
+          <ol className="game-options">{identity.game.options.map(option => <li key={option.id}>{option.text}</li>)}</ol>
+          <p>{ru ? 'Отправка ответов будет доступна на следующем этапе' : 'Answering will be enabled next'}</p>
+        </> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
+        {error && <button onClick={() => setRetry(value => value + 1)}>Retry</button>}
+      </section> : <p role="status">{isActive
         ? (currentRoom?.state === 'ROUND_INTRO'
           ? (ru ? 'Раунд начинается…' : 'Round is starting…')
           : currentRoom?.state === 'QUESTION' ? (ru ? 'Приготовьтесь к вопросу' : 'Get ready for the question')
           : (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…'))
-        : (ru ? 'Комната закрыта' : 'Room closed')}</p>
+        : (ru ? 'Комната закрыта' : 'Room closed')}</p>}
     </> : <>
       <form className="fields" onSubmit={(event) => {
         event.preventDefault();

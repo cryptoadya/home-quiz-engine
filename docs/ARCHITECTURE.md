@@ -631,3 +631,29 @@ file at a time and confirms deletion with the invalid-reference consequence. It
 shows busy, success and error feedback and refreshes readiness after mutations.
 Question/Matching image selection UI and all gameplay media work belong to later
 Phase 6 slices.
+
+## Image authoring and frozen rendering (Phase 6B)
+
+Admin loads/refreshes quiz-owned uploaded media in the question editor, attaches,
+removes and reorders stable-ID references without deleting files. Existing ordered
+references survive all edits. Only audio/video expose the stored Play before timer
+flag; playback and flag execution remain deferred. Matching sides switch between
+bilingual text and quiz-owned image IDs, with source previews in the editor.
+
+Host/Screen projections include ordered image/GIF descriptors for the current
+question. Normal question media never enters Player projections. Matching image
+sides include a room-scoped content URL alongside their stable media ID on all
+three gameplay surfaces, including accepted mappings and Reveal. URLs are delivery
+addresses, never answer identities. Browser img elements preserve aspect ratio and
+animate GIFs; responsive sizes fit phone Matching, Host previews and TV media.
+
+`GET /api/rooms/:roomId/media/:mediaId/content` parses the durable snapshot and
+requires image metadata in its frozen manifest. It reads only session copies,
+checks regular-file status and frozen size, rejects symlink paths and uses a
+no-follow file descriptor. Invalid manifests, foreign IDs, damaged/missing copies
+and filesystem failures return generic 404 JSON without paths. Canonical MIME,
+nosniff and no-store headers apply. This uses the existing trusted LAN boundary;
+it does not introduce organizer authentication. UI image failures show a bilingual
+unavailable placeholder. Source deletion, reconnect and restart retain frozen
+URLs/content. Audio/video serving/playback, Host media controls and media-driven
+timer transitions remain outside Phase 6B.

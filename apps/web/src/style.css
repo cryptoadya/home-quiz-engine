@@ -85,3 +85,12 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .matching-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
 .matching-columns button { display: block; width: 100%; margin-bottom: .5rem; overflow-wrap: anywhere; min-height: 44px; }
 .matching-columns button[aria-pressed="true"] { outline: 3px solid currentColor; }
+
+.question-media { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 1rem; }
+.question-image { max-width: 100%; max-height: 48vh; object-fit: contain; min-width: 0; }
+.question-media .question-image { flex: 0 1 auto; }
+.host-media .question-image { max-height: 12rem; }
+.matching-image { display: inline-block; max-width: 100%; width: auto; max-height: 9rem; object-fit: contain; vertical-align: middle; }
+.matching-columns > * { min-width: 0; }
+.matching-columns button { max-width: 100%; overflow-wrap: anywhere; }
+.editor-media-preview { max-width: 10rem; max-height: 7rem; object-fit: contain; }

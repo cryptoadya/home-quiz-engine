@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { existsSync, mkdtempSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
@@ -167,12 +167,31 @@ test('Matching image references enforce image kind/ownership, remap on duplicate
     const copiedPairs = f.db.prepare('SELECT p.left_json FROM matching_pairs p JOIN questions q ON q.id = p.question_id JOIN rounds r ON r.id = q.round_id WHERE r.quiz_id = ?').all(copy.id);
     assert.ok(copiedPairs.every(p => JSON.parse(String(p.left_json)).mediaId === copiedId));
     const room = (await f.app.post(`/api/quizzes/${quiz.id}/rooms`)).body;
-    await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' });
+    const player = (await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' })).body;
     await f.app.post(`/api/rooms/${room.id}/start`).expect(200);
+    await f.app.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    await f.app.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const host = (await f.app.get(`/api/rooms/${room.id}/game/host`)).body.game;
+    const screen = (await f.app.get(`/api/rooms/${room.id}/game/screen`)).body.game;
+    assert.equal(screen.leftItems[0].mediaId, media.id);
+    assert.equal(screen.rightItems[0].kind, 'text');
+    assert.equal(screen.correctMapping, undefined);
+    assert.ok(host.correctMapping);
+    assert.deepEqual((await f.app.get(screen.leftItems[0].mediaUrl).expect(200)).body, png);
+    const restored = (await f.app.post(`/api/rooms/${room.id}/reconnect`).send({ token: player.token }).expect(200)).body.game;
+    assert.equal(restored.leftItems[0].mediaId, media.id);
+    assert.equal(restored.correctMapping, undefined);
+    const reopened = initializeDatabase(f.path);
+    try {
+      const again = (await request(createApp(reopened)).post(`/api/rooms/${room.id}/reconnect`).send({ token: player.token }).expect(200)).body.game;
+      assert.deepEqual(again.leftItems, restored.leftItems);
+      assert.deepEqual(again.rightItems, restored.rightItems);
+    } finally { reopened.close(); }
     const frozen = getGameSnapshot(f.db, room.id)!;
     assert.equal(frozen.rounds[0].questions[0].pairs?.[0].left.kind, 'image');
     assert.throws(() => parseGameSnapshot(JSON.stringify({ ...frozen, media: [] })), /reference/);
     await f.app.delete(`/api/quizzes/${quiz.id}/media/${media.id}`).expect(204);
+    assert.deepEqual((await f.app.get(screen.leftItems[0].mediaUrl).expect(200)).body, png);
     assert.ok((await f.app.get(`/api/quizzes/${quiz.id}/validation`)).body.problems.some((p: { code: string }) => p.code === 'MATCHING_MEDIA_MISSING'));
     assert.deepEqual((await f.app.get(`${base}/pairs`)).body[0].left, left);
   } finally { f.close(); }
@@ -245,5 +264,52 @@ test('failed Start rolls back frozen files, snapshot and roster; repeated Start 
     await f.app.post(`/api/rooms/${room.id}/start`).expect(200);
     await f.app.post(`/api/rooms/${room.id}/start`).expect(409);
     assert.deepEqual(readFileSync(mediaFile(f.db, room.id, media.id, true)), png);
+  } finally { f.close(); }
+});
+
+test('frozen image content and projections survive source deletion/reconnect/restart; manifest and paths isolate sessions', async () => {
+  const f = fixture();
+  try {
+    const { quiz, base, changes } = await ready(f.app);
+    const images = [];
+    for (const [filename, bytes, contentType] of [['x.png', png, 'image/png'], ['x.gif', gif, 'image/gif']] as const) {
+      images.push((await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', bytes, { filename, contentType })).body);
+    }
+    await f.app.put(base).send({ ...changes, media: images.map(image => ({ mediaId: image.id, playBeforeTimer: false })) });
+    const room = (await f.app.post(`/api/quizzes/${quiz.id}/rooms`)).body;
+    const player = (await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' })).body;
+    const content = `/api/rooms/${room.id}/media/${images[1].id}/content`;
+    await f.app.get(content).expect(404);
+    await f.app.post(`/api/rooms/${room.id}/start`).expect(200);
+    await f.app.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    await f.app.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const screen = (await f.app.get(`/api/rooms/${room.id}/game/screen`)).body.game;
+    assert.deepEqual(screen.media.map((item: { mediaId: string }) => item.mediaId), images.map(image => image.id));
+    assert.equal(screen.media[1].mediaUrl, content);
+    const restored = (await f.app.post(`/api/rooms/${room.id}/reconnect`).send({ token: player.token }).expect(200)).body;
+    assert.ok(!JSON.stringify(restored).includes(images[0].id));
+    await f.app.delete(`/api/quizzes/${quiz.id}`).expect(204);
+    const served = await f.app.get(content).expect(200).expect('Content-Type', /image\/gif/).expect('X-Content-Type-Options', 'nosniff');
+    assert.deepEqual(served.body, gif);
+    const reopened = initializeDatabase(f.path);
+    try {
+      const app = request(createApp(reopened));
+      assert.deepEqual((await app.get(content).expect(200)).body, gif);
+      assert.deepEqual((await app.get(`/api/rooms/${room.id}/game/screen`)).body.game.media, screen.media);
+    } finally { reopened.close(); }
+    await f.app.get(`/api/rooms/${quiz.id}/media/${images[1].id}/content`).expect(404);
+    await f.app.get(`/api/rooms/${room.id}/media/${quiz.id}/content`).expect(404);
+    await f.app.get(`/api/rooms/${room.id}/media/%2e%2e%2foutside/content`).expect(404);
+    const snapshot = getGameSnapshot(f.db, room.id)!;
+    f.db.prepare('UPDATE game_sessions SET snapshot_json = ? WHERE id = ?').run(JSON.stringify({ ...snapshot, media: [] }), room.id);
+    assert.deepEqual((await f.app.get(content).expect(404)).body, { error: 'Media not found.' });
+    f.db.prepare('UPDATE game_sessions SET snapshot_json = ? WHERE id = ?').run(JSON.stringify(snapshot), room.id);
+    writeFileSync(mediaFile(f.db, room.id, images[1].id, true), 'broken');
+    assert.deepEqual((await f.app.get(content).expect(404)).body, { error: 'Media not found.' });
+    rmSync(mediaFile(f.db, room.id, images[1].id, true));
+    await f.app.get(content).expect(404);
+    const outside = join(f.dir, 'outside.gif'); writeFileSync(outside, gif);
+    symlinkSync(outside, mediaFile(f.db, room.id, images[1].id, true));
+    await f.app.get(content).expect(404);
   } finally { f.close(); }
 });

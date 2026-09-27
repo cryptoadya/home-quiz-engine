@@ -140,19 +140,22 @@ source edits/deletions and restart. Focused tests cover all supported extensions
 path traversal, isolation, missing files, reference preservation, duplicate/Start
 rollback and restart, alongside Phase 5 regressions.
 
-Phase 6B has not started. Question media selectors, Matching image authoring UI,
-Screen/Player media rendering, playback, pre-timer ordering, Host controls and
-responsive TV media layout remain deferred. Physical device/media playback
-acceptance is not claimed by Phase 6A.
+Phase 6B implements question attach/remove/reorder controls and Matching
+bilingual text/image selectors with previews. Screen renders ordered normal
+image/GIF media; Host has previews and Player receives only interactive Matching
+images. Room-scoped content serving validates the frozen manifest and session
+files, survives source deletion/restart, and fails safely for missing/broken files.
+Responsive images preserve aspect ratio. Focused editor, rendering, projection,
+reconnect/restart and ownership/path isolation tests cover this boundary.
+Audio/video playback, pre-timer execution and Host media controls remain deferred
+to Phase 6C. A local Chrome smoke decoded frozen JPG/GIF after source deletion
+and rendered mixed Matching at 390×844 without horizontal overflow. The GIF fixture
+was static; animation and physical device acceptance are not claimed.
 
-Remaining scope:
-- question media selection and ordering UI
-- Matching image answer elements (deferred from Phase 5)
-- Screen-only normal question media
-- media ordering
+Remaining scope (Phase 6C):
+- audio/video playback
 - `playBeforeTimer` behavior
 - Host media controls
-- responsive TV layout
 
 Acceptance: image, audio, video and multi-media questions work on the home LAN.
 

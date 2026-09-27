@@ -1,3 +1,4 @@
+import { MatchingItemContent } from './MediaImage';
 import { useState } from 'react';
 import { CountdownDisplay, useRemainingSeconds } from './Countdown';
 import type { PlayerQuestion, Submission, Mapping } from './lobby';
@@ -52,13 +53,13 @@ export function PlayerAnswer({ question, roomId, token, language }: {
         <legend>{ru ? 'Нажмите слева, затем справа' : 'Tap a left item, then a right item'}</legend>
         <div className="matching-columns">
           <div>{question.leftItems?.map((item, index) => <button type="button" key={item.id} disabled={locked} aria-pressed={activeLeft === item.id}
-            onClick={() => setActiveLeft(item.id)}>{index + 1}. {item.kind === 'text' ? item.text : ''}</button>)}</div>
+            onClick={() => setActiveLeft(item.id)}>{index + 1}. <MatchingItemContent item={item} /></button>)}</div>
           <div>{question.rightItems?.map(item => { const pair = pairs.find(pair => pair.rightId === item.id); return <button type="button" key={item.id}
             disabled={locked || !activeLeft} onClick={() => { setMapping(current => [...current.filter(pair => pair.leftId !== activeLeft && pair.rightId !== item.id), { leftId: activeLeft!, rightId: item.id }]); setActiveLeft(null); }}>
-            {item.kind === 'text' ? item.text : ''}{pair ? ` (${question.leftItems!.findIndex(left => left.id === pair.leftId) + 1})` : ''}
+            <MatchingItemContent item={item} />{pair ? ` (${question.leftItems!.findIndex(left => left.id === pair.leftId) + 1})` : ''}
           </button>; })}</div>
         </div>
-        <ul>{pairs.map(pair => { const left = question.leftItems?.find(item => item.id === pair.leftId); const right = question.rightItems?.find(item => item.id === pair.rightId); return <li key={pair.leftId}>{left?.kind === 'text' ? left.text : ''} → {right?.kind === 'text' ? right.text : ''}</li>; })}</ul>
+        <ul>{pairs.map(pair => { const left = question.leftItems?.find(item => item.id === pair.leftId); const right = question.rightItems?.find(item => item.id === pair.rightId); return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>; })}</ul>
       </fieldset> : <fieldset disabled={locked} className="answer-choices">
         <legend>{multiple ? (ru ? 'Выберите несколько вариантов' : 'Choose multiple options') : (ru ? 'Выберите один вариант' : 'Choose one option')}</legend>
         {question.options.map(option => <label key={option.id}>

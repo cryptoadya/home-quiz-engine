@@ -1,18 +1,22 @@
+import { MediaImage } from './MediaImage';
 import { useEffect, useRef, useState } from 'react';
 
 type Question = {
   id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean; showCorrectCount?: boolean;
-  position: number; createdAt: string; updatedAt: string;
+  media?: MediaRef[]; position: number; createdAt: string; updatedAt: string;
 };
 type Option = {
   id: string; questionId: string; textRu: string; textEn: string; isCorrect: boolean;
   position: number; createdAt: string; updatedAt: string;
 };
+type MediaRef = { mediaId: string; playBeforeTimer: boolean };
+type Media = { id: string; name: string; kind: 'image' | 'audio' | 'video' };
 type TextSide = { kind: 'text'; textRu: string; textEn: string };
-type Pair = { id: string; questionId: string; left: TextSide; right: TextSide; position: number };
+type Side = TextSide | { kind: 'image'; mediaId: string };
+type Pair = { id: string; questionId: string; left: Side; right: Side; position: number };
 type PairFields = Pick<Pair, 'left' | 'right'>;
-type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'showCorrectCount'>;
+type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'showCorrectCount' | 'media'>;
 type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -29,6 +33,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
   const base = `/api/quizzes/${quizId}/rounds/${roundId}/questions`;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [media, setMedia] = useState<Media[]>([]);
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,8 +113,8 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
     setOptions((items) => items.map((item) => item.id === option.id ? { ...item, ...changes } : item));
     schedule(option.id, `${base}/${option.questionId}/options/${option.id}`, changes);
   }
-  function editPair(pair: Pair, side: 'left' | 'right', language: 'textRu' | 'textEn', value: string) {
-    const changes = { left: pair.left, right: pair.right, [side]: { ...pair[side], [language]: value } };
+  function editPair(pair: Pair, side: 'left' | 'right', value: Side) {
+    const changes = { left: pair.left, right: pair.right, [side]: value };
     setPairs(items => items.map(item => item.id === pair.id ? { ...item, ...changes } : item));
     schedule(pair.id, `${base}/${pair.questionId}/pairs/${pair.id}`, changes);
   }
@@ -138,7 +143,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
   }
   const fields: QuestionFields | null = selected ? {
     type: selected.type, textRu: selected.textRu, textEn: selected.textEn, points: selected.points,
-    answerTimeSeconds: selected.answerTimeSeconds, showOptionsOnScreen: selected.showOptionsOnScreen, showCorrectCount: selected.showCorrectCount ?? true,
+    answerTimeSeconds: selected.answerTimeSeconds, showOptionsOnScreen: selected.showOptionsOnScreen, showCorrectCount: selected.showCorrectCount ?? true, media: selected.media ?? [],
   } : null;
 
   return <section className="questions">
@@ -194,16 +199,46 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
           onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: Number(event.target.value) })} /></label>}
         <label className="checkbox"><input type="checkbox" checked={selected.showOptionsOnScreen} disabled={busy}
           onChange={(event) => editQuestion(selected, { ...fields, showOptionsOnScreen: event.target.checked })} /> Show answer options on Screen</label>
+        <h4>Question media (Screen/TV)</h4>
+        <button disabled={busy} onClick={() => void afterSaves(async () => { setMedia(await api<Media[]>(`/api/quizzes/${quizId}/media`)); })}>Load / refresh uploaded media</button>
+        <label>Attach question media<select value="" disabled={busy} onChange={event => {
+          if (event.target.value) editQuestion(selected, { ...fields, media: [...(selected.media ?? []), { mediaId: event.target.value, playBeforeTimer: false }] });
+        }}><option value="">Select uploaded media</option>{media.filter(item => !selected.media?.some(ref => ref.mediaId === item.id)).map(item => <option key={item.id} value={item.id}>{item.name} ({item.kind})</option>)}</select></label>
+        <ol>{(selected.media ?? []).map((ref, index, refs) => {
+          const item = media.find(item => item.id === ref.mediaId);
+          const update = (next: MediaRef[]) => editQuestion(selected, { ...fields, media: next });
+          const move = (direction: -1 | 1) => { const next = [...refs]; [next[index], next[index + direction]] = [next[index + direction], next[index]]; update(next); };
+          return <li key={ref.mediaId}>{item?.name ?? `Media ${ref.mediaId}`}
+            {item?.kind === 'image' && <MediaImage src={`/api/quizzes/${quizId}/media/${ref.mediaId}/content`} alt={item.name} className="editor-media-preview" />}
+            {item && item.kind !== 'image' && <label><input type="checkbox" checked={ref.playBeforeTimer} disabled={busy} onChange={event => update(refs.map(value => value.mediaId === ref.mediaId ? { ...value, playBeforeTimer: event.target.checked } : value))} />Play before timer (playback deferred)</label>}
+            <button aria-label={`Move media ${index + 1} up`} disabled={busy || index === 0} onClick={() => move(-1)}>↑</button>
+            <button aria-label={`Move media ${index + 1} down`} disabled={busy || index === refs.length - 1} onClick={() => move(1)}>↓</button>
+            <button aria-label={`Remove media ${index + 1}`} disabled={busy} onClick={() => update(refs.filter(value => value.mediaId !== ref.mediaId))}>Remove reference</button>
+          </li>;
+        })}</ol>
         {selected.type === 'matching' ? <>
           <h4>Matching pairs</h4>
-          <p>At least 2 complete pairs, with RU/EN text on both sides. Switching to an option type clears pairs; switching back creates blank pairs. Matching images are deferred to Phase 6.</p>
+          <p>At least 2 complete pairs. Each side uses bilingual text or an uploaded image. Switching to an option type clears pairs; switching back creates blank pairs.</p>
           {pairs.map((pair, index) => <div className="option-editor" key={pair.id}>
             <h5>Pair {index + 1}</h5>
             {(['left', 'right'] as const).map(side => <div key={side}>
-              {(['textRu', 'textEn'] as const).map(language => <label key={language}>
+              <label>Pair {index + 1} {side} kind<select value={pair[side].kind} disabled={busy} onChange={event => {
+                if (event.target.value === 'text') editPair(pair, side, { kind: 'text', textRu: '', textEn: '' });
+                else {
+                  const image = media.find(item => item.kind === 'image');
+                  if (image) editPair(pair, side, { kind: 'image', mediaId: image.id });
+                }
+              }}><option value="text">Bilingual text</option><option value="image" disabled={!media.some(item => item.kind === 'image')}>Image</option></select></label>
+              {pair[side].kind === 'image' ? <>
+                <label>Pair {index + 1} {side} image<select value={pair[side].mediaId} disabled={busy} onChange={event => editPair(pair, side, { kind: 'image', mediaId: event.target.value })}>
+                  {!media.some(item => item.id === (pair[side] as { mediaId: string }).mediaId) && <option value={pair[side].mediaId}>Current image (load media to inspect)</option>}
+                  {media.filter(item => item.kind === 'image').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select></label>
+                <MediaImage src={`/api/quizzes/${quizId}/media/${pair[side].mediaId}/content`} alt={`Pair ${index + 1} ${side} image`} className="editor-media-preview" />
+              </> : (['textRu', 'textEn'] as const).map(language => <label key={language}>
                 Pair {index + 1} {side} {language === 'textRu' ? 'RU' : 'EN'}
-                <input maxLength={500} value={pair[side][language]} disabled={busy}
-                  onChange={event => editPair(pair, side, language, event.target.value)} />
+                <input maxLength={500} value={(pair[side] as TextSide)[language]} disabled={busy}
+                  onChange={event => editPair(pair, side, { ...(pair[side] as TextSide), [language]: event.target.value })} />
               </label>)}
             </div>)}
             <div className="round-order">

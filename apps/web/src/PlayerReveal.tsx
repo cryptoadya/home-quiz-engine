@@ -1,3 +1,4 @@
+import { MatchingItemContent } from './MediaImage';
 import type { PlayerReveal } from './lobby';
 
 export function PlayerRevealContent({ question, language }: { question: PlayerReveal; language: 'ru' | 'en' }) {
@@ -14,7 +15,7 @@ export function PlayerRevealContent({ question, language }: { question: PlayerRe
     <p>{ru ? 'Очки' : 'Points'}: {points}</p>
     {question.correctMapping && <><p>{ru ? 'Верные пары' : 'Correct pairs'}</p><ul>{question.correctMapping.map(pair => {
       const left = question.leftItems?.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);
-      return <li key={pair.leftId}>{left?.kind === 'text' ? left.text : ''} → {right?.kind === 'text' ? right.text : ''}</li>;
+      return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>;
     })}</ul></>}
     {question.type !== 'matching' && <p className="correct-option">{ru ? 'Верный ответ' : 'Correct answer'}: {correct}</p>}
     {selected && <p>{ru ? 'Ваш ответ' : 'Your answer'}: {selected}</p>}

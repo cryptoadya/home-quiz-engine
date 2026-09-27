@@ -122,8 +122,8 @@ test('Matching shuffle preserves opaque IDs, image structures and correct mappin
   assert.notDeepEqual(shuffled.rightItems, authored.rightItems);
   assert.deepEqual(shuffled.correctMapping, authored.correctMapping);
   for (const [i, pair] of shuffled.correctMapping.entries()) {
-    assert.deepEqual(shuffled.leftItems.find(item => item.id === pair.leftId), { id: pair.leftId, kind: 'image', mediaId: `left-${i}` });
-    assert.deepEqual(shuffled.rightItems.find(item => item.id === pair.rightId), { id: pair.rightId, kind: 'image', mediaId: `right-${i}` });
+    assert.deepEqual(shuffled.leftItems.find(item => item.id === pair.leftId), { id: pair.leftId, kind: 'image', mediaId: `left-${i}`, mediaUrl: `/api/rooms/room/media/left-${i}/content` });
+    assert.deepEqual(shuffled.rightItems.find(item => item.id === pair.rightId), { id: pair.rightId, kind: 'image', mediaId: `right-${i}`, mediaUrl: `/api/rooms/room/media/right-${i}/content` });
   }
   assert.deepEqual(shuffled, matchingContent('room', question, true));
 });

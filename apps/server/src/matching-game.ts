@@ -9,7 +9,11 @@ type Content = { id: string; pairs?: { id: string; left: MatchingSide; right: Ma
 export function matchingContent(roomId: string, question: Content, shuffleAnswers = false) {
   const id = (pairId: string, side: string) => createHash('sha256').update(JSON.stringify([roomId, question.id, pairId, side])).digest('hex');
   const pairs = question.pairs ?? [];
-  const items = (side: 'left' | 'right') => answerOrder(pairs.map(pair => ({ id: id(pair.id, side), ...pair[side] })), shuffleAnswers, roomId, question.id, side);
+  const items = (side: 'left' | 'right') => answerOrder(pairs.map(pair => {
+    const content = pair[side];
+    return { id: id(pair.id, side), ...content,
+      ...(content.kind === 'image' ? { mediaUrl: `/api/rooms/${roomId}/media/${content.mediaId}/content` } : {}) };
+  }), shuffleAnswers, roomId, question.id, side);
   return { leftItems: items('left'), rightItems: items('right'), correctMapping: pairs.map(pair => ({ leftId: id(pair.id, 'left'), rightId: id(pair.id, 'right') })) };
 }
 export function validMapping(value: unknown, content: ReturnType<typeof matchingContent>): value is Mapping {

@@ -1,3 +1,5 @@
+import { constants, openSync, closeSync, fstatSync, readFileSync, realpathSync } from 'node:fs';
+import { getGameSnapshot } from './snapshot.js';
 import { uploadFailure, deleteMedia, getMedia, listMedia, mediaAvailable, mediaFile, mediaUpload, persistUpload, referencesError } from './media.js';
 import { createPair, deletePair, getPair, listPairs, reorderPairs, updatePair, validatePairChanges } from './matching.js';
 import { pauseGame, resumeGame, waitForPlayer, continueWithoutPlayer, absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
@@ -18,6 +20,26 @@ import { validateQuizReadiness } from './validation.js';
 export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}, presence: PlayerPresenceChecker = absentPlayerPresence) {
   const app = express();
   app.use(express.json());
+
+  app.get('/api/rooms/:roomId/media/:mediaId/content', (request, response) => {
+    try {
+      const media = getGameSnapshot(db, request.params.roomId)?.media?.find(item => item.id === request.params.mediaId);
+      if (!media || media.kind !== 'image') throw new Error('Unavailable');
+      const file = mediaFile(db, request.params.roomId, media.id, true);
+      // Reject symlinks in the file and all parent directories; never fall back to source storage.
+      if (realpathSync(file) !== file) throw new Error('Unavailable');
+      const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+      let bytes: Buffer;
+      try {
+        const stat = fstatSync(fd);
+        if (!stat.isFile() || stat.size !== media.sizeBytes) throw new Error('Unavailable');
+        bytes = readFileSync(fd);
+      } finally { closeSync(fd); }
+      response.set('X-Content-Type-Options', 'nosniff');
+      response.set('Cache-Control', 'no-store');
+      return response.type(media.mimeType).send(bytes);
+    } catch { return response.status(404).json({ error: 'Media not found.' }); }
+  });
 
   const mediaPath = '/api/quizzes/:quizId/media';
   app.use(mediaPath, (request, response, next) => {

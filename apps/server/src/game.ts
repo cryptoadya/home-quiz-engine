@@ -46,7 +46,11 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   const reveal = room.state === 'ANSWER_REVEAL';
   const timer = room.state === 'ANSWERING' || reveal ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
   const common = { ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
-    textRu: question.textRu, textEn: question.textEn };
+    textRu: question.textRu, textEn: question.textEn,
+    media: (question.media ?? []).flatMap(ref => {
+      const media = snapshot.media?.find(item => item.id === ref.mediaId && item.kind === 'image');
+      return media ? [{ mediaId: media.id, name: media.name, mediaUrl: `/api/rooms/${roomId}/media/${media.id}/content` }] : [];
+    }) };
   const matching = question.type === 'matching' ? matchingContent(roomId, question, snapshot.shuffleAnswers) : undefined;
   const matchingProjection = matching ? { type: 'matching' as const, leftItems: matching.leftItems, rightItems: matching.rightItems,
     ...(audience === 'host' || reveal ? { correctMapping: matching.correctMapping } : {}) } : {};

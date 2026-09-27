@@ -12,7 +12,7 @@ export function Host() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function start(action: 'start' | 'start-round' | 'start-question' | NavigationAction = 'start') {
+  async function start(action: 'start' | 'start-round' | 'start-question' | NavigationAction | 'pause' | 'resume' = 'start') {
     if (action === 'start' && !window.confirm('Start game? The player list and quiz content will be locked.')) return;
     setBusy(true);
     setError('');
@@ -51,6 +51,12 @@ export function Host() {
       <ul>{state?.players?.map(player => <li key={player.id}>{player.name} — {player.language.toUpperCase()}</li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
       <p>State: <span>{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>
+      {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&
+        <button onClick={() => void start('pause')} disabled={busy}>Pause</button>}
+      {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
+        {state?.game?.state === 'PAUSED' && <p>Paused from: {state.game.pausedFromState.toLowerCase().replaceAll('_', ' ')}</p>}
+        <button onClick={() => void start('resume')} disabled={busy}>Resume</button>
+      </section>}
       {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
         <button onClick={() => void start()} disabled={busy}>Start Game</button>}
       {!room.closedAt && state?.game?.state === 'ROUND_INTRO' && <section className="game-content">

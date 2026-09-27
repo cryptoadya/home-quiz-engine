@@ -12,6 +12,10 @@ export type Audience = 'host' | 'screen' | 'player';
 function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: number) {
   const room = getRoom(db, roomId)!;
   if (room.closedAt || room.state === 'LOBBY' || audience === 'player') return null;
+  if (room.state === 'PAUSED') {
+    const row = db.prepare('SELECT paused_from_state, paused_remaining_ms FROM game_sessions WHERE id = ?').get(roomId)!;
+    return { state: 'PAUSED' as const, pausedFromState: String(row.paused_from_state), remainingMs: row.paused_remaining_ms as number | null };
+  }
   const { snapshot, round, roundIndex, questionIndex } = currentContent(db, roomId);
   const numbering = { roundNumber: roundIndex + 1, questionCount: round.questions.length };
   if (room.state === 'ROUND_INTRO') return {

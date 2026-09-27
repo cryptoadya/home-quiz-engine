@@ -22,7 +22,7 @@ test('SQLite initializes its migration ledger and reopens cleanly', () => {
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)?.name, name);
       }
       const migration = db.prepare('SELECT version FROM schema_migrations').all();
-      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
       db.close();
     }
   } finally {
@@ -149,7 +149,8 @@ test('Phase 3A migration preserves all navigation, snapshots and roster and cons
     const db = initializeDatabase(path);
     try {
       for (const [i, row] of db.prepare('SELECT * FROM game_sessions ORDER BY id').all().entries()) {
-        const { answer_started_at, answer_deadline_at, ...rest } = row;
+        const { answer_started_at, answer_deadline_at, paused_from_state, paused_at, paused_remaining_ms, ...rest } = row;
+        assert.equal(paused_from_state, null); assert.equal(paused_at, null); assert.equal(paused_remaining_ms, null);
         assert.deepEqual(rest, { ...sessions[i] });
         assert.equal(answer_started_at, null); assert.equal(answer_deadline_at, null);
       }

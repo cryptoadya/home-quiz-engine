@@ -66,6 +66,11 @@ function PlayerRoom({ code }: { code: string }) {
   // Socket metadata invalidates the authenticated HTTP projection, including on reconnect.
   // The token stays in HTTP and is never part of a socket subscription.
   useEffect(() => {
+    if (live?.room.state === 'PAUSED') {
+      // Discard the old deadline before Resume triggers a fresh authenticated read.
+      setIdentity(previous => previous?.game ? { ...previous, game: null } : previous);
+      return;
+    }
     if (!live || live.room.closedAt || (live.room.state !== 'ANSWERING' && live.room.state !== 'ANSWER_REVEAL') || !token) return;
     let active = true;
     void fetch(`/api/rooms/${encodeURIComponent(live.room.id)}/reconnect`, {
@@ -113,7 +118,7 @@ function PlayerRoom({ code }: { code: string }) {
           token={token} roomId={identity.room.id} language={identity.player.language} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
         {error && <button onClick={() => setRetry(value => value + 1)}>Retry</button>}
       </section> : <p role="status">{isActive
-        ? (currentRoom?.state === 'ROUND_INTRO'
+        ? (currentRoom?.state === 'PAUSED' ? (ru ? 'Пауза' : 'Paused') : currentRoom?.state === 'ROUND_INTRO'
           ? (ru ? 'Раунд начинается…' : 'Round is starting…')
           : currentRoom?.state === 'QUESTION' ? (ru ? 'Приготовьтесь к вопросу' : 'Get ready for the question')
            : currentRoom?.state === 'ROUND_END' ? (ru ? 'Раунд завершён' : 'Round complete')

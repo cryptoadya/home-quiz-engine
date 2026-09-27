@@ -280,7 +280,8 @@ test('Host starts Question without confirmation and countdown expires without re
   await act(async () => { t.mock.timers.tick(12000); });
   assert.equal(view.getByRole('timer').textContent, '0');
   assert.ok(view.getByText(/Time is up/));
-  assert.equal(view.queryByRole('button', { name: /Reveal|Restart|Pause|Next/ }), null);
+  assert.equal(view.queryByRole('button', { name: /Reveal|Restart|Next/ }), null);
+  assert.ok(view.getByRole('button', { name: 'Pause' }));
 });
 
 for (const showOptionsOnScreen of [false, true]) test(`Screen Answering resyncs and reloads the same deadline with options ${showOptionsOnScreen}`, async () => {

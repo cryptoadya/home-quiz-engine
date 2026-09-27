@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-export type Room = { id: string; code: string; quizTitle: string; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN'; closedAt: string | null };
+export type Room = { id: string; code: string; quizTitle: string; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN' | 'PAUSED'; closedAt: string | null };
 export type RoundIntro = { state: 'ROUND_INTRO'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string };
 export type AnswerTimer = { serverNow: string; deadlineAt: string; durationSeconds: number; remainingMs: number; expired: boolean };
 export type Submission = { submitted: false } | { submitted: true; optionId: string };
@@ -10,7 +10,8 @@ export type PlayerReveal = Omit<PlayerQuestion, 'state' | 'timer'> & { state: 'A
 export type NavigationAction = 'next' | 'show-leaderboard' | 'next-round' | 'final-results' | 'show-winner';
 export type GameBoundary = { state: 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; nextAction?: NavigationAction | null; leaderboard?: { playerId: string; displayName: string; totalPoints: number; rank: number }[] };
 export type CurrentQuestion = { nextAction?: NavigationAction | null; state: 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL'; timer?: AnswerTimer; statistics?: { correct: number; wrong: number; unanswered: number }; answers?: { answered: number; expected: number }; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
-export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | GameBoundary | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
+export type PausedGame = { state: 'PAUSED'; pausedFromState: Exclude<Room['state'], 'LOBBY' | 'WINNER_SCREEN' | 'PAUSED'>; remainingMs: number | null };
+export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | GameBoundary | PausedGame | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };
 

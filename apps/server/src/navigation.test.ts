@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -220,15 +220,17 @@ test('Phase 3E parent-table migration preserves Reveal state, scores, answers an
     for (const identity of identities) await api.post(`${root}/answers`).send({ token: identity.token, questionId: rounds[0].questions[0].id, optionId: rounds[0].questions[0].options[0].id }).expect(200);
     const before = Object.fromEntries(['game_sessions', 'session_players', 'player_answers', 'question_scores'].map(table => [table, db.prepare(`SELECT * FROM ${table}`).all()]));
     // Restore the Phase 3D parent table constraints before applying migration 11.
-    const schema = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'game_sessions'").get()!.sql)
-      .replace('CREATE TABLE "game_sessions"', 'CREATE TABLE old_sessions')
-      .replaceAll(", 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'", '');
+    const migrationSource = readFileSync(new URL('./db.ts', import.meta.url), 'utf8');
+    const migration10 = migrationSource.split('version: 10,')[1].split('version: 11,')[0];
+    const schema = migration10.split('sql: `')[1].split('INSERT INTO game_sessions_new')[0]
+      .replace('CREATE TABLE game_sessions_new', 'CREATE TABLE old_sessions');
+    const columns = 'id, code, quiz_id, state, created_at, closed_at, snapshot_json, roster_locked_at, current_round_index, current_question_index, answer_started_at, answer_deadline_at';
     db.exec('PRAGMA foreign_keys = OFF');
-    db.exec(`${schema}; INSERT INTO old_sessions SELECT * FROM game_sessions;
+    db.exec(`${schema}; INSERT INTO old_sessions SELECT ${columns} FROM game_sessions;
       DROP TRIGGER delete_quiz_lobbies; DROP TABLE game_sessions; ALTER TABLE old_sessions RENAME TO game_sessions;
       CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
       CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
-      DELETE FROM schema_migrations WHERE version = 11`);
+      DELETE FROM schema_migrations WHERE version >= 11`);
     db.close(); db = initializeDatabase(path);
     for (const [table, rows] of Object.entries(before)) assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), rows);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);

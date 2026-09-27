@@ -1,3 +1,4 @@
+import { pauseGame, resumeGame } from './pause.js';
 import { navigate, type NavigationAction } from './navigation.js';
 import { submitAnswer } from './answers.js';
 import { getSurfaceState, getPlayerGame, startRound, startQuestion } from './game.js';
@@ -49,6 +50,18 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
         lobbyChanged(result.room.id);
         return response.json(result.room);
       }
+      return response.status(result.status).json({ error: result.error });
+    });
+  }
+  for (const [action, command] of [['pause', pauseGame], ['resume', resumeGame]] as const) {
+    app.post(`/api/rooms/:roomId/${action}`, (request, response) => {
+      const result = command(db, request.params.roomId);
+      if ('room' in result) {
+        lobbyChanged(result.room.id);
+        return response.json(result.room);
+      }
+      // An expired Pause still commits Reveal and must publish that transition.
+      if (result.changed) lobbyChanged(request.params.roomId);
       return response.status(result.status).json({ error: result.error });
     });
   }

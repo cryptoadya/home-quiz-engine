@@ -313,3 +313,36 @@ Host receives the valid next command; Screen presents standings/winners. Player
 receives simple localized boundary messages, with no personal per-question rank.
 HTTP reload and socket subscription rebuild each state from SQLite, snapshot and
 scores. Closed rooms override all views and reject every navigation command.
+
+## Durable manual Pause / Resume (Phase 4A)
+
+Migration 12 adds `PAUSED`, `paused_from_state`, `paused_at` and
+`paused_remaining_ms`. Manual Pause is allowed from `ROUND_INTRO`, `QUESTION`,
+`ANSWERING`, `ANSWER_REVEAL`, `ROUND_END`, `LEADERBOARD` and `FINAL_RESULTS`;
+Lobby, Winner Screen and closed rooms cannot pause. SQLite requires pause metadata
+only in PAUSED, positive integer remainder only for paused Answering, and indexes
+consistent with the underlying state. Snapshot, roster, answers and scores are
+unchanged. Reveal timer timestamps remain completed-question context even while
+paused; pausing Answering clears both active timer timestamps.
+
+Explicit HTTP `pause` and `resume` commands acquire `BEGIN IMMEDIATE` and
+broadcast only after commit. Pause samples server time after reading the persisted
+deadline. Existing completion wins at `now >= deadline` (or all answers accepted):
+the shared completion helper commits Reveal/scoring, the Pause request returns
+409, and the committed Reveal is broadcast. Otherwise Pause stores the positive
+remaining milliseconds. Non-timed Pause simply preserves the previous state.
+Resume restores that state and clears pause metadata; for Answering it sets start
+time to resume time and deadline to resume time plus the frozen remainder.
+Projected timer duration therefore describes the resumed segment, including
+fractional seconds, rather than the original configured duration.
+
+The existing deadline manager resyncs after each committed command: PAUSED cancels
+the old wakeup, stale callbacks cannot complete it, and Resume arms the new persisted
+deadline. Startup only recovers open ANSWERING sessions, so paused wall-clock time
+is never consumed. Reload/reconnect reads PAUSED directly from SQLite. Host shows
+Resume in place of progression controls; Screen shows `Пауза / Paused`; Player
+shows localized pause without answer controls. Player content is fetched again on
+resuming Answering. All Submit requests during Pause (including retries) return
+conflict; accepted answers remain stored and reconnect restores them after Resume.
+Normal navigation rejects PAUSED. Close remains available, overrides presentation,
+and prevents Resume. This slice adds no presence or automatic pause behavior.

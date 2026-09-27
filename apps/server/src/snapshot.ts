@@ -1,10 +1,11 @@
+import { listPairs, validTextSide, type MatchingPair } from './matching.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { getQuiz, type Quiz } from './quizzes.js';
 import { listRounds, type Round } from './rounds.js';
 import { listQuestions, listOptions, type Question, type AnswerOption } from './questions.js';
 
 type SnapshotOption = Pick<AnswerOption, 'id' | 'textRu' | 'textEn' | 'isCorrect' | 'position'>;
-type SnapshotQuestion = Pick<Question, 'id' | 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'position'> & { options: SnapshotOption[] };
+type SnapshotQuestion = Pick<Question, 'id' | 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'position'> & { options: SnapshotOption[]; pairs?: Pick<MatchingPair, 'id' | 'left' | 'right' | 'position'>[] };
 type SnapshotRound = Pick<Round, 'id' | 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'position'> & { questions: SnapshotQuestion[] };
 export type GameSnapshot = Pick<Quiz, 'title' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'> & { themeId: string; schemaVersion: 1; rounds: SnapshotRound[] };
 
@@ -18,9 +19,18 @@ function validOption(value: unknown): boolean {
   return record(value) && strings(value, ['id', 'textRu', 'textEn']) && typeof value.isCorrect === 'boolean';
 }
 function validQuestion(value: unknown): boolean {
-  return record(value) && strings(value, ['id', 'textRu', 'textEn']) && (value.type === 'single_choice' || value.type === 'yes_no' || value.type === 'multiple_choice')
-    && integer(value.points, 1) && (value.answerTimeSeconds === null || integer(value.answerTimeSeconds, 1, 3600))
-    && typeof value.showOptionsOnScreen === 'boolean' && ordered(value.options, validOption)
+  if (!record(value) || !strings(value, ['id', 'textRu', 'textEn'])
+    || !integer(value.points, 1) || !(value.answerTimeSeconds === null || integer(value.answerTimeSeconds, 1, 3600))
+    || typeof value.showOptionsOnScreen !== 'boolean') return false;
+  if (value.type === 'matching') {
+    return Array.isArray(value.options) && value.options.length === 0
+      && ordered(value.pairs, pair => record(pair) && typeof pair.id === 'string' && pair.id.trim().length > 0
+        && validTextSide(pair.left, true) && validTextSide(pair.right, true))
+      && value.pairs.length >= 2 && new Set(value.pairs.map(pair => (pair as MatchingPair).id)).size === value.pairs.length;
+  }
+  return (value.type === 'single_choice' || value.type === 'yes_no' || value.type === 'multiple_choice')
+    && (value.pairs === undefined || (Array.isArray(value.pairs) && value.pairs.length === 0))
+    && ordered(value.options, validOption)
     && (value.type === 'yes_no' ? value.options.length === 2 : value.options.length >= 2 && value.options.length <= 10)
     && (value.type === 'multiple_choice' ? value.options.filter(option => (option as SnapshotOption).isCorrect).length >= 2 : value.options.filter(option => (option as SnapshotOption).isCorrect).length === 1);
 }
@@ -52,7 +62,10 @@ export function createGameSnapshot(db: DatabaseSync, quizId: string): GameSnapsh
         id: question.id, type: question.type, textRu: question.textRu, textEn: question.textEn,
         points: question.points, answerTimeSeconds: question.answerTimeSeconds,
         showOptionsOnScreen: question.showOptionsOnScreen, position: question.position,
-        options: listOptions(db, question.id).map(option => ({
+        ...(question.type === 'matching' ? { pairs: listPairs(db, question.id).map(pair => ({
+          id: pair.id, left: pair.left, right: pair.right, position: pair.position,
+        })) } : {}),
+        options: (question.type === 'matching' ? [] : listOptions(db, question.id)).map(option => ({
           id: option.id, textRu: option.textRu, textEn: option.textEn, isCorrect: option.isCorrect, position: option.position,
         })),
       })),

@@ -49,6 +49,7 @@ export function submitAnswer(db: DatabaseSync, roomId: string, body: unknown, cl
     const question = questionIndex === null ? undefined : round.questions[questionIndex];
     if (!question || question.id !== input.questionId) return { status: 409, error: 'Question is not current.' };
     if (isQuestionExcluded(db, roomId, question.id, identity.player.id)) return { status: 409, error: 'This question continued without you.' };
+    if (question.type === 'matching') return { status: 409, error: 'Matching gameplay is not available yet.' };
     const optionIds = question.type === 'multiple_choice' ? input.optionIds : [input.optionId];
     if ((question.type === 'multiple_choice' ? input.optionId !== undefined : input.optionIds !== undefined)
       || !Array.isArray(optionIds) || optionIds.length < 1 || optionIds.length > 10

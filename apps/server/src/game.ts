@@ -93,6 +93,7 @@ export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' |
   const { round, questionIndex } = currentContent(db, roomId);
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
+  if (question.type === 'matching') return null;
   const reveal = room.state === 'ANSWER_REVEAL';
   const excluded = isQuestionExcluded(db, roomId, question.id, playerId);
   return {
@@ -119,6 +120,7 @@ export function startQuestion(db: DatabaseSync, roomId: string, now = Date.now()
       const { snapshot, round, questionIndex } = currentContent(db, roomId);
       const question = questionIndex === null ? undefined : round.questions[questionIndex];
       if (!question) throw new Error('Current question not found.');
+      if (question.type === 'matching') return { status: 409, error: 'Matching gameplay is not available yet.' };
       timer = createAnswerTimer(effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds), now);
     } catch { return { status: 409, error: 'Invalid game snapshot, navigation or duration.' }; }
     db.prepare("UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = ?, answer_deadline_at = ? WHERE id = ?")

@@ -493,6 +493,33 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     DROP TABLE player_answers;
     ALTER TABLE player_answers_new RENAME TO player_answers;`,
   },
+  {
+    version: 18,
+    rebuildForeignKeys: true,
+    sql: `CREATE TABLE questions_new (
+      id TEXT PRIMARY KEY,
+      round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK (type IN ('single_choice', 'yes_no', 'multiple_choice', 'matching')),
+      text_ru TEXT NOT NULL, text_en TEXT NOT NULL,
+      points INTEGER NOT NULL CHECK (points > 0),
+      answer_time_seconds INTEGER CHECK (answer_time_seconds IS NULL OR answer_time_seconds BETWEEN 1 AND 3600),
+      show_options_on_screen INTEGER NOT NULL CHECK (show_options_on_screen IN (0, 1)),
+      position INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    INSERT INTO questions_new SELECT * FROM questions;
+    DROP TABLE questions;
+    ALTER TABLE questions_new RENAME TO questions;
+    CREATE INDEX questions_round_position ON questions(round_id, position);
+    CREATE TABLE matching_pairs (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+      left_json TEXT NOT NULL CHECK (json_valid(left_json)),
+      right_json TEXT NOT NULL CHECK (json_valid(right_json)),
+      position INTEGER NOT NULL CHECK (position >= 0),
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE INDEX matching_pairs_question_position ON matching_pairs(question_id, position);`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

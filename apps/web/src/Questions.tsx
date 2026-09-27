@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 type Question = {
-  id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice'; textRu: string; textEn: string;
+  id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean;
   position: number; createdAt: string; updatedAt: string;
 };
@@ -9,6 +9,9 @@ type Option = {
   id: string; questionId: string; textRu: string; textEn: string; isCorrect: boolean;
   position: number; createdAt: string; updatedAt: string;
 };
+type TextSide = { kind: 'text'; textRu: string; textEn: string };
+type Pair = { id: string; questionId: string; left: TextSide; right: TextSide; position: number };
+type PairFields = Pick<Pair, 'left' | 'right'>;
 type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen'>;
 type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
 
@@ -26,13 +29,14 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
   const base = `/api/quizzes/${quizId}/rounds/${roundId}/questions`;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pairs, setPairs] = useState<Pair[]>([]);
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('Saved');
   const [error, setError] = useState('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pending = useRef<Map<string, { path: string; body: QuestionFields | OptionFields }>>(new Map());
+  const pending = useRef<Map<string, { path: string; body: QuestionFields | OptionFields | PairFields }>>(new Map());
   const chain = useRef<Promise<void>>(Promise.resolve());
   const revision = useRef(0);
 
@@ -46,9 +50,14 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
   }, [base]);
 
   useEffect(() => {
-    if (!selectedId) { setOptions([]); return; }
+    if (!selectedId) { setOptions([]); setPairs([]); return; }
     let active = true;
-    setOptions([]);
+    setOptions([]); setPairs([]);
+    if (questions.find(question => question.id === selectedId)?.type === 'matching') {
+      api<Pair[]>(`${base}/${selectedId}/pairs`).then(items => { if (active) setPairs(items); })
+        .catch((cause: Error) => { if (active) setError(cause.message); });
+      return () => { active = false; };
+    }
     api<Option[]>(`${base}/${selectedId}/options`).then((items) => { if (active) setOptions(items); })
       .catch((cause: Error) => { if (active) setError(cause.message); });
     return () => { active = false; };
@@ -73,7 +82,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
   }
   useEffect(() => () => { flush(); }, [base]);
 
-  function schedule(key: string, path: string, body: QuestionFields | OptionFields) {
+  function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields) {
     revision.current += 1;
     pending.current.set(key, { path, body });
     setStatus('Saving...');
@@ -98,6 +107,19 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
   function editOption(option: Option, changes: OptionFields) {
     setOptions((items) => items.map((item) => item.id === option.id ? { ...item, ...changes } : item));
     schedule(option.id, `${base}/${option.questionId}/options/${option.id}`, changes);
+  }
+  function editPair(pair: Pair, side: 'left' | 'right', language: 'textRu' | 'textEn', value: string) {
+    const changes = { left: pair.left, right: pair.right, [side]: { ...pair[side], [language]: value } };
+    setPairs(items => items.map(item => item.id === pair.id ? { ...item, ...changes } : item));
+    schedule(pair.id, `${base}/${pair.questionId}/pairs/${pair.id}`, changes);
+  }
+  function movePair(index: number, direction: -1 | 1) {
+    if (!selected) return;
+    void afterSaves(async () => {
+      const next = [...pairs];
+      [next[index], next[index + direction]] = [next[index + direction], next[index]];
+      setPairs(await api<Pair[]>(`${base}/${selected.id}/pairs/order`, json('PUT', { ids: next.map(item => item.id) })));
+    });
   }
   function moveQuestion(index: number, direction: -1 | 1) {
     void afterSaves(async () => {
@@ -135,6 +157,10 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
         const question = await api<Question>(base, json('POST', { type: 'multiple_choice' }));
         setQuestions(items => [...items, question]); setSelectedId(question.id);
       })}>Add Multiple Choice question</button>
+      <button disabled={busy} onClick={() => void afterSaves(async () => {
+        const question = await api<Question>(base, json('POST', { type: 'matching' }));
+        setQuestions(items => [...items, question]); setSelectedId(question.id);
+      })}>Add Matching question</button>
       {questions.length === 0 ? <p>No questions yet.</p> : <ol className="round-list">{questions.map((question, index) => <li key={question.id}>
         <button className={selectedId === question.id ? 'selected-round' : 'subtle'} disabled={busy}
           onClick={() => { flush(); setSelectedId(question.id); }}>
@@ -146,16 +172,17 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
         </div>
       </li>)}</ol>}
       {selected && fields && <div className="question-editor fields">
-        <h4>{selected.type === 'yes_no' ? 'Yes / No' : selected.type === 'multiple_choice' ? 'Multiple Choice' : 'Single Choice'} question</h4>
+        <h4>{selected.type === 'matching' ? 'Matching' : selected.type === 'yes_no' ? 'Yes / No' : selected.type === 'multiple_choice' ? 'Multiple Choice' : 'Single Choice'} question</h4>
         <label>Question type<select value={selected.type} disabled={busy} onChange={event => {
           const type = event.target.value as Question['type'];
           void afterSaves(async () => {
             const question = await api<Question>(`${base}/${selected.id}`, json('PUT', { ...fields, type }));
-            const nextOptions = await api<Option[]>(`${base}/${selected.id}/options`);
+            const nextPairs = type === 'matching' ? await api<Pair[]>(`${base}/${selected.id}/pairs`) : [];
+            const nextOptions = type !== 'matching' ? await api<Option[]>(`${base}/${selected.id}/options`) : [];
             setQuestions(items => items.map(item => item.id === question.id ? question : item));
-            setOptions(nextOptions);
+            setOptions(nextOptions); setPairs(nextPairs);
           });
-        }}><option value="single_choice">Single Choice</option><option value="yes_no">Yes / No</option><option value="multiple_choice">Multiple Choice</option></select></label>
+        }}><option value="single_choice">Single Choice</option><option value="yes_no">Yes / No</option><option value="multiple_choice">Multiple Choice</option><option value="matching">Matching</option></select></label>
         <label>Question text RU<textarea maxLength={5000} value={selected.textRu} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textRu: event.target.value })} /></label>
         <label>Question text EN<textarea maxLength={5000} value={selected.textEn} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textEn: event.target.value })} /></label>
         <label>Points<input type="number" min="1" step="1" value={selected.points} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, points: Number(event.target.value) })} /></label>
@@ -167,6 +194,33 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
           onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: Number(event.target.value) })} /></label>}
         <label className="checkbox"><input type="checkbox" checked={selected.showOptionsOnScreen} disabled={busy}
           onChange={(event) => editQuestion(selected, { ...fields, showOptionsOnScreen: event.target.checked })} /> Show answer options on Screen</label>
+        {selected.type === 'matching' ? <>
+          <h4>Matching pairs</h4>
+          <p>At least 2 complete pairs, with RU/EN text on both sides. Switching to an option type clears pairs; switching back creates blank pairs. Matching gameplay and images are not available yet.</p>
+          {pairs.map((pair, index) => <div className="option-editor" key={pair.id}>
+            <h5>Pair {index + 1}</h5>
+            {(['left', 'right'] as const).map(side => <div key={side}>
+              {(['textRu', 'textEn'] as const).map(language => <label key={language}>
+                Pair {index + 1} {side} {language === 'textRu' ? 'RU' : 'EN'}
+                <input maxLength={500} value={pair[side][language]} disabled={busy}
+                  onChange={event => editPair(pair, side, language, event.target.value)} />
+              </label>)}
+            </div>)}
+            <div className="round-order">
+              <button aria-label={`Move pair ${index + 1} up`} disabled={busy || index === 0} onClick={() => movePair(index, -1)}>↑</button>
+              <button aria-label={`Move pair ${index + 1} down`} disabled={busy || index === pairs.length - 1} onClick={() => movePair(index, 1)}>↓</button>
+              <button aria-label={`Delete pair ${index + 1}`} disabled={busy} onClick={() => void afterSaves(async () => {
+                await api<void>(`${base}/${selected.id}/pairs/${pair.id}`, { method: 'DELETE' });
+                setPairs(items => items.filter(item => item.id !== pair.id));
+              })}>Delete</button>
+            </div>
+          </div>)}
+          <button disabled={busy} onClick={() => void afterSaves(async () => {
+            const pair = await api<Pair>(`${base}/${selected.id}/pairs`, { method: 'POST' });
+            setPairs(items => [...items, pair]);
+          })}>Add pair</button>
+        </> : <>
+        <p>Switching to Matching clears answer options and creates two blank pairs.</p>
         <h4>Answer options</h4>
         {selected.type === 'multiple_choice' && <p>Use 2–10 options and mark at least 2 correct. Players see the required correct-option count.</p>}
         {options.map((option, index) => <div className="option-editor" key={option.id}>
@@ -195,6 +249,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
           const option = await api<Option>(`${base}/${selected.id}/options`, { method: 'POST' });
           setOptions((items) => [...items, option]);
         })}>Add option</button>}
+        </>}
         <button className="subtle danger" disabled={busy} onClick={() => {
           if (!window.confirm('Delete this question? This cannot be undone.')) return;
           void afterSaves(async () => {

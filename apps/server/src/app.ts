@@ -1,3 +1,4 @@
+import { createPair, deletePair, getPair, listPairs, reorderPairs, updatePair, validatePairChanges } from './matching.js';
 import { pauseGame, resumeGame, waitForPlayer, continueWithoutPlayer, absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
 import { navigate, type NavigationAction } from './navigation.js';
 import { submitAnswer } from './answers.js';
@@ -202,7 +203,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.post(roundPath, (request, response) => {
     if (!getRound(db, request.params.quizId, request.params.roundId)) return response.status(404).json({ error: 'Round not found in quiz.' });
     const body = request.body;
-    if (body !== undefined && (typeof body !== 'object' || body === null || Array.isArray(body) || Object.keys(body).some(key => key !== 'type') || (body.type !== undefined && body.type !== 'single_choice' && body.type !== 'yes_no' && body.type !== 'multiple_choice'))) return response.status(400).json({ error: 'Create question accepts only type: single_choice, yes_no or multiple_choice.' });
+    if (body !== undefined && (typeof body !== 'object' || body === null || Array.isArray(body) || Object.keys(body).some(key => key !== 'type') || (body.type !== undefined && body.type !== 'single_choice' && body.type !== 'yes_no' && body.type !== 'multiple_choice' && body.type !== 'matching'))) return response.status(400).json({ error: 'Create question accepts only type: single_choice, yes_no, multiple_choice or matching.' });
     return response.status(201).json(createQuestion(db, request.params.roundId, body?.type));
   });
   app.put(`${roundPath}/order`, (request, response) => {
@@ -222,6 +223,37 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.delete(questionPath, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)) return response.status(404).json({ error: 'Question not found in round.' });
     deleteQuestion(db, request.params.roundId, request.params.questionId);
+    return response.status(204).end();
+  });
+  // Authoring endpoints never allow inactive answer structures to be mutated.
+  app.use(optionsPath, (request, response, next) => {
+    if (getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'matching' && request.method !== 'GET') return response.status(409).json({ error: 'Matching uses pairs, not options.' });
+    next();
+  });
+  const pairsPath = `${questionPath}/pairs`;
+  app.use(pairsPath, (request, response, next) => {
+    const question = getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId);
+    if (!question) return response.status(404).json({ error: 'Question not found in round.' });
+    if (question.type !== 'matching') return response.status(409).json({ error: 'Pairs belong to Matching questions.' });
+    next();
+  });
+  app.get(pairsPath, (request, response) => response.json(listPairs(db, request.params.questionId)));
+  app.post(pairsPath, (request, response) => {
+    if (request.body !== undefined && (typeof request.body !== 'object' || request.body === null || Array.isArray(request.body) || Object.keys(request.body).length)) return response.status(400).json({ error: 'Create pair does not accept fields.' });
+    return response.status(201).json(createPair(db, request.params.questionId));
+  });
+  app.put(`${pairsPath}/order`, (request, response) => {
+    const pairs = reorderPairs(db, request.params.questionId, request.body?.ids);
+    return pairs ? response.json(pairs) : response.status(400).json({ error: 'Order must include every pair exactly once.' });
+  });
+  app.put(`${pairsPath}/:pairId`, (request, response) => {
+    if (!getPair(db, request.params.questionId, request.params.pairId)) return response.status(404).json({ error: 'Pair not found in question.' });
+    const result = validatePairChanges(request.body);
+    return 'error' in result ? response.status(400).json(result) : response.json(updatePair(db, request.params.questionId, request.params.pairId, result.changes));
+  });
+  app.delete(`${pairsPath}/:pairId`, (request, response) => {
+    if (!getPair(db, request.params.questionId, request.params.pairId)) return response.status(404).json({ error: 'Pair not found in question.' });
+    deletePair(db, request.params.questionId, request.params.pairId);
     return response.status(204).end();
   });
   app.get(optionsPath, (request, response) => {

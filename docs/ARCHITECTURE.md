@@ -461,3 +461,29 @@ set: exact equality earns full points; every other set earns zero. Existing answ
 row counts, timers, Pause, Wait/Continue, exclusions and navigation are reused;
 excluded/unanswered roster members still receive zero. Gameplay never reads the
 editable source, including after source deletion.
+
+## Matching authoring (Phase 5C)
+
+Migration 18 adds canonical `matching` questions and dedicated `matching_pairs`
+rows with stable IDs, durable position, cascading question ownership and JSON
+left/right sides. Each side is a discriminated `{ kind: 'text', textRu, textEn }`
+or `{ kind: 'image', mediaId }` value. Image references reserve the Phase 6 media
+boundary; this phase only authors and accepts bilingual text.
+
+Admin offers autosaved RU/EN side fields and pair add/delete/reorder via scoped
+`/api/quizzes/:quizId/rounds/:roundId/questions/:questionId/pairs` CRUD and `/order`.
+New Matching questions have two blank pairs. Crossing between Matching and an
+option type atomically deletes both old answer structures; entering Matching
+creates two blank pairs, entering Single/Multiple Choice starts with no options,
+and entering Yes/No creates its usual labeled options. Option-to-option conversion
+keeps the existing Phase 5A/5B rules. Inactive answer mutations are rejected.
+Quiz duplication copies pairs with new IDs.
+
+Readiness requires at least two complete pairs and RU/EN text of 1–500 characters
+per side. Version-1 snapshots add ordered `pairs` for Matching and keep an empty
+`options` array. Parsing independently validates side shape, bilingual completeness,
+pair count, unique IDs and order, rejecting mixed active structures. Old option
+snapshots without `pairs` remain valid. Start freezes values with no content foreign
+keys, and later edits/deletion cannot affect them. Pair mappings never enter
+Player or Screen projections. Matching may be frozen at Start, but starting its
+answer timer, accepting submissions and scoring are blocked until Phase 5D.

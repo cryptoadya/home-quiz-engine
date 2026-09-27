@@ -94,8 +94,12 @@ checks and local browser mixed-quiz smoke passed.
 Phase 5B adds Multiple Choice with independent editor correctness, 2–10 options,
 at least two correct options, an always-visible required count, durable submitted
 sets and exact-set scoring through the shared lifecycle. Focused regressions cover
-mixed games, retries, reconnect/restart, Pause and Continue exclusions. Phase 5C
-and configurable count hints remain pending; Phase 5 remains incomplete.
+mixed games, retries, reconnect/restart, Pause and Continue exclusions. Phase 5C adds Matching authoring with dedicated ordered pairs, bilingual text
+sides prepared for image references, CRUD/reorder, deterministic type switching,
+readiness and independently validated frozen snapshots. Matching timers,
+submissions, scoring and Player interactions remain blocked pending Phase 5D.
+Phase 5D, configurable count hints, shuffle and image support remain pending;
+Phase 5 remains incomplete.
 
 Scope:
 - Yes/No

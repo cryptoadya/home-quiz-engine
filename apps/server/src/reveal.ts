@@ -11,6 +11,7 @@ export function completeQuestionInTransaction(db: DatabaseSync, roomId: string, 
   const { round, questionIndex } = currentContent(db, roomId);
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
+  if (question.type === 'matching') return false;
   if (expectedQuestionId && question.id !== expectedQuestionId) return false;
   const players = db.prepare(`SELECT p.id, a.option_ids_json, e.player_id AS excluded FROM session_players p
     LEFT JOIN player_answers a ON a.session_id = p.session_id AND a.player_id = p.id AND a.question_id = ?

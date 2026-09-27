@@ -1,3 +1,4 @@
+import { listPairs } from './matching.js';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { listRounds } from './rounds.js';
@@ -87,6 +88,10 @@ export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
         const questionId = randomUUID();
         insertQuestion.run(questionId, roundId, question.type, question.textRu, question.textEn, question.points,
           question.answerTimeSeconds, Number(question.showOptionsOnScreen), question.position, now, now);
+        for (const pair of listPairs(db, question.id)) {
+          db.prepare('INSERT INTO matching_pairs (id, question_id, left_json, right_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(randomUUID(), questionId, JSON.stringify(pair.left), JSON.stringify(pair.right), pair.position, now, now);
+        }
         for (const option of listOptions(db, question.id)) {
           insertOption.run(randomUUID(), questionId, option.textRu, option.textEn, Number(option.isCorrect), option.position, now, now);
         }

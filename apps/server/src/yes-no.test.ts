@@ -162,11 +162,11 @@ test('Phase 5A migration preserves old options and active version-1 game snapsho
     startQuestion(db, room.id, 100000);
     const tables = ['questions', 'answer_options', 'game_sessions', 'session_players'];
     const before = tables.map(table => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all());
-    const oldSchema = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'questions'").get()!.sql).replace("type IN ('single_choice', 'yes_no', 'multiple_choice')", "type = 'single_choice'");
+    const oldSchema = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'questions'").get()!.sql).replace("type IN ('single_choice', 'yes_no', 'multiple_choice', 'matching')", "type = 'single_choice'");
     db.exec('PRAGMA foreign_keys = OFF; BEGIN');
-    db.exec('CREATE TEMP TABLE saved_questions AS SELECT * FROM questions; DROP TABLE questions');
+    db.exec('DROP TABLE matching_pairs; CREATE TEMP TABLE saved_questions AS SELECT * FROM questions; DROP TABLE questions');
     db.exec(oldSchema);
-    db.exec('INSERT INTO questions SELECT * FROM saved_questions; DROP TABLE saved_questions; CREATE INDEX questions_round_position ON questions(round_id, position); DELETE FROM schema_migrations WHERE version IN (15, 16); COMMIT; PRAGMA foreign_keys = ON');
+    db.exec('INSERT INTO questions SELECT * FROM saved_questions; DROP TABLE saved_questions; CREATE INDEX questions_round_position ON questions(round_id, position); DELETE FROM schema_migrations WHERE version IN (15, 16, 18); COMMIT; PRAGMA foreign_keys = ON');
     db.close(); db = initializeDatabase(path);
     tables.forEach((table, index) => assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY id`).all(), before[index]));
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);

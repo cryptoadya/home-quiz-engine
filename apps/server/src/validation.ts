@@ -1,3 +1,4 @@
+import { listPairs, validTextSide } from './matching.js';
 import { DatabaseSync } from 'node:sqlite';
 import { listOptions, listQuestions } from './questions.js';
 import { getQuiz } from './quizzes.js';
@@ -9,6 +10,7 @@ export type ValidationProblem = {
   roundId?: string;
   questionId?: string;
   optionId?: string;
+  pairId?: string;
 };
 
 export type QuizValidation = { ready: boolean; problems: ValidationProblem[] };
@@ -43,7 +45,7 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
     for (const [questionIndex, question] of questions.entries()) {
       const label = `Question ${questionIndex + 1}`;
       const location = { roundId: round.id, questionId: question.id };
-      if (question.type !== 'single_choice' && question.type !== 'yes_no' && question.type !== 'multiple_choice') add('QUESTION_TYPE_UNSUPPORTED', `${label} must be Single Choice, Yes / No or Multiple Choice`, location);
+      if (question.type !== 'single_choice' && question.type !== 'yes_no' && question.type !== 'multiple_choice' && question.type !== 'matching') add('QUESTION_TYPE_UNSUPPORTED', `${label} must be Single Choice, Yes / No, Multiple Choice or Matching`, location);
       for (const [language, value] of [['RU', question.textRu], ['EN', question.textEn]] as const) {
         if (!value.trim()) add(`QUESTION_TEXT_${language}_MISSING`, `${label} is missing ${language === 'RU' ? 'Russian' : 'English'} text`, location);
         else if (value.length > 5000) add(`QUESTION_TEXT_${language}_TOO_LONG`, `${label} ${language === 'RU' ? 'Russian' : 'English'} text exceeds 5000 characters`, location);
@@ -53,6 +55,16 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
         add('QUESTION_TIMER_INVALID', `${label} answer time must be 1–3600 seconds`, location);
       }
 
+      if (question.type === 'matching') {
+        const pairs = listPairs(db, question.id);
+        if (pairs.length < 2) add('MATCHING_TOO_FEW_PAIRS', `${label} needs at least 2 complete pairs`, location);
+        for (const [index, pair] of pairs.entries()) {
+          for (const side of ['left', 'right'] as const) {
+            if (!validTextSide(pair[side], true)) add('MATCHING_SIDE_INCOMPLETE', `Pair ${index + 1} ${side} in ${label} needs RU/EN text of 1–500 characters; images are not supported yet`, { ...location, pairId: pair.id });
+          }
+        }
+        continue;
+      }
       const options = listOptions(db, question.id);
       if (question.type === 'yes_no' && options.length !== 2) add('YES_NO_OPTION_COUNT', `${label} (Yes / No) needs exactly 2 answer options`, location);
       if (question.type !== 'yes_no' && options.length < 2) add(`${question.type.toUpperCase()}_TOO_FEW_OPTIONS`, `${label} needs at least 2 answer options`, location);

@@ -1,8 +1,9 @@
+import { createPair } from './matching.js';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getRound } from './rounds.js';
 
-export type QuestionType = 'single_choice' | 'yes_no' | 'multiple_choice';
+export type QuestionType = 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching';
 export type Question = {
   id: string; roundId: string; type: QuestionType; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean;
@@ -50,6 +51,7 @@ export function createQuestion(db: DatabaseSync, roundId: string, type: Question
       show_options_on_screen, position, created_at, updated_at) VALUES (?, ?, ?, '', '', 1, NULL, 0,
       (SELECT COALESCE(MAX(position), -1) + 1 FROM questions WHERE round_id = ?), ?, ?)`).run(id, roundId, type, roundId, now, now);
     if (type === 'yes_no') normalizeYesNoOptions(db, id);
+    if (type === 'matching') { createPair(db, id); createPair(db, id); }
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return toQuestion(db.prepare('SELECT * FROM questions WHERE id = ?').get(id) as QuestionRow);
@@ -60,7 +62,7 @@ export function validateQuestionChanges(value: unknown): { changes: QuestionChan
   const input = value as Record<string, unknown>;
   const keys = ['type', 'textRu', 'textEn', 'points', 'answerTimeSeconds', 'showOptionsOnScreen'];
   if (Object.keys(input).length !== keys.length || Object.keys(input).some((key) => !keys.includes(key))) return { error: 'Provide all question fields.' };
-  if (input.type !== 'single_choice' && input.type !== 'yes_no' && input.type !== 'multiple_choice') return { error: 'Choose single_choice, yes_no or multiple_choice.' };
+  if (input.type !== 'single_choice' && input.type !== 'yes_no' && input.type !== 'multiple_choice' && input.type !== 'matching') return { error: 'Choose single_choice, yes_no, multiple_choice or matching.' };
   if (typeof input.textRu !== 'string' || typeof input.textEn !== 'string' || input.textRu.length > 5000 || input.textEn.length > 5000) return { error: 'Question text must be strings of at most 5000 characters.' };
   if (!Number.isSafeInteger(input.points) || (input.points as number) < 1) return { error: 'Points must be a positive integer.' };
   if (input.answerTimeSeconds !== null && (!Number.isInteger(input.answerTimeSeconds) || (input.answerTimeSeconds as number) < 1 || (input.answerTimeSeconds as number) > 3600)) return { error: 'Answer time must be null or 1–3600 seconds.' };
@@ -76,6 +78,11 @@ export function updateQuestion(db: DatabaseSync, roundId: string, id: string, ch
       changes.type, changes.textRu, changes.textEn, changes.points, changes.answerTimeSeconds,
       Number(changes.showOptionsOnScreen), new Date().toISOString(), roundId, id,
     );
+    if (previous?.type !== changes.type && (previous?.type === 'matching' || changes.type === 'matching')) {
+      db.prepare('DELETE FROM answer_options WHERE question_id = ?').run(id);
+      db.prepare('DELETE FROM matching_pairs WHERE question_id = ?').run(id);
+      if (changes.type === 'matching') { createPair(db, id); createPair(db, id); }
+    }
     if (changes.type === 'yes_no' && previous?.type !== 'yes_no') normalizeYesNoOptions(db, id);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }

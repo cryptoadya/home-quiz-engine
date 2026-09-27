@@ -433,3 +433,51 @@ test('lost Submit response can retry and recover the original choice; stale refr
   assert.ok(view.getByText('Answer submitted'));
   assert.equal((view.getByRole('radio', { name: 'Berry' }) as HTMLInputElement).disabled, true);
 });
+
+for (const audience of ['host', 'screen']) test(`${audience} Reveal shows correct options even when hidden during question; closure overrides`, async () => {
+  const live = socket();
+  const reveal = { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...questionGame, state: 'ANSWER_REVEAL', showOptionsOnScreen: false,
+    answers: { answered: 2, expected: 2 }, statistics: { correct: 1, wrong: 1, unanswered: 0 },
+    options: [{ textRu: 'Верный', textEn: 'Right', isCorrect: true }, { textRu: 'Неверный', textEn: 'Wrong', isCorrect: false }] } };
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'ANSWERING' }, game: { ...questionGame, state: 'ANSWERING', timer: answerTimer } });
+  const view = show(`/${audience}/room`);
+  await waitFor(() => assert.ok(view.getByRole('timer')));
+  await act(async () => { live.emit('lobby:state', reveal); });
+  assert.ok(view.getByText(/Correct answer/));
+  assert.ok(view.getByText('Right'));
+  assert.ok(view.getByText(/Answered: 2 \/ 2/));
+  assert.equal(view.queryByRole('timer'), null);
+  assert.equal(view.queryByRole('button', { name: /Next|Reveal/ }), null);
+  await act(async () => { live.emit('lobby:state', { ...reveal, room: { ...reveal.room, closedAt: 'now' } }); });
+  assert.equal(view.queryByText('Right'), null);
+  assert.ok(view.getByText(/Room closed/));
+});
+
+for (const [outcome, language, label, points] of [
+  ['correct', 'en', 'Correct! +3', 3], ['wrong', 'en', 'Incorrect', 0], ['unanswered', 'en', 'No answer', 0],
+  ['correct', 'ru', 'Верно! +3', 3], ['wrong', 'ru', 'Неверно', 0], ['unanswered', 'ru', 'Нет ответа', 0],
+] as const) test(`Player ${language} ${outcome} realtime Reveal and refresh restore only personal result`, async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let revealed = false;
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: revealed ? 'ANSWER_REVEAL' : 'ANSWERING' }, player: { ...player, language }, active: true,
+    game: { state: revealed ? 'ANSWER_REVEAL' : 'ANSWERING', questionId: 'q', text: 'Pick',
+      options: [{ id: 'a', text: 'Apple' }, { id: 'b', text: 'Berry' }], timer: answerTimer,
+      submission: outcome === 'unanswered' ? { submitted: false } : { submitted: true, optionId: outcome === 'correct' ? 'a' : 'b' },
+      ...(revealed ? { correctOptionId: 'a', result: { outcome, points } } : {}) } });
+  let view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Pick')));
+  revealed = true;
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWER_REVEAL' } }); });
+  await waitFor(() => assert.ok(view.getByText(label)));
+  assert.ok(view.getByText(language === 'ru' ? `Очки: ${points}` : `Points: ${points}`));
+  assert.ok(view.getByText(language === 'ru' ? 'Верный ответ: Apple' : 'Correct answer: Apple'));
+  assert.equal(view.queryByRole('radio'), null);
+  assert.equal(view.queryByRole('button', { name: /Submit|Отправить/ }), null);
+  assert.doesNotMatch(view.container.innerHTML, /rank|leaderboard/i);
+  view.unmount(); view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText(label)));
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWER_REVEAL', closedAt: 'now' } }); });
+  assert.equal(view.queryByText(label), null);
+  assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
+});

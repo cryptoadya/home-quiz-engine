@@ -1,3 +1,4 @@
+import { getRevealStats, getPlayerResult } from './reveal.js';
 import { getSubmission, getAnswerCounts } from './answers.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { currentContent } from './snapshot.js';
@@ -19,15 +20,16 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   };
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
-  const timer = room.state === 'ANSWERING' ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
-  const common = { state: room.state as 'QUESTION' | 'ANSWERING', ...timer, ...numbering, questionNumber: questionIndex! + 1,
+  const reveal = room.state === 'ANSWER_REVEAL';
+  const timer = room.state === 'ANSWERING' || reveal ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
+  const common = { state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
     textRu: question.textRu, textEn: question.textEn };
   if (audience === 'host') return { ...common, points: question.points,
     answerTimeSeconds: effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds),
     options: question.options.map(option => ({ textRu: option.textRu, textEn: option.textEn, isCorrect: option.isCorrect })),
   };
   return { ...common, showOptionsOnScreen: question.showOptionsOnScreen,
-    ...(question.showOptionsOnScreen ? { options: question.options.map(option => ({ textRu: option.textRu, textEn: option.textEn })) } : {}),
+    ...(question.showOptionsOnScreen || reveal ? { options: question.options.map(option => ({ textRu: option.textRu, textEn: option.textEn, ...(reveal ? { isCorrect: option.isCorrect } : {}) })) } : {}),
   };
 }
 
@@ -65,16 +67,18 @@ function readTimer(db: DatabaseSync, roomId: string, now: number) {
 // Only call after reconnectPlayer verifies the token, room and locked roster.
 export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' | 'en', playerId: string, now = Date.now()) {
   const room = getRoom(db, roomId);
-  if (!room || room.closedAt || room.state !== 'ANSWERING') return null;
+  if (!room || room.closedAt || (room.state !== 'ANSWERING' && room.state !== 'ANSWER_REVEAL')) return null;
   const { round, questionIndex } = currentContent(db, roomId);
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
+  const reveal = room.state === 'ANSWER_REVEAL';
   return {
-    state: 'ANSWERING' as const, questionId: question.id,
+    state: room.state, questionId: question.id,
+    ...(reveal ? { result: getPlayerResult(db, roomId, question.id, playerId), correctOptionId: question.options.find(option => option.isCorrect)!.id } : {}),
     submission: getSubmission(db, roomId, question.id, playerId),
     text: language === 'ru' ? question.textRu : question.textEn,
     options: question.options.map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),
-    timer: readTimer(db, roomId, now),
+    ...(reveal ? {} : { timer: readTimer(db, roomId, now) }),
   };
 }
 

@@ -1,9 +1,10 @@
+import { PlayerRevealContent } from './PlayerReveal';
 import { PlayerAnswer } from './PlayerAnswer';
-import { useLobby, type Room, type PlayerQuestion } from './lobby';
+import { useLobby, type Room, type PlayerQuestion, type PlayerReveal } from './lobby';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean; game?: PlayerQuestion | null };
+type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean; game?: PlayerQuestion | PlayerReveal | null };
 const storageKey = (code: string) => `quiz-player:${code}`;
 
 export function Play() {
@@ -65,7 +66,7 @@ function PlayerRoom({ code }: { code: string }) {
   // Socket metadata invalidates the authenticated HTTP projection, including on reconnect.
   // The token stays in HTTP and is never part of a socket subscription.
   useEffect(() => {
-    if (!live || live.room.closedAt || live.room.state !== 'ANSWERING' || !token) return;
+    if (!live || live.room.closedAt || (live.room.state !== 'ANSWERING' && live.room.state !== 'ANSWER_REVEAL') || !token) return;
     let active = true;
     void fetch(`/api/rooms/${encodeURIComponent(live.room.id)}/reconnect`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
@@ -107,8 +108,8 @@ function PlayerRoom({ code }: { code: string }) {
       <h2>{currentRoom?.quizTitle}</h2>
       <p>{currentRoom?.code}</p>
       <p>{identity.player.name}</p>
-      {isActive && currentRoom?.state === 'ANSWERING' ? <section>
-        {identity.game && token ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
+      {isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
+        {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
           token={token} roomId={identity.room.id} language={identity.player.language} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
         {error && <button onClick={() => setRetry(value => value + 1)}>Retry</button>}
       </section> : <p role="status">{isActive

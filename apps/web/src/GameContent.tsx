@@ -12,13 +12,14 @@ export function RoundIntroContent({ round }: { round: RoundIntro }) {
 
 export function QuestionContent({ question, host = false }: { question: CurrentQuestion; host?: boolean }) {
   return <>
-    {question.state === 'ANSWERING' && question.answers && <p>Ответили / Answered: {question.answers.answered} / {question.answers.expected}</p>}
+    {question.answers && <p>Ответили / Answered: {question.answers.answered} / {question.answers.expected}</p>}
+    {question.statistics && <p>Верно / Correct: {question.statistics.correct} · Неверно / Wrong: {question.statistics.wrong} · Нет ответа / Unanswered: {question.statistics.unanswered}</p>}
     <p>Раунд {question.roundNumber} / Round {question.roundNumber} · Вопрос / Question {question.questionNumber} / {question.questionCount}</p>
     <h2 lang="ru">{question.textRu}</h2>
     <h2 lang="en">{question.textEn}</h2>
-    {(host || question.showOptionsOnScreen) && <ol className="game-options">{question.options?.map((option, index) => <li key={index}>
+    {(host || question.showOptionsOnScreen || question.state === 'ANSWER_REVEAL') && <ol className="game-options">{question.options?.map((option, index) => <li key={index} className={option.isCorrect ? 'correct-option' : undefined}>
       <span lang="ru">{option.textRu}</span> / <span lang="en">{option.textEn}</span>
-      {host && option.isCorrect && <> — <strong>Correct answer</strong></>}
+      {(host || question.state === 'ANSWER_REVEAL') && option.isCorrect && <> — <strong>{host ? 'Correct answer' : 'Верный ответ / Correct answer'}</strong></>}
     </li>)}</ol>}
   </>;
 }

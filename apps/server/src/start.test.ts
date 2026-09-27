@@ -426,7 +426,7 @@ for (const offset of [-1, 0, 1]) test(`submission deadline offset ${offset} is d
     const response = await api.post(`/api/rooms/${room.id}/answers`).send({ token: identities[0].token, questionId: q.id, optionId: q.options[0].id }).expect(offset < 0 ? 200 : 409);
     if (offset >= 0) assert.equal(response.body.code, 'DEADLINE_REACHED');
     assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, offset < 0 ? 1 : 0);
-    assert.equal(db.prepare('SELECT state FROM game_sessions').get()!.state, 'ANSWERING');
+    assert.equal(db.prepare('SELECT state FROM game_sessions').get()!.state, offset < 0 ? 'ANSWER_REVEAL' : 'ANSWERING');
   } finally { db.close(); }
 });
 
@@ -479,4 +479,150 @@ test('Phase 3B migration preserves every phase, frozen state, roster and timer w
     assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, 0);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('last accepted answer reveals immediately and scores the locked roster once', async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, room, rounds, identities } = await lobby(db, 2);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const q = rounds[0].questions[0];
+    for (let i = 0; i < 2; i++) {
+      await api.post(`/api/rooms/${room.id}/answers`).send({ token: identities[i].token, questionId: q.id, optionId: q.options[i].id }).expect(200);
+      assert.equal((await api.get(`/api/rooms/${room.id}`)).body.state, i === 0 ? 'ANSWERING' : 'ANSWER_REVEAL');
+    }
+    const scores = db.prepare('SELECT awarded_points FROM question_scores ORDER BY awarded_points').all();
+    assert.deepEqual(scores.map(s => s.awarded_points), [0, 3]);
+    assert.ok(Date.now() < Date.parse(String(db.prepare('SELECT answer_deadline_at FROM game_sessions').get()!.answer_deadline_at)));
+  } finally { db.close(); }
+});
+
+for (const count of [0, 1, 2]) test(`timeout freezes ${count} answers, scores all players, and restores private Reveal after restart`, async () => {
+  const { startQuestion, getPlayerGame, getSurfaceState } = await import('./game.js');
+  const { submitAnswer } = await import('./answers.js');
+  const { completeQuestion } = await import('./reveal.js');
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-reveal-'));
+  const path = join(directory, 'quiz.sqlite');
+  let db = initializeDatabase(path);
+  try {
+    const { api, room, rounds, identities, quiz } = await lobby(db, 2);
+    const third = (await api.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Charlie', language: 'ru' }).expect(201)).body;
+    identities.push(third);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    const now = 100000;
+    startQuestion(db, room.id, now);
+    const q = rounds[0].questions[0];
+    for (let i = 0; i < count; i++) {
+      assert.ok('submission' in submitAnswer(db, room.id, { token: identities[i].token, questionId: q.id, optionId: q.options[i].id }, () => now + 11999));
+    }
+    for (const audience of ['screen', 'player'] as const) assert.doesNotMatch(JSON.stringify(getSurfaceState(db, room.id, audience)), /isCorrect|correctOptionId|awarded_points/);
+    assert.doesNotMatch(JSON.stringify(getPlayerGame(db, room.id, 'en', identities[0].player.id)), /isCorrect|correctOptionId|outcome/);
+    assert.equal(completeQuestion(db, room.id, () => now + 11999), false);
+    assert.equal('status' in submitAnswer(db, room.id, { token: third.token, questionId: q.id, optionId: q.options[0].id }, () => now + 12000), true);
+    db.exec('UPDATE questions SET points = 99; UPDATE answer_options SET is_correct = 0');
+    await api.delete(`/api/quizzes/${quiz.id}`).expect(204);
+    assert.equal(completeQuestion(db, room.id, () => now + 12000), true);
+    assert.equal(completeQuestion(db, room.id, () => now + 13000), false);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, count);
+    const scores = db.prepare('SELECT player_id, result, awarded_points FROM question_scores').all();
+    assert.equal(scores.length, 3);
+    assert.deepEqual(scores.map(s => s.awarded_points).sort(), count === 2 ? [0, 0, 3] : [0, 0, 0]);
+    assert.equal(scores.filter(s => s.result === 'unanswered').length, 3 - count);
+    assert.throws(() => db.exec('INSERT INTO question_scores SELECT * FROM question_scores'), /UNIQUE/);
+    assert.equal(db.prepare('SELECT sum(awarded_points) AS total FROM question_scores WHERE player_id = ?').get(identities[1].player.id)!.total, count === 2 ? 3 : 0);
+    const screen = getSurfaceState(db, room.id, 'screen') as any;
+    assert.equal(screen.game.options.filter((o: any) => o.isCorrect).length, 1);
+    assert.deepEqual(screen.game.statistics, { correct: count === 2 ? 1 : 0, wrong: count >= 1 ? 1 : 0, unanswered: 3 - count });
+    assert.doesNotMatch(JSON.stringify(screen.game), /player_id|option_id|submission|token/);
+    assert.equal((getSurfaceState(db, room.id, 'host') as any).game.points, 3);
+    const own = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token, playerId: identities[1].player.id }).expect(200)).body.game;
+    assert.equal(own.result.outcome, count ? 'wrong' : 'unanswered');
+    assert.equal(own.result.points, 0);
+    assert.equal(own.correctOptionId, q.options[1].id);
+    assert.doesNotMatch(JSON.stringify(own), new RegExp(identities[1].player.id + '|rank|leaderboard'));
+    db.close(); db = initializeDatabase(path);
+    assert.equal(completeQuestion(db, room.id), false);
+    assert.deepEqual(getPlayerGame(db, room.id, 'en', identities[0].player.id), own);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM question_scores').get()!.n, 3);
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('deadline manager recovers persisted deadlines, rechecks early wakes and ignores stale/closed callbacks', async () => {
+  const { createDeadlineManager } = await import('./deadlines.js');
+  const { startQuestion } = await import('./game.js');
+  const directory = mkdtempSync(join(tmpdir(), 'quiz-deadlines-'));
+  const path = join(directory, 'quiz.sqlite');
+  let db = initializeDatabase(path);
+  try {
+    const { api, room } = await lobby(db, 2);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    startQuestion(db, room.id, 100000);
+    db.close(); db = initializeDatabase(path);
+    let now = 105000;
+    const jobs: { callback: () => void; delay: number; cancelled: boolean }[] = [];
+    let broadcasts = 0;
+    const options = { clock: () => now, schedule: (callback: () => void, delay: number) => {
+      const job = { callback, delay, cancelled: false }; jobs.push(job); return () => { job.cancelled = true; };
+    } };
+    let manager = createDeadlineManager(db, () => broadcasts++, options);
+    manager.recover();
+    assert.equal(jobs[0].delay, 7000);
+    jobs[0].callback(); // Early wake must not reveal.
+    assert.equal(broadcasts, 0);
+    assert.equal(jobs[1].delay, 7000);
+    manager.stop();
+    assert.equal(jobs[1].cancelled, true);
+    db.close(); db = initializeDatabase(path);
+    now = 112000;
+    manager = createDeadlineManager(db, () => broadcasts++, options);
+    manager.recover(); // Restart with overdue question completes immediately.
+    assert.equal(broadcasts, 1);
+    jobs[0].callback(); jobs[1].callback(); manager.recover();
+    assert.equal(broadcasts, 1);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM question_scores').get()!.n, 2);
+    manager.stop();
+    const second = await lobby(db, 2);
+    await second.api.post(`/api/rooms/${second.room.id}/start`).expect(200);
+    await second.api.post(`/api/rooms/${second.room.id}/start-round`).expect(200);
+    startQuestion(db, second.room.id, now);
+    manager = createDeadlineManager(db, () => broadcasts++, options);
+    manager.recover();
+    const stale = jobs.at(-1)!;
+    await second.api.post(`/api/rooms/${second.room.id}/close`).expect(200);
+    manager.sync(second.room.id);
+    now += 12000; stale.callback();
+    assert.equal(stale.cancelled, true);
+    assert.equal(broadcasts, 1);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM question_scores WHERE session_id = ?').get(second.room.id)!.n, 0);
+    manager.stop();
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('Reveal scoring failure rolls back final submission and partial scores; retry completes once', async () => {
+  const { submitAnswer } = await import('./answers.js');
+  const { completeQuestion } = await import('./reveal.js');
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, room, rounds, identities } = await lobby(db, 2);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
+    const q = rounds[0].questions[0];
+    const answer = (i: number) => ({ token: identities[i].token, questionId: q.id, optionId: q.options[i].id });
+    submitAnswer(db, room.id, answer(0));
+    db.exec("CREATE TRIGGER fail_score AFTER INSERT ON question_scores BEGIN SELECT RAISE(ABORT, 'score failure'); END");
+    assert.throws(() => submitAnswer(db, room.id, answer(1)), /score failure/);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, 1);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM question_scores').get()!.n, 0);
+    assert.equal(db.prepare('SELECT state FROM game_sessions').get()!.state, 'ANSWERING');
+    db.exec('DROP TRIGGER fail_score');
+    assert.ok('submission' in submitAnswer(db, room.id, answer(1)));
+    assert.equal(completeQuestion(db, room.id), false);
+    assert.deepEqual(submitAnswer(db, room.id, { ...answer(1), optionId: q.options[0].id }), { inserted: false, submission: { submitted: true, optionId: q.options[1].id } });
+    assert.equal(db.prepare('SELECT count(*) AS n FROM question_scores').get()!.n, 2);
+  } finally { db.close(); }
 });

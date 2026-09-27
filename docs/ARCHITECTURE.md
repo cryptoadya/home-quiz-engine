@@ -176,16 +176,15 @@ it does not introduce organizer authentication.
 `GET /api/rooms/:roomId/game/host` and `/game/screen` restore each surface from
 SQLite. The existing `lobby:state` protocol broadcasts projections after commit
 and resends them on subscription/reconnect. Player's authenticated HTTP reconnect
-restores its safe state. Closed-room behavior takes precedence. Phase 3B extends
-this foundation with Answering and timers below; scoring, reveal and further
-navigation remain reserved for later slices.
+restores its safe state. Closed-room behavior takes precedence. Phases 3B–3D extend this foundation with Answering, timers, submissions and
+Reveal below; further navigation remains reserved for later slices.
 
 ## Answer timer (Phase 3B)
 
 Migration 8 adds `ANSWERING`, `answer_started_at` and `answer_deadline_at` (UTC ISO
 timestamps). Existing navigation, snapshots and roster survive unchanged with null
-timers. SQLite requires both valid, ordered timestamps for Answering and null
-timer fields in every other state.
+timers. SQLite requires valid, ordered timestamps for Answering; migration 10
+also retains these timestamps in Reveal. Other states require null timers.
 
 `POST /api/rooms/:roomId/start-question` runs one `BEGIN IMMEDIATE` transaction:
 require an open `QUESTION`, resolve the current frozen question and its override
@@ -193,8 +192,8 @@ or snapshot default duration, persist server start/deadline, and enter `ANSWERIN
 Only after commit does it broadcast. Repeats return 409 and cannot reset the timer.
 `timer.ts` centralizes duration, deadline and expiry calculations with explicit
 `now` inputs. Expiry is computed as `now >= deadline`, with remaining milliseconds
-clamped to zero. There is no expiry scheduler or DB mutation: state stays
-`ANSWERING` at zero until later phases implement completion/reveal.
+clamped to zero. Phase 3B only calculated expiry; Phase 3D adds authoritative completion and
+scheduled wakeups below.
 
 Host/Screen projections carry `serverNow`, `deadlineAt`, `durationSeconds`,
 `remainingMs` and `expired`. Clients anchor server time to a monotonic browser
@@ -239,6 +238,50 @@ when its displayed countdown reaches zero. The server remains authoritative.
 Existing Host correctness display is unchanged; Player/Screen receive no
 correctness or individual answer mappings.
 
-Every new acceptance broadcasts updated state. Neither all players submitting nor
-timeout transitions the session: it deliberately remains `ANSWERING`. Completion,
-Reveal, scoring, disconnect handling and further navigation belong to later slices.
+Every new acceptance broadcasts updated state after commit. Phase 3D adds
+completion and scoring to this transaction; disconnect handling and further
+navigation remain reserved for later slices.
+
+
+## Automatic Reveal and scoring (Phase 3D)
+
+Completion is `answered === expected OR serverNow >= answer_deadline_at`, with
+expected responders equal to `session_players.in_roster = 1`. A new accepted
+submission checks completion inside its existing `BEGIN IMMEDIATE` transaction.
+The deadline manager checks in its own write transaction. Both require the same
+open `ANSWERING` question; subsequent attempts are no-ops. Accepted retries still
+return the original selection in Reveal. New submissions require server time
+strictly before the deadline after acquiring the write lock. Thus a pre-deadline
+acceptance counts, an exact-deadline submission fails, and scores cannot commit
+without the Reveal transition (or vice versa).
+
+Migration 10 adds `ANSWER_REVEAL` and `question_scores`, uniquely keyed by
+`(session_id, question_id, player_id)`. Completion inserts one result for every
+locked-roster player: `correct`, `wrong`, or `unanswered`, plus integer
+`awarded_points`. Correct answers earn the frozen question's points; all others
+receive zero. No synthetic answer rows are inserted. Correctness comes only from
+the frozen option ID, never editor data or client claims. These active-session
+rows support later `SUM(awarded_points)` totals; they are not detailed game history.
+Reveal leaves both navigation indexes and the original start/deadline timestamps
+unchanged. The UI stops showing the countdown; retained timestamps are context,
+not an active timer. No next-question transition is implemented.
+
+`deadlines.ts` owns cancellable in-process timeouts scheduled from persisted
+deadlines. A wakeup re-reads SQLite and checks question identity, closure, state
+and current server time; early wakes reschedule. SQLite remains authoritative.
+`createQuizServer` recovers open Answering sessions before serving requests,
+completes overdue/all-answered sessions immediately and schedules the rest.
+Mutations resync the affected timer; Reveal/closure cancel it, stale callbacks
+are ignored, and shutdown clears timers. Clock/scheduling dependencies allow
+deterministic recovery tests without waiting real durations.
+
+Broadcasts occur after commit. Host sees bilingual content, correct option,
+question points and aggregate answered/correct/wrong/unanswered counts. Screen
+receives correctness only in Reveal and then shows all options even when
+`showOptionsOnScreen` is false; neither surface receives per-player selections.
+Player sockets still carry only safe room metadata. A Reveal event invalidates
+the authenticated HTTP reconnect projection, which returns only that token's
+selected option, correct option ID, localized content and durable personal result
+with earned points. RU/EN result UI has no rank or answer controls. Refresh and
+reconnect restore the same persisted result; closed-room display takes precedence.
+The existing trusted-LAN Host/Screen surface boundary is unchanged.

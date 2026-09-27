@@ -1,3 +1,4 @@
+import { createDeadlineManager } from './deadlines.js';
 import { createServer } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { Server } from 'socket.io';
@@ -8,11 +9,16 @@ import { getSurfaceState, type Audience } from './game.js';
 const channel = (roomId: string, audience: Audience) => `lobby:${roomId}:${audience}`;
 
 export function createQuizServer(db: DatabaseSync) {
-  const app = createApp(db, roomId => {
+  function broadcast(roomId: string) {
     for (const audience of ['host', 'screen', 'player'] as const) {
       const state = getSurfaceState(db, roomId, audience);
       if (state) io.to(channel(roomId, audience)).emit('lobby:state', state);
     }
+  }
+  const deadlines = createDeadlineManager(db, broadcast);
+  const app = createApp(db, roomId => {
+    deadlines.sync(roomId);
+    broadcast(roomId);
   });
   const server = createServer(app);
   const io = new Server(server);
@@ -36,5 +42,7 @@ export function createQuizServer(db: DatabaseSync) {
       socket.emit('lobby:state', state);
     });
   });
-  return { app, server, io };
+  deadlines.recover();
+  server.on('close', () => deadlines.stop());
+  return { app, server, io, deadlines };
 }

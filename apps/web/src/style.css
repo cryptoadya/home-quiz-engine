@@ -74,3 +74,5 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .answer-choices label { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; cursor: pointer; }
 .answer-choices input { width: auto; flex-shrink: 0; }
 .answer-choices label:has(input:checked) { outline: 2px solid currentColor; border-radius: 0.4rem; }
+
+.correct-option { border: 2px solid #23834a; background: #eaf7ee; padding: 0.75rem; color: #153c24; }

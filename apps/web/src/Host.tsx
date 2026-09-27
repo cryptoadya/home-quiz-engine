@@ -50,7 +50,7 @@ export function Host() {
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       <ul>{state?.players?.map(player => <li key={player.id}>{player.name} — {player.language.toUpperCase()}</li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
-      <p>State: <span>{room.state === 'ROUND_INTRO' ? 'Round Intro' : room.state === 'QUESTION' ? 'Question' : room.state === 'ANSWERING' ? 'Answering' : 'Lobby'}</span></p>
+      <p>State: <span>{room.state === 'ROUND_INTRO' ? 'Round Intro' : room.state === 'QUESTION' ? 'Question' : room.state === 'ANSWER_REVEAL' ? 'Answer Reveal' : room.state === 'ANSWERING' ? 'Answering' : 'Lobby'}</span></p>
       {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
         <button onClick={() => void start()} disabled={busy}>Start Game</button>}
       {!room.closedAt && state?.game?.state === 'ROUND_INTRO' && <section className="game-content">
@@ -58,7 +58,7 @@ export function Host() {
         <p>Questions: {state.game.questionCount}</p>
         <button onClick={() => void start('start-round')} disabled={busy}>Start Round</button>
       </section>}
-      {!room.closedAt && (state?.game?.state === 'QUESTION' || state?.game?.state === 'ANSWERING') && <section className="game-content">
+      {!room.closedAt && (state?.game?.state === 'QUESTION' || state?.game?.state === 'ANSWERING' || state?.game?.state === 'ANSWER_REVEAL') && <section className="game-content">
         <QuestionContent question={state.game} host />
         <p>Points: {state.game.points}</p>
         <p>Answer time: {state.game.answerTimeSeconds} seconds</p>

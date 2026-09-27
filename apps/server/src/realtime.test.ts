@@ -185,10 +185,14 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
     for (const [index, identity] of identities.entries()) {
       const restored = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body;
       const updates = sockets.map(nextState);
-      const answer = { token: identity.token, questionId: restored.game.questionId, optionId: restored.game.options[0].id };
+      const answer = { token: identity.token, questionId: restored.game.questionId, optionId: restored.game.options[index].id };
       await api.post(`/api/rooms/${room.id}/answers`).send(answer).expect(200);
       for (const [audience, payload] of (await Promise.all(updates)).entries()) {
-        assert.equal(payload.room.state, 'ANSWERING');
+        assert.equal(payload.room.state, index === 1 ? 'ANSWER_REVEAL' : 'ANSWERING');
+        if (index === 1 && audience === 1) {
+          assert.equal(payload.game.options.filter((o: any) => o.isCorrect).length, 1);
+          assert.deepEqual(payload.game.statistics, { correct: 1, wrong: 1, unanswered: 0 });
+        }
         if (audience < 2) assert.deepEqual(payload.game.answers, { answered: index + 1, expected: 2 });
         else assert.deepEqual(Object.keys(payload), ['room']);
         assert.doesNotMatch(JSON.stringify(payload), /optionId|playerId|submitted|token/);
@@ -201,5 +205,52 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
     sockets.forEach(socket => socket.disconnect());
     await new Promise<void>(resolve => io.close(() => resolve()));
     db.close();
+  }
+});
+
+test('persisted deadline automatically broadcasts Reveal without further HTTP mutations', async () => {
+  const db = initializeDatabase(':memory:');
+  const { createRound } = await import('./rounds.js');
+  const { createQuestion, createOption } = await import('./questions.js');
+  const quiz = createQuiz(db);
+  const round = createRound(db, quiz.id);
+  const question = createQuestion(db, round.id);
+  db.prepare("UPDATE questions SET text_ru = 'Вопрос', text_en = 'Question', answer_time_seconds = 1 WHERE id = ?").run(question.id);
+  for (const correct of [1, 0]) {
+    const option = createOption(db, question.id);
+    db.prepare("UPDATE answer_options SET text_ru = 'Ответ', text_en = 'Answer', is_correct = ? WHERE id = ?").run(correct, option.id);
+  }
+  const { server, io } = createQuizServer(db);
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const api = request(server);
+  const sockets: Socket[] = [];
+  try {
+    const room = (await api.post(`/api/quizzes/${quiz.id}/rooms`).expect(201)).body;
+    const identities = [];
+    for (const name of ['Alice', 'Bob']) identities.push((await api.post(`/api/rooms/code/${room.code}/players`).send({ name, language: 'en' }).expect(201)).body);
+    await api.post(`/api/rooms/${room.id}/start`).expect(200);
+    await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
+    for (const audience of ['host', 'screen', 'player']) {
+      const socket = connect(`http://127.0.0.1:${(server.address() as { port: number }).port}`, { transports: ['websocket'], forceNew: true });
+      sockets.push(socket); await once(socket, 'connect');
+      const state = nextState(socket); socket.emit('lobby:subscribe', { roomId: room.id, audience }); await state;
+    }
+    let updates = sockets.map(nextState);
+    await api.post(`/api/rooms/${room.id}/start-question`).expect(200); await Promise.all(updates);
+    const game = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token })).body.game;
+    updates = sockets.map(nextState);
+    await api.post(`/api/rooms/${room.id}/answers`).send({ token: identities[0].token, questionId: game.questionId, optionId: game.options[0].id }).expect(200);
+    await Promise.all(updates);
+    const reveals = await Promise.all(sockets.map(nextState)); // Actual scheduled wakeup, no polling/mutations.
+    for (const reveal of reveals) assert.equal(reveal.room.state, 'ANSWER_REVEAL');
+    assert.deepEqual(reveals[1].game.statistics, { correct: 1, wrong: 0, unanswered: 1 });
+    assert.deepEqual(Object.keys(reveals[2]), ['room']);
+    for (let i = 0; i < 2; i++) {
+      const own = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[i].token })).body.game;
+      assert.deepEqual(own.result, { outcome: i === 0 ? 'correct' : 'unanswered', points: i === 0 ? 1 : 0 });
+    }
+  } finally {
+    sockets.forEach(socket => socket.disconnect());
+    await new Promise<void>(resolve => io.close(() => resolve())); db.close();
   }
 });

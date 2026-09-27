@@ -358,7 +358,7 @@ for (const state of ['manual', 'closed', 'submitted', 'excluded', 'missing']) te
     if (state === 'manual') pause.pauseGame(db, f.room.id);
     else pause.autoPauseForDisconnectedPlayer(db, f.room.id, f.identities[0].player.id);
     if (state === 'closed') await f.api.post(`${f.root}/close`).expect(200);
-    if (state === 'submitted') db.prepare('INSERT INTO player_answers VALUES (?, ?, ?, ?, ?)').run(f.room.id, f.identities[0].player.id, f.question.id, JSON.stringify([f.options[0].id]), new Date().toISOString());
+    if (state === 'submitted') db.prepare('INSERT INTO player_answers VALUES (?, ?, ?, ?, ?)').run(f.room.id, f.identities[0].player.id, f.question.id, JSON.stringify({ kind: 'options', optionIds: [f.options[0].id] }), new Date().toISOString());
     if (state === 'excluded') db.prepare('INSERT INTO question_exclusions VALUES (?, ?, ?)').run(f.room.id, f.question.id, f.identities[0].player.id);
     const before = row(db, f.room.id);
     const api = request(createApp(db, () => {}, () => true));

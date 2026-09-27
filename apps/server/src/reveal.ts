@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { getAnswerCounts } from './answers.js';
+import { matchingContent } from './matching-game.js';
+import { getAnswerCounts, type StoredAnswer } from './answers.js';
 import { currentContent } from './snapshot.js';
 
 // Caller owns BEGIN IMMEDIATE. Answers, scores and transition commit together.
@@ -11,9 +12,8 @@ export function completeQuestionInTransaction(db: DatabaseSync, roomId: string, 
   const { round, questionIndex } = currentContent(db, roomId);
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
-  if (question.type === 'matching') return false;
   if (expectedQuestionId && question.id !== expectedQuestionId) return false;
-  const players = db.prepare(`SELECT p.id, a.option_ids_json, e.player_id AS excluded FROM session_players p
+  const players = db.prepare(`SELECT p.id, a.answer_json, e.player_id AS excluded FROM session_players p
     LEFT JOIN player_answers a ON a.session_id = p.session_id AND a.player_id = p.id AND a.question_id = ?
     LEFT JOIN question_exclusions e ON e.session_id = p.session_id AND e.player_id = p.id AND e.question_id = ?
     WHERE p.session_id = ? AND p.in_roster = 1`).all(question.id, question.id, roomId);
@@ -22,9 +22,11 @@ export function completeQuestionInTransaction(db: DatabaseSync, roomId: string, 
   const correct = question.options.filter(option => option.isCorrect).map(option => option.id);
   const insert = db.prepare('INSERT INTO question_scores (session_id, question_id, player_id, result, awarded_points) VALUES (?, ?, ?, ?, ?)');
   for (const player of players) {
-    const selected: string[] = player.option_ids_json === null ? [] : JSON.parse(String(player.option_ids_json));
-    const result = player.excluded !== null || player.option_ids_json === null ? 'unanswered'
-      : selected.length === correct.length && correct.every(id => selected.includes(id)) ? 'correct' : 'wrong';
+    const answer = player.answer_json === null ? null : JSON.parse(String(player.answer_json)) as StoredAnswer;
+    const exact = answer?.kind === 'matching' && question.type === 'matching'
+      ? answer.mapping.length === question.pairs!.length && matchingContent(roomId, question).correctMapping.every(pair => answer.mapping.some(entry => entry.leftId === pair.leftId && entry.rightId === pair.rightId))
+      : answer?.kind === 'options' && question.type !== 'matching' && answer.optionIds.length === correct.length && correct.every(id => answer.optionIds.includes(id));
+    const result = player.excluded !== null || answer === null ? 'unanswered' : exact ? 'correct' : 'wrong';
     insert.run(roomId, question.id, player.id, result, result === 'correct' ? question.points : 0);
   }
   // Retain navigation and original timer timestamps as completed-question context.

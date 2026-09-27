@@ -1,16 +1,20 @@
+import { matchingContent, validMapping, type Mapping } from './matching-game.js';
 import { completeQuestionInTransaction } from './reveal.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { currentContent } from './snapshot.js';
 import { getRoom } from './rooms.js';
 import { reconnectPlayer } from './players.js';
 
-type Submission = { submitted: false } | { submitted: true; optionId: string } | { submitted: true; optionIds: string[] };
+export type StoredAnswer = { kind: 'options'; optionIds: string[] } | { kind: 'matching'; mapping: Mapping };
+type Submission = { submitted: false } | { submitted: true; optionId: string } | { submitted: true; optionIds: string[] } | { submitted: true; mapping: Mapping };
 
 export function getSubmission(db: DatabaseSync, roomId: string, questionId: string, playerId: string): Submission {
-  const row = db.prepare('SELECT option_ids_json FROM player_answers WHERE session_id = ? AND question_id = ? AND player_id = ?')
+  const row = db.prepare('SELECT answer_json FROM player_answers WHERE session_id = ? AND question_id = ? AND player_id = ?')
     .get(roomId, questionId, playerId);
   if (!row) return { submitted: false };
-  const optionIds = JSON.parse(String(row.option_ids_json)) as string[];
+  const answer = JSON.parse(String(row.answer_json)) as StoredAnswer;
+  if (answer.kind === 'matching') return { submitted: true, mapping: answer.mapping };
+  const optionIds = answer.optionIds;
   const { round, questionIndex } = currentContent(db, roomId);
   return round.questions[questionIndex!].type === 'multiple_choice' ? { submitted: true, optionIds } : { submitted: true, optionId: optionIds[0] };
 }
@@ -30,7 +34,7 @@ export function getAnswerCounts(db: DatabaseSync, roomId: string, questionId: st
 
 export function submitAnswer(db: DatabaseSync, roomId: string, body: unknown, clock: () => number = Date.now):
   { status: number; error: string; code?: string } | { submission: Submission; inserted: boolean } {
-  const input = body as { token?: unknown; questionId?: unknown; optionId?: unknown; optionIds?: unknown } | null;
+  const input = body as { token?: unknown; questionId?: unknown; optionId?: unknown; optionIds?: unknown; mapping?: unknown } | null;
   if (!input || Array.isArray(input) || typeof input !== 'object'
     || typeof input.token !== 'string' || typeof input.questionId !== 'string' || !input.questionId) {
     return { status: 400, error: 'Expected token and questionId strings.' };
@@ -49,15 +53,22 @@ export function submitAnswer(db: DatabaseSync, roomId: string, body: unknown, cl
     const question = questionIndex === null ? undefined : round.questions[questionIndex];
     if (!question || question.id !== input.questionId) return { status: 409, error: 'Question is not current.' };
     if (isQuestionExcluded(db, roomId, question.id, identity.player.id)) return { status: 409, error: 'This question continued without you.' };
-    if (question.type === 'matching') return { status: 409, error: 'Matching gameplay is not available yet.' };
-    const optionIds = question.type === 'multiple_choice' ? input.optionIds : [input.optionId];
-    if ((question.type === 'multiple_choice' ? input.optionId !== undefined : input.optionIds !== undefined)
-      || !Array.isArray(optionIds) || optionIds.length < 1 || optionIds.length > 10
-      || new Set(optionIds).size !== optionIds.length
-      || optionIds.some(id => typeof id !== 'string' || !question.options.some(option => option.id === id))) {
-      return { status: 400, error: 'Submit distinct option IDs belonging to the current question.' };
+    let stored: StoredAnswer;
+    if (question.type === 'matching') {
+      if (input.optionId !== undefined || input.optionIds !== undefined || !validMapping(input.mapping, matchingContent(roomId, question))) {
+        return { status: 400, error: 'Submit a complete one-to-one mapping of current left and right IDs.' };
+      }
+      stored = { kind: 'matching', mapping: input.mapping.slice().sort((a, b) => a.leftId.localeCompare(b.leftId)) };
+    } else {
+      const optionIds = question.type === 'multiple_choice' ? input.optionIds : [input.optionId];
+      if (input.mapping !== undefined || (question.type === 'multiple_choice' ? input.optionId !== undefined : input.optionIds !== undefined)
+        || !Array.isArray(optionIds) || optionIds.length < 1 || optionIds.length > 10
+        || new Set(optionIds).size !== optionIds.length
+        || optionIds.some(id => typeof id !== 'string' || !question.options.some(option => option.id === id))) {
+        return { status: 400, error: 'Submit distinct option IDs belonging to the current question.' };
+      }
+      stored = { kind: 'options', optionIds: (optionIds as string[]).slice().sort() };
     }
-    const canonicalIds = (optionIds as string[]).slice().sort();
     const accepted = getSubmission(db, roomId, question.id, identity.player.id);
     // Identity, current question and option are validated even for retries.
     // An accepted answer wins over the deadline and any different valid choice.
@@ -68,8 +79,8 @@ export function submitAnswer(db: DatabaseSync, roomId: string, body: unknown, cl
     if (!(now < Date.parse(String(row.answer_deadline_at)))) {
       return { status: 409, code: 'DEADLINE_REACHED', error: 'Time is up.' };
     }
-    db.prepare('INSERT INTO player_answers (session_id, player_id, question_id, option_ids_json, submitted_at) VALUES (?, ?, ?, ?, ?)')
-      .run(roomId, identity.player.id, question.id, JSON.stringify(canonicalIds), new Date(now).toISOString());
+    db.prepare('INSERT INTO player_answers (session_id, player_id, question_id, answer_json, submitted_at) VALUES (?, ?, ?, ?, ?)')
+      .run(roomId, identity.player.id, question.id, JSON.stringify(stored), new Date(now).toISOString());
     completeQuestionInTransaction(db, roomId, now);
     db.exec('COMMIT');
     committed = true;

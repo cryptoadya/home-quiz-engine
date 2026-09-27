@@ -484,6 +484,37 @@ per side. Version-1 snapshots add ordered `pairs` for Matching and keep an empty
 `options` array. Parsing independently validates side shape, bilingual completeness,
 pair count, unique IDs and order, rejecting mixed active structures. Old option
 snapshots without `pairs` remain valid. Start freezes values with no content foreign
-keys, and later edits/deletion cannot affect them. Pair mappings never enter
-Player or Screen projections. Matching may be frozen at Start, but starting its
-answer timer, accepting submissions and scoring are blocked until Phase 5D.
+keys, and later edits/deletion cannot affect them. Player/Screen receive no correct
+pair mapping before Reveal; Phase 5D adds playable projections below.
+
+
+## Matching gameplay (Phase 5D)
+
+Migration 19 generalizes `player_answers` to tagged `answer_json`: option answers
+store `{ kind: 'options', optionIds }`, Matching stores `{ kind: 'matching', mapping }`.
+Legacy arrays migrate without changing keys, timestamps or accepted choices.
+The HTTP option contracts remain unchanged; Matching accepts
+`{ token, questionId, mapping: [{ leftId, rightId }] }`. Complete one-to-one
+coverage of both frozen sides is mandatory. Malformed, duplicate, foreign or mixed
+answer structures are rejected, including on retries. Valid retries restore the
+original immutable mapping, canonicalized by left ID, even after Reveal/deadline.
+
+Side IDs are domain-separated SHA-256 identities derived from room, frozen
+question/pair ID and side. The pair ID itself is never projected to Player/Screen.
+Each side list is independently ordered by its opaque ID, so IDs, shared positions
+and array alignment do not disclose the correct relationship. This is a stable
+projection, not configurable/per-player shuffle. Snapshot side discriminants and
+media references remain intact for Phase 6; only text renders in this phase.
+Player receives localized sides; Host/Screen receive bilingual content. Host sees
+the correct mapping; Screen and Player receive it only at Reveal.
+
+Player taps left then right, may replace either pairing until Submit, and can
+submit only after completing every pair. Reassigning an occupied right side
+removes its previous pairing. Acknowledgement/reconnect locks and restores the
+accepted mapping. Reveal displays the correct pairs and personal outcome/points.
+Every mapping must exactly match the frozen correct pairs to earn full points;
+partial/wrong, excluded and unanswered submissions earn zero.
+
+Matching uses the existing completion counts, persisted deadlines, automatic and
+manual Pause, Wait/Continue, per-question exclusions, restart recovery and
+navigation without separate lifecycle machinery. No answer drafts are persisted.

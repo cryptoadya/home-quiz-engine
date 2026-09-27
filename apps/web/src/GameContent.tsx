@@ -17,6 +17,10 @@ export function QuestionContent({ question, host = false }: { question: CurrentQ
     <p>Раунд {question.roundNumber} / Round {question.roundNumber} · Вопрос / Question {question.questionNumber} / {question.questionCount}</p>
     <h2 lang="ru">{question.textRu}</h2>
     <h2 lang="en">{question.textEn}</h2>
+    {question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul>{question.correctMapping.map(pair => {
+      const left = question.leftItems!.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);
+      return <li key={pair.leftId}>{left?.kind === 'text' && <>{left.textRu} / {left.textEn}</>} → {right?.kind === 'text' && <>{right.textRu} / {right.textEn}</>}</li>;
+    })}</ul></> : <div className="matching-columns">{[question.leftItems, question.rightItems].map((items, index) => <ul key={index}>{items?.map(item => <li key={item.id}>{item.kind === 'text' && <>{item.textRu} / {item.textEn}</>}</li>)}</ul>)}</div>}</>}
     {(host || question.showOptionsOnScreen || question.state === 'ANSWER_REVEAL') && <ol className="game-options">{question.options?.map((option, index) => <li key={index} className={option.isCorrect ? 'correct-option' : undefined}>
       <span lang="ru">{option.textRu}</span> / <span lang="en">{option.textEn}</span>
       {(host || question.state === 'ANSWER_REVEAL') && option.isCorrect && <> — <strong>{host ? 'Correct answer' : 'Верный ответ / Correct answer'}</strong></>}

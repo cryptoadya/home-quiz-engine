@@ -5,14 +5,18 @@ export function PlayerRevealContent({ question, language }: { question: PlayerRe
   const { outcome, points } = question.result;
   const correctIds = question.correctOptionIds ?? [question.correctOptionId];
   const correct = question.options.filter(option => correctIds.includes(option.id)).map(option => option.text).join(', ');
-  const selectedIds = question.submission.submitted ? ('optionIds' in question.submission ? question.submission.optionIds : [question.submission.optionId]) : [];
+  const selectedIds = question.submission.submitted ? ('optionIds' in question.submission ? question.submission.optionIds : 'optionId' in question.submission ? [question.submission.optionId] : []) : [];
   const selected = question.options.filter(option => selectedIds.includes(option.id)).map(option => option.text).join(', ');
   return <>
     <h2>{question.text}</h2>
     <p role="status">{outcome === 'correct' ? `${ru ? 'Верно!' : 'Correct!'} +${points}`
       : outcome === 'wrong' ? (ru ? 'Неверно' : 'Incorrect') : (ru ? 'Нет ответа' : 'No answer')}</p>
     <p>{ru ? 'Очки' : 'Points'}: {points}</p>
-    <p className="correct-option">{ru ? 'Верный ответ' : 'Correct answer'}: {correct}</p>
+    {question.correctMapping && <><p>{ru ? 'Верные пары' : 'Correct pairs'}</p><ul>{question.correctMapping.map(pair => {
+      const left = question.leftItems?.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);
+      return <li key={pair.leftId}>{left?.kind === 'text' ? left.text : ''} → {right?.kind === 'text' ? right.text : ''}</li>;
+    })}</ul></>}
+    {question.type !== 'matching' && <p className="correct-option">{ru ? 'Верный ответ' : 'Correct answer'}: {correct}</p>}
     {selected && <p>{ru ? 'Ваш ответ' : 'Your answer'}: {selected}</p>}
   </>;
 }

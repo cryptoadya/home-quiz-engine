@@ -520,6 +520,21 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     );
     CREATE INDEX matching_pairs_question_position ON matching_pairs(question_id, position);`,
   },
+  {
+    version: 19,
+    sql: `CREATE TABLE player_answers_new (
+      session_id TEXT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+      player_id TEXT NOT NULL REFERENCES session_players(id) ON DELETE CASCADE,
+      question_id TEXT NOT NULL,
+      answer_json TEXT NOT NULL CHECK (json_valid(answer_json) AND json_type(answer_json) = 'object' AND coalesce(json_extract(answer_json, '$.kind') IN ('options', 'matching'), 0)),
+      submitted_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, question_id, player_id)
+    );
+    INSERT INTO player_answers_new SELECT session_id, player_id, question_id,
+      json_object('kind', 'options', 'optionIds', json(option_ids_json)), submitted_at FROM player_answers;
+    DROP TABLE player_answers;
+    ALTER TABLE player_answers_new RENAME TO player_answers;`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

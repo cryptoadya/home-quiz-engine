@@ -130,7 +130,7 @@ test('legacy scalar answers migrate without changing submissions, timestamps, sn
     const snapshot = getGameSnapshot(db, room.id), before = db.prepare('SELECT * FROM player_answers').get()!;
     const source = (await import('node:fs')).readFileSync(new URL('./db.ts', import.meta.url), 'utf8');
     const legacy = source.split('version: 9,')[1].split('sql: `')[1].split('`')[0].replace('CREATE TABLE player_answers', 'CREATE TABLE legacy_answers');
-    db.exec(`${legacy}; INSERT INTO legacy_answers SELECT session_id, player_id, question_id, json_extract(option_ids_json, '$[0]'), submitted_at FROM player_answers; DROP TABLE player_answers; ALTER TABLE legacy_answers RENAME TO player_answers; DELETE FROM schema_migrations WHERE version = 17`);
+    db.exec(`${legacy}; INSERT INTO legacy_answers SELECT session_id, player_id, question_id, json_extract(answer_json, '$.optionIds[0]'), submitted_at FROM player_answers; DROP TABLE player_answers; ALTER TABLE legacy_answers RENAME TO player_answers; DELETE FROM schema_migrations WHERE version IN (17, 19)`);
     db.close(); db = initializeDatabase(path);
     assert.deepEqual(db.prepare('SELECT * FROM player_answers').get(), before);
     assert.deepEqual(getGameSnapshot(db, room.id), snapshot);

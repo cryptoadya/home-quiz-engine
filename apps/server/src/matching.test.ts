@@ -115,8 +115,8 @@ test('Matching readiness, Start, immutable snapshot and gameplay boundary', asyn
     await api.delete(`/api/quizzes/${quiz.id}`).expect(204);
     assert.deepEqual(getGameSnapshot(db, room.id), frozen);
     await api.post(`/api/rooms/${room.id}/start-round`).expect(200);
-    assert.deepEqual(startQuestion(db, room.id), { status: 409, error: 'Matching gameplay is not available yet.' });
-    assert.equal(db.prepare('SELECT state FROM game_sessions WHERE id = ?').get(room.id)!.state, 'QUESTION');
+    assert.ok('room' in startQuestion(db, room.id));
+    assert.equal(db.prepare('SELECT state FROM game_sessions WHERE id = ?').get(room.id)!.state, 'ANSWERING');
     const playerState = (await api.get(`/api/rooms/${room.id}`)).body;
     assert.doesNotMatch(JSON.stringify(playerState), /pairs|left|right/);
   } finally { db.close(); }

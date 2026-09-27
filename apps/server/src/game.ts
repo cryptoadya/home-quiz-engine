@@ -1,3 +1,4 @@
+import { matchingContent } from './matching-game.js';
 import { absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
 import { getRevealStats, getPlayerResult } from './reveal.js';
 import { getSubmission, getAnswerCounts, isQuestionExcluded } from './answers.js';
@@ -45,11 +46,14 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   const timer = room.state === 'ANSWERING' || reveal ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
   const common = { ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
     textRu: question.textRu, textEn: question.textEn };
-  if (audience === 'host') return { ...common, points: question.points,
+  const matching = question.type === 'matching' ? matchingContent(roomId, question) : undefined;
+  const matchingProjection = matching ? { type: 'matching' as const, leftItems: matching.leftItems, rightItems: matching.rightItems,
+    ...(audience === 'host' || reveal ? { correctMapping: matching.correctMapping } : {}) } : {};
+  if (audience === 'host') return { ...common, ...matchingProjection, points: question.points,
     answerTimeSeconds: effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds),
     options: question.options.map(option => ({ textRu: option.textRu, textEn: option.textEn, isCorrect: option.isCorrect })),
   };
-  return { ...common, showOptionsOnScreen: question.showOptionsOnScreen,
+  return { ...common, ...matchingProjection, showOptionsOnScreen: question.showOptionsOnScreen,
     ...(question.showOptionsOnScreen || reveal ? { options: question.options.map(option => ({ textRu: option.textRu, textEn: option.textEn, ...(reveal ? { isCorrect: option.isCorrect } : {}) })) } : {}),
   };
 }
@@ -93,14 +97,19 @@ export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' |
   const { round, questionIndex } = currentContent(db, roomId);
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
-  if (question.type === 'matching') return null;
   const reveal = room.state === 'ANSWER_REVEAL';
   const excluded = isQuestionExcluded(db, roomId, question.id, playerId);
+  const matching = question.type === 'matching' ? matchingContent(roomId, question) : undefined;
+  const localizedItems = (items: NonNullable<typeof matching>['leftItems']) => items.map(item => item.kind === 'text'
+    ? { id: item.id, kind: item.kind, text: language === 'ru' ? item.textRu : item.textEn }
+    : item);
+
   return {
     excluded,
     state: room.state, questionId: question.id,
     ...(question.type === 'multiple_choice' ? { type: question.type, requiredCorrectCount: question.options.filter(option => option.isCorrect).length } : {}),
-    ...(reveal ? { result: getPlayerResult(db, roomId, question.id, playerId), ...(question.type === 'multiple_choice' ? { correctOptionIds: question.options.filter(option => option.isCorrect).map(option => option.id) } : { correctOptionId: question.options.find(option => option.isCorrect)!.id }) } : {}),
+    ...(matching ? { type: 'matching' as const, leftItems: !reveal && excluded ? [] : localizedItems(matching.leftItems), rightItems: !reveal && excluded ? [] : localizedItems(matching.rightItems), ...(reveal ? { correctMapping: matching.correctMapping } : {}) } : {}),
+    ...(reveal ? { result: getPlayerResult(db, roomId, question.id, playerId), ...(question.type === 'matching' ? {} : question.type === 'multiple_choice' ? { correctOptionIds: question.options.filter(option => option.isCorrect).map(option => option.id) } : { correctOptionId: question.options.find(option => option.isCorrect)!.id }) } : {}),
     submission: getSubmission(db, roomId, question.id, playerId),
     text: language === 'ru' ? question.textRu : question.textEn,
     options: !reveal && excluded ? [] : question.options.map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),
@@ -120,7 +129,6 @@ export function startQuestion(db: DatabaseSync, roomId: string, now = Date.now()
       const { snapshot, round, questionIndex } = currentContent(db, roomId);
       const question = questionIndex === null ? undefined : round.questions[questionIndex];
       if (!question) throw new Error('Current question not found.');
-      if (question.type === 'matching') return { status: 409, error: 'Matching gameplay is not available yet.' };
       timer = createAnswerTimer(effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds), now);
     } catch { return { status: 409, error: 'Invalid game snapshot, navigation or duration.' }; }
     db.prepare("UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = ?, answer_deadline_at = ? WHERE id = ?")

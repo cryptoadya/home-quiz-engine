@@ -81,3 +81,7 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .leaderboard th, .leaderboard td { padding: .75rem; border-bottom: 1px solid #ccc; }
 .screen-lobby .leaderboard { font-size: clamp(1.5rem, 3vw, 3rem); }
 .winners { font-size: clamp(2rem, 5vw, 5rem); }
+
+.matching-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+.matching-columns button { display: block; width: 100%; margin-bottom: .5rem; overflow-wrap: anywhere; min-height: 44px; }
+.matching-columns button[aria-pressed="true"] { outline: 3px solid currentColor; }

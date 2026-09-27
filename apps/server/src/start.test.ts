@@ -398,7 +398,7 @@ test('answers are immutable, private, counted once and restored after DB reopen'
     assert.equal(late.body.code, 'DEADLINE_REACHED');
     assert.equal(broadcasts, 1);
     assert.equal(db.prepare('SELECT count(*) AS n FROM player_answers').get()!.n, 1);
-    assert.equal(db.prepare('SELECT option_ids_json FROM player_answers').get()!.option_ids_json, JSON.stringify([body.optionId]));
+    assert.equal(db.prepare('SELECT answer_json FROM player_answers').get()!.answer_json, JSON.stringify({ kind: 'options', optionIds: [body.optionId] }));
     for (const audience of ['host', 'screen']) {
       const state = (await api.get(`/api/rooms/${room.id}/game/${audience}`)).body;
       assert.deepEqual(state.game.answers, { answered: 1, expected: 2 });
@@ -470,7 +470,7 @@ test('Phase 3B migration preserves every phase, frozen state, roster and timer w
       if (phase === 'ANSWERING') await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
     }
     // Remove only migration 9's additive schema to reproduce an actual 3B DB.
-    db.exec('DROP TABLE player_answers; DELETE FROM schema_migrations WHERE version IN (9, 17)');
+    db.exec('DROP TABLE player_answers; DELETE FROM schema_migrations WHERE version IN (9, 17, 19)');
     const sessions = db.prepare('SELECT * FROM game_sessions ORDER BY id').all();
     const players = db.prepare('SELECT * FROM session_players ORDER BY id').all();
     db.close(); db = initializeDatabase(path);

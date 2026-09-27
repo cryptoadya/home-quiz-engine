@@ -96,9 +96,17 @@ at least two correct options, an always-visible required count, durable submitte
 sets and exact-set scoring through the shared lifecycle. Focused regressions cover
 mixed games, retries, reconnect/restart, Pause and Continue exclusions. Phase 5C adds Matching authoring with dedicated ordered pairs, bilingual text
 sides prepared for image references, CRUD/reorder, deterministic type switching,
-readiness and independently validated frozen snapshots. Matching timers,
-submissions, scoring and Player interactions remain blocked pending Phase 5D.
-Phase 5D, configurable count hints, shuffle and image support remain pending;
+readiness and independently validated frozen snapshots.
+
+Phase 5D completes text Matching gameplay: opaque frozen side IDs, complete
+one-to-one immutable submissions, tap-to-pair editing, exact all-or-nothing scoring,
+safe pre-Reveal projections and correct-pair/personal Reveal. It reuses timers,
+Pause, reconnect, Wait/Continue, exclusions and mixed-type navigation. Focused
+server/UI regressions cover malformed answers, retries, restart and all four types.
+A local two-Player Chrome smoke verified incomplete Submit gating, pairing, accepted
+mapping restoration after refresh, correct/incorrect scoring and bilingual Screen
+Reveal. Physical phone/Wi-Fi acceptance remains pending.
+Configurable count hints, shuffle and image support remain pending;
 Phase 5 remains incomplete.
 
 Scope:

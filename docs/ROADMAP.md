@@ -106,15 +106,24 @@ server/UI regressions cover malformed answers, retries, restart and all four typ
 A local two-Player Chrome smoke verified incomplete Submit gating, pairing, accepted
 mapping restoration after refresh, correct/incorrect scoring and bilingual Screen
 Reveal. Physical phone/Wi-Fi acceptance remains pending.
-Configurable count hints, shuffle and image support remain pending;
-Phase 5 remains incomplete.
+All non-media Phase 5 scope is complete: Multiple Choice has a per-question
+correct-count hint (enabled by default), frozen in version-1 snapshots and omitted
+from pre-Reveal Player payloads when disabled. Frozen-game deterministic ordering
+honors `shuffleAnswers` for all three option types and independently for Matching
+sides, with stable IDs, shared order across Players and reconnect/restart durability.
+Disabled shuffle preserves authored order. Focused mixed-quiz server and UI
+regressions cover these settings, mapping correctness and scoring.
+Matching image elements remain structurally supported but media-dependent image
+authoring/rendering is deferred to Phase 6; it is not claimed as implemented.
+This completes Phase 5's non-media acceptance; physical phone/Wi-Fi smoke remains
+pending. No Phase 6 work has started.
 
 Scope:
 - Yes/No
 - Multiple Choice
 - configurable correct-count hint
 - Matching using tap-left/tap-right UX
-- matching image elements
+- matching image elements — deferred to Phase 6 media
 - shuffle
 
 Acceptance: all types obey the same draft-selection -> Submit contract.
@@ -123,6 +132,7 @@ Acceptance: all types obey the same draft-selection -> Submit contract.
 
 Scope:
 - images/GIF/video/audio upload
+- Matching image answer elements (deferred from Phase 5)
 - per-quiz storage
 - Screen-only normal question media
 - media ordering

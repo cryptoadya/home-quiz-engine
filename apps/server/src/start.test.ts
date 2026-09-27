@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import request from 'supertest';
 import { initializeDatabase } from './db.js';
 import { createApp } from './app.js';
+import { answerOrder } from './answer-order.js';
 import { createQuiz } from './quizzes.js';
 import { createRound, reorderRounds } from './rounds.js';
 import { createQuestion, createOption, reorderQuestions, reorderOptions } from './questions.js';
@@ -218,10 +219,10 @@ for (const showOptions of [true, false]) test(`Round navigation restores frozen 
     assert.equal(host.game.questionCount, 2);
     assert.equal(host.game.answerTimeSeconds, showOptions ? 12 : 45);
     assert.equal(host.game.points, 3);
-    assert.deepEqual(host.game.options.map((o: any) => o.isCorrect), [false, true]);
+    assert.deepEqual(host.game.options.map((o: any) => o.isCorrect).sort(), [false, true]);
     const screen = (await api.get(`/api/rooms/${room.id}/game/screen`).expect(200)).body;
     assert.equal(screen.game.textRu, 'Вопрос 1/1');
-    assert.deepEqual(screen.game.options, showOptions ? [{ textRu: 'Ответ', textEn: 'Other option' }, { textRu: 'Ответ', textEn: 'Correct option' }] : undefined);
+    assert.deepEqual(screen.game.options, showOptions ? host.game.options.map(({ textRu, textEn }: any) => ({ textRu, textEn })) : undefined);
     assert.doesNotMatch(JSON.stringify(screen), /isCorrect|snapshot|Question 1\/0|points|answerTimeSeconds/);
     const player = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token }).expect(200)).body;
     assert.equal(player.room.state, 'QUESTION');
@@ -303,7 +304,7 @@ for (const override of [12, null]) test(`Start Question persists frozen ${overri
       const projection = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token }).expect(200)).body;
       assert.equal(projection.game.questionId, rounds[0].questions[0].id);
       assert.equal(projection.game.text, language === 'en' ? 'Question 1/1' : 'Вопрос 1/1');
-      assert.deepEqual(projection.game.options.map((o: any) => o.id), rounds[0].questions[0].options.map(o => o.id));
+      assert.deepEqual(projection.game.options.map((o: any) => o.id), answerOrder(rounds[0].questions[0].options, true, room.id, rounds[0].questions[0].id).map(o => o.id));
       assert.deepEqual(Object.keys(projection.game.options[0]).sort(), ['id', 'text']);
       assert.doesNotMatch(JSON.stringify(projection), /isCorrect|snapshot|textRu|textEn|points|Question 1\/0/);
     }

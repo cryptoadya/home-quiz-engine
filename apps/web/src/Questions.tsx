@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 type Question = {
   id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
-  points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean;
+  points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean; showCorrectCount?: boolean;
   position: number; createdAt: string; updatedAt: string;
 };
 type Option = {
@@ -12,7 +12,7 @@ type Option = {
 type TextSide = { kind: 'text'; textRu: string; textEn: string };
 type Pair = { id: string; questionId: string; left: TextSide; right: TextSide; position: number };
 type PairFields = Pick<Pair, 'left' | 'right'>;
-type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen'>;
+type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'showCorrectCount'>;
 type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -138,7 +138,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
   }
   const fields: QuestionFields | null = selected ? {
     type: selected.type, textRu: selected.textRu, textEn: selected.textEn, points: selected.points,
-    answerTimeSeconds: selected.answerTimeSeconds, showOptionsOnScreen: selected.showOptionsOnScreen,
+    answerTimeSeconds: selected.answerTimeSeconds, showOptionsOnScreen: selected.showOptionsOnScreen, showCorrectCount: selected.showCorrectCount ?? true,
   } : null;
 
   return <section className="questions">
@@ -196,7 +196,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
           onChange={(event) => editQuestion(selected, { ...fields, showOptionsOnScreen: event.target.checked })} /> Show answer options on Screen</label>
         {selected.type === 'matching' ? <>
           <h4>Matching pairs</h4>
-          <p>At least 2 complete pairs, with RU/EN text on both sides. Switching to an option type clears pairs; switching back creates blank pairs. Matching gameplay and images are not available yet.</p>
+          <p>At least 2 complete pairs, with RU/EN text on both sides. Switching to an option type clears pairs; switching back creates blank pairs. Matching images are deferred to Phase 6.</p>
           {pairs.map((pair, index) => <div className="option-editor" key={pair.id}>
             <h5>Pair {index + 1}</h5>
             {(['left', 'right'] as const).map(side => <div key={side}>
@@ -222,7 +222,11 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
         </> : <>
         <p>Switching to Matching clears answer options and creates two blank pairs.</p>
         <h4>Answer options</h4>
-        {selected.type === 'multiple_choice' && <p>Use 2–10 options and mark at least 2 correct. Players see the required correct-option count.</p>}
+        {selected.type === 'multiple_choice' && <>
+          <p>Use 2–10 options and mark at least 2 correct.</p>
+          <label className="checkbox"><input type="checkbox" checked={selected.showCorrectCount ?? true} disabled={busy}
+            onChange={event => editQuestion(selected, { ...fields, showCorrectCount: event.target.checked })} /> Show correct-option count to Player</label>
+        </>}
         {options.map((option, index) => <div className="option-editor" key={option.id}>
           <label className="checkbox"><input type={selected.type === 'multiple_choice' ? 'checkbox' : 'radio'} name={`correct-${selected.id}`} checked={option.isCorrect} disabled={busy}
             onChange={event => {

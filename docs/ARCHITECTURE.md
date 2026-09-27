@@ -443,7 +443,7 @@ Migration 16 adds `multiple_choice` to persisted question types. Readiness and
 version-1 frozen snapshots require 2–10 options and at least two correct options.
 The editor toggles correctness independently; conversion preserves options,
 with the existing Yes / No normalization still applied when converting to it.
-The required correct-option count is always shown to Player in this phase.
+The required correct-option count was always shown in Phase 5B; the Phase 5 completion setting below makes it optional.
 
 Migration 17 replaces `player_answers.option_id` with `option_ids_json`, copying
 legacy answers into one-element arrays without changing identity, timestamps or
@@ -501,9 +501,9 @@ original immutable mapping, canonicalized by left ID, even after Reveal/deadline
 
 Side IDs are domain-separated SHA-256 identities derived from room, frozen
 question/pair ID and side. The pair ID itself is never projected to Player/Screen.
-Each side list is independently ordered by its opaque ID, so IDs, shared positions
-and array alignment do not disclose the correct relationship. This is a stable
-projection, not configurable/per-player shuffle. Snapshot side discriminants and
+Phase 5D independently ordered each side list by opaque ID. Phase 5 completion
+replaces that unconditional ordering with the frozen quiz shuffle setting below.
+No pair IDs, shared positions or correct mapping are projected before Reveal. Snapshot side discriminants and
 media references remain intact for Phase 6; only text renders in this phase.
 Player receives localized sides; Host/Screen receive bilingual content. Host sees
 the correct mapping; Screen and Player receive it only at Reveal.
@@ -518,3 +518,40 @@ partial/wrong, excluded and unanswered submissions earn zero.
 Matching uses the existing completion counts, persisted deadlines, automatic and
 manual Pause, Wait/Continue, per-question exclusions, restart recovery and
 navigation without separate lifecycle machinery. No answer drafts are persisted.
+
+
+## Phase 5 completion: count hints and answer ordering
+
+Migration 20 adds `questions.show_correct_count`, defaulting to true to preserve
+existing Multiple Choice behavior. The editor autosaves `showCorrectCount` per
+question; duplication preserves it. Version-1 snapshots explicitly freeze the
+boolean. Legacy version-1 snapshots without it retain the enabled behavior, and
+invalid non-boolean values are rejected. Older question update requests that omit
+the field preserve its current value. Only Multiple Choice uses this setting.
+When disabled, Player receives no `requiredCorrectCount` property and renders no
+count hint; when enabled, the projection includes the correct-set size as before.
+The hint does not constrain Submit: any nonempty set is structurally valid, and
+only exact correct-set equality earns points.
+
+`answer-order.ts` computes deterministic presentation order from room ID, frozen
+question ID, stable item ID and an ordering-version/domain tag using SHA-256.
+It permutes copies of the frozen items without changing the source editor order,
+snapshot positions, answer IDs or scoring. The persisted room identity and snapshot
+are the complete ordering inputs: every Player receives the same order, including
+on refresh, reconnect and server restart. Host/Screen use the same option ordering.
+There is no client randomization or dependence on Player identity/language.
+
+The frozen quiz `shuffleAnswers` flag applies to Single Choice, Yes/No and Multiple
+Choice options. Matching independently permutes its left and right lists using
+separate domains, retaining the opaque side identities and ID-based correct
+mapping. When disabled, option lists and both Matching side lists retain authored
+snapshot order. For Matching this intentionally retains authored pair alignment;
+the correct mapping itself is still withheld before Reveal. Shuffle-enabled lists
+are independent permutations and can coincidentally retain some authored positions.
+
+All non-media Phase 5 behavior is implemented. Matching image discriminants/media
+references remain structurally supported; image authoring, validation against local
+media and actual image rendering are deferred to Phase 6. No Phase 6 media support
+is implemented here. Cross-type regressions cover hint boundaries, both ordering
+modes, frozen settings, two Players, reconnect/restart, exact scoring and Matching
+mapping identity; UI regressions cover hint autosave/reload and hidden-hint drafts.

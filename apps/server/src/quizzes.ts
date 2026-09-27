@@ -77,7 +77,7 @@ export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
     const insertRound = db.prepare(`INSERT INTO rounds (id, quiz_id, title_ru, title_en, description_ru, description_en,
       show_leaderboard_after, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const insertQuestion = db.prepare(`INSERT INTO questions (id, round_id, type, text_ru, text_en, points, answer_time_seconds,
-      show_options_on_screen, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      show_options_on_screen, show_correct_count, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const insertOption = db.prepare(`INSERT INTO answer_options (id, question_id, text_ru, text_en, is_correct, position, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const round of listRounds(db, sourceId)) {
@@ -87,7 +87,7 @@ export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
       for (const question of listQuestions(db, round.id)) {
         const questionId = randomUUID();
         insertQuestion.run(questionId, roundId, question.type, question.textRu, question.textEn, question.points,
-          question.answerTimeSeconds, Number(question.showOptionsOnScreen), question.position, now, now);
+          question.answerTimeSeconds, Number(question.showOptionsOnScreen), Number(question.showCorrectCount), question.position, now, now);
         for (const pair of listPairs(db, question.id)) {
           db.prepare('INSERT INTO matching_pairs (id, question_id, left_json, right_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
             .run(randomUUID(), questionId, JSON.stringify(pair.left), JSON.stringify(pair.right), pair.position, now, now);

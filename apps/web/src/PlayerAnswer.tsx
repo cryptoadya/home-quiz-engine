@@ -45,7 +45,7 @@ export function PlayerAnswer({ question, roomId, token, language }: {
 
   return <>
     <h2>{question.text}</h2>
-    {multiple && <p>{ru ? 'Количество верных вариантов' : 'Required correct options'}: {question.requiredCorrectCount}</p>}
+    {multiple && question.requiredCorrectCount !== undefined && <p>{ru ? 'Количество верных вариантов' : 'Required correct options'}: {question.requiredCorrectCount}</p>}
     <CountdownDisplay seconds={timedOut ? 0 : seconds} language={language} />
     <form onSubmit={event => { event.preventDefault(); void submit(); }}>
       {matching ? <fieldset disabled={locked}>

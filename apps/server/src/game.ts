@@ -1,3 +1,4 @@
+import { answerOrder } from './answer-order.js';
 import { matchingContent } from './matching-game.js';
 import { absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
 import { getRevealStats, getPlayerResult } from './reveal.js';
@@ -46,15 +47,15 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   const timer = room.state === 'ANSWERING' || reveal ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
   const common = { ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
     textRu: question.textRu, textEn: question.textEn };
-  const matching = question.type === 'matching' ? matchingContent(roomId, question) : undefined;
+  const matching = question.type === 'matching' ? matchingContent(roomId, question, snapshot.shuffleAnswers) : undefined;
   const matchingProjection = matching ? { type: 'matching' as const, leftItems: matching.leftItems, rightItems: matching.rightItems,
     ...(audience === 'host' || reveal ? { correctMapping: matching.correctMapping } : {}) } : {};
   if (audience === 'host') return { ...common, ...matchingProjection, points: question.points,
     answerTimeSeconds: effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds),
-    options: question.options.map(option => ({ textRu: option.textRu, textEn: option.textEn, isCorrect: option.isCorrect })),
+    options: answerOrder(question.options, snapshot.shuffleAnswers, roomId, question.id).map(option => ({ textRu: option.textRu, textEn: option.textEn, isCorrect: option.isCorrect })),
   };
   return { ...common, ...matchingProjection, showOptionsOnScreen: question.showOptionsOnScreen,
-    ...(question.showOptionsOnScreen || reveal ? { options: question.options.map(option => ({ textRu: option.textRu, textEn: option.textEn, ...(reveal ? { isCorrect: option.isCorrect } : {}) })) } : {}),
+    ...(question.showOptionsOnScreen || reveal ? { options: answerOrder(question.options, snapshot.shuffleAnswers, roomId, question.id).map(option => ({ textRu: option.textRu, textEn: option.textEn, ...(reveal ? { isCorrect: option.isCorrect } : {}) })) } : {}),
   };
 }
 
@@ -94,12 +95,12 @@ function readTimer(db: DatabaseSync, roomId: string, now: number) {
 export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' | 'en', playerId: string, now = Date.now()) {
   const room = getRoom(db, roomId);
   if (!room || room.closedAt || (room.state !== 'ANSWERING' && room.state !== 'ANSWER_REVEAL')) return null;
-  const { round, questionIndex } = currentContent(db, roomId);
+  const { snapshot, round, questionIndex } = currentContent(db, roomId);
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
   const reveal = room.state === 'ANSWER_REVEAL';
   const excluded = isQuestionExcluded(db, roomId, question.id, playerId);
-  const matching = question.type === 'matching' ? matchingContent(roomId, question) : undefined;
+  const matching = question.type === 'matching' ? matchingContent(roomId, question, snapshot.shuffleAnswers) : undefined;
   const localizedItems = (items: NonNullable<typeof matching>['leftItems']) => items.map(item => item.kind === 'text'
     ? { id: item.id, kind: item.kind, text: language === 'ru' ? item.textRu : item.textEn }
     : item);
@@ -107,12 +108,12 @@ export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' |
   return {
     excluded,
     state: room.state, questionId: question.id,
-    ...(question.type === 'multiple_choice' ? { type: question.type, requiredCorrectCount: question.options.filter(option => option.isCorrect).length } : {}),
+    ...(question.type === 'multiple_choice' ? { type: question.type, ...(question.showCorrectCount !== false ? { requiredCorrectCount: question.options.filter(option => option.isCorrect).length } : {}) } : {}),
     ...(matching ? { type: 'matching' as const, leftItems: !reveal && excluded ? [] : localizedItems(matching.leftItems), rightItems: !reveal && excluded ? [] : localizedItems(matching.rightItems), ...(reveal ? { correctMapping: matching.correctMapping } : {}) } : {}),
     ...(reveal ? { result: getPlayerResult(db, roomId, question.id, playerId), ...(question.type === 'matching' ? {} : question.type === 'multiple_choice' ? { correctOptionIds: question.options.filter(option => option.isCorrect).map(option => option.id) } : { correctOptionId: question.options.find(option => option.isCorrect)!.id }) } : {}),
     submission: getSubmission(db, roomId, question.id, playerId),
     text: language === 'ru' ? question.textRu : question.textEn,
-    options: !reveal && excluded ? [] : question.options.map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),
+    options: !reveal && excluded ? [] : answerOrder(question.options, snapshot.shuffleAnswers, roomId, question.id).map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),
     ...(reveal ? {} : { timer: readTimer(db, roomId, now) }),
   };
 }

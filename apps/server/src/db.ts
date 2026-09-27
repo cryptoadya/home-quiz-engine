@@ -535,6 +535,10 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     DROP TABLE player_answers;
     ALTER TABLE player_answers_new RENAME TO player_answers;`,
   },
+  {
+    version: 20,
+    sql: `ALTER TABLE questions ADD COLUMN show_correct_count INTEGER NOT NULL DEFAULT 1 CHECK (show_correct_count IN (0, 1));`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

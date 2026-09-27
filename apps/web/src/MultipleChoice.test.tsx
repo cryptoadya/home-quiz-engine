@@ -44,7 +44,7 @@ test('Multiple Choice drafts toggle, Submit requires one, retries and reconnect 
 
 test('Multiple Choice editor creates, autosaves independent correctness and reloads', async () => {
   const original = globalThis.fetch;
-  const q = { id: 'q', roundId: 'round', type: 'multiple_choice', textRu: '', textEn: '', points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, position: 0 };
+  const q = { id: 'q', roundId: 'round', type: 'multiple_choice', textRu: '', textEn: '', points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, showCorrectCount: true, position: 0 };
   let questions: typeof q[] = [];
   const options = ['a', 'b', 'c'].map((id, position) => ({ id, questionId: 'q', textRu: id, textEn: id, isCorrect: false, position }));
   globalThis.fetch = async (url, init) => {
@@ -54,6 +54,7 @@ test('Multiple Choice editor creates, autosaves independent correctness and relo
       return Response.json(questions);
     }
     if (path.endsWith('/options')) return Response.json(options);
+    if (method === 'PUT' && path.endsWith('/q')) { Object.assign(q, JSON.parse(String(init?.body))); return Response.json(q); }
     const option = options.find(o => path.endsWith(`/${o.id}`));
     if (method === 'PUT' && option) { Object.assign(option, JSON.parse(String(init?.body))); return Response.json(option); }
     throw new Error(`Unexpected ${path}`);
@@ -63,6 +64,8 @@ test('Multiple Choice editor creates, autosaves independent correctness and relo
     await waitFor(() => assert.ok(view.getByText('No questions yet.')));
     fireEvent.click(view.getByRole('button', { name: 'Add Multiple Choice question' }));
     await waitFor(() => assert.ok(view.getByLabelText('Option 3 EN')));
+    fireEvent.click(view.getByLabelText('Show correct-option count to Player'));
+    await waitFor(() => assert.equal(q.showCorrectCount, false));
     for (const index of [1, 2]) fireEvent.click(view.getByLabelText(`Correct answer, option ${index}`));
     await waitFor(() => assert.equal(options.filter(o => o.isCorrect).length, 2));
     assert.ok(view.getByRole('button', { name: 'Add option' })); assert.equal(view.queryAllByRole('radio').length, 0);
@@ -70,5 +73,14 @@ test('Multiple Choice editor creates, autosaves independent correctness and relo
     const reloaded = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
     await waitFor(() => assert.equal((reloaded.getByLabelText('Correct answer, option 2') as HTMLInputElement).checked, true));
     assert.equal((reloaded.getByLabelText('Correct answer, option 1') as HTMLInputElement).checked, true);
+    assert.equal((reloaded.getByLabelText('Show correct-option count to Player') as HTMLInputElement).checked, false);
   } finally { globalThis.fetch = original; }
+});
+
+for (const language of ['ru', 'en'] as const) test(`Multiple Choice without count hint omits hint and still accepts drafts (${language})`, () => {
+  const question: PlayerQuestion = { state: 'ANSWERING', type: 'multiple_choice', questionId: 'q', text: 'Pick', options: [{ id: 'a', text: 'Apple' }, { id: 'b', text: 'Pear' }], submission: { submitted: false }, timer: { serverNow: new Date().toISOString(), deadlineAt: new Date(Date.now() + 30000).toISOString(), durationSeconds: 30, remainingMs: 30000, expired: false } };
+  const view = render(createElement(PlayerAnswer, { question, language, roomId: 'room', token: 'token' }));
+  assert.equal(view.queryByText(/Required correct options|Количество верных вариантов/), null);
+  fireEvent.click(view.getByLabelText('Apple'));
+  assert.equal((view.getByRole('button', { name: language === 'en' ? 'Submit' : 'Отправить' }) as HTMLButtonElement).disabled, false);
 });

@@ -1,14 +1,15 @@
+import { answerOrder } from './answer-order.js';
 import { createHash } from 'node:crypto';
 import type { MatchingSide } from './matching.js';
 
 export type Mapping = { leftId: string; rightId: string }[];
 type Content = { id: string; pairs?: { id: string; left: MatchingSide; right: MatchingSide }[] };
 // Domain-separated opaque IDs retain snapshot identity without exposing the shared
-// pair ID. Independent ID ordering must never zip the two lists into correct pairs.
-export function matchingContent(roomId: string, question: Content) {
+// pair ID. Ordering never changes the ID-based correct mapping.
+export function matchingContent(roomId: string, question: Content, shuffleAnswers = false) {
   const id = (pairId: string, side: string) => createHash('sha256').update(JSON.stringify([roomId, question.id, pairId, side])).digest('hex');
   const pairs = question.pairs ?? [];
-  const items = (side: 'left' | 'right') => pairs.map(pair => ({ id: id(pair.id, side), ...pair[side] })).sort((a, b) => a.id.localeCompare(b.id));
+  const items = (side: 'left' | 'right') => answerOrder(pairs.map(pair => ({ id: id(pair.id, side), ...pair[side] })), shuffleAnswers, roomId, question.id, side);
   return { leftItems: items('left'), rightItems: items('right'), correctMapping: pairs.map(pair => ({ leftId: id(pair.id, 'left'), rightId: id(pair.id, 'right') })) };
 }
 export function validMapping(value: unknown, content: ReturnType<typeof matchingContent>): value is Mapping {

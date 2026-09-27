@@ -253,7 +253,7 @@ test('migration 13 preserves Phase 4A pauses and enforces reason invariants', as
       DROP TRIGGER delete_quiz_lobbies; DROP TABLE game_sessions; ALTER TABLE old_sessions RENAME TO game_sessions;
       CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
       CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
-      DROP TABLE question_exclusions; DELETE FROM schema_migrations WHERE version >= 13`);
+      DROP TABLE question_exclusions; DELETE FROM schema_migrations WHERE version >= 13 AND version < 17`);
     db.close(); db = initializeDatabase(path);
     assert.deepEqual(row(db, f.room.id), before); assert.equal(before.pause_reason, 'manual'); assert.equal(before.paused_player_id, null);
     assert.deepEqual(db.prepare('SELECT * FROM session_players').all(), players);
@@ -358,7 +358,7 @@ for (const state of ['manual', 'closed', 'submitted', 'excluded', 'missing']) te
     if (state === 'manual') pause.pauseGame(db, f.room.id);
     else pause.autoPauseForDisconnectedPlayer(db, f.room.id, f.identities[0].player.id);
     if (state === 'closed') await f.api.post(`${f.root}/close`).expect(200);
-    if (state === 'submitted') db.prepare('INSERT INTO player_answers VALUES (?, ?, ?, ?, ?)').run(f.room.id, f.identities[0].player.id, f.question.id, f.options[0].id, new Date().toISOString());
+    if (state === 'submitted') db.prepare('INSERT INTO player_answers VALUES (?, ?, ?, ?, ?)').run(f.room.id, f.identities[0].player.id, f.question.id, JSON.stringify([f.options[0].id]), new Date().toISOString());
     if (state === 'excluded') db.prepare('INSERT INTO question_exclusions VALUES (?, ?, ?)').run(f.room.id, f.question.id, f.identities[0].player.id);
     const before = row(db, f.room.id);
     const api = request(createApp(db, () => {}, () => true));

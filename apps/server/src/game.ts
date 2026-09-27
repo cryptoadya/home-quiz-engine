@@ -98,7 +98,8 @@ export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' |
   return {
     excluded,
     state: room.state, questionId: question.id,
-    ...(reveal ? { result: getPlayerResult(db, roomId, question.id, playerId), correctOptionId: question.options.find(option => option.isCorrect)!.id } : {}),
+    ...(question.type === 'multiple_choice' ? { type: question.type, requiredCorrectCount: question.options.filter(option => option.isCorrect).length } : {}),
+    ...(reveal ? { result: getPlayerResult(db, roomId, question.id, playerId), ...(question.type === 'multiple_choice' ? { correctOptionIds: question.options.filter(option => option.isCorrect).map(option => option.id) } : { correctOptionId: question.options.find(option => option.isCorrect)!.id }) } : {}),
     submission: getSubmission(db, roomId, question.id, playerId),
     text: language === 'ru' ? question.textRu : question.textEn,
     options: !reveal && excluded ? [] : question.options.map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),

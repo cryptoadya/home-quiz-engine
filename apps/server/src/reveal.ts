@@ -12,16 +12,18 @@ export function completeQuestionInTransaction(db: DatabaseSync, roomId: string, 
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
   if (expectedQuestionId && question.id !== expectedQuestionId) return false;
-  const players = db.prepare(`SELECT p.id, a.option_id, e.player_id AS excluded FROM session_players p
+  const players = db.prepare(`SELECT p.id, a.option_ids_json, e.player_id AS excluded FROM session_players p
     LEFT JOIN player_answers a ON a.session_id = p.session_id AND a.player_id = p.id AND a.question_id = ?
     LEFT JOIN question_exclusions e ON e.session_id = p.session_id AND e.player_id = p.id AND e.question_id = ?
     WHERE p.session_id = ? AND p.in_roster = 1`).all(question.id, question.id, roomId);
   const { answered, expected } = getAnswerCounts(db, roomId, question.id);
   if (answered !== expected && (paused || now < Date.parse(String(session.answer_deadline_at)))) return false;
-  const correct = question.options.find(option => option.isCorrect)!;
+  const correct = question.options.filter(option => option.isCorrect).map(option => option.id);
   const insert = db.prepare('INSERT INTO question_scores (session_id, question_id, player_id, result, awarded_points) VALUES (?, ?, ?, ?, ?)');
   for (const player of players) {
-    const result = player.excluded !== null || player.option_id === null ? 'unanswered' : player.option_id === correct.id ? 'correct' : 'wrong';
+    const selected: string[] = player.option_ids_json === null ? [] : JSON.parse(String(player.option_ids_json));
+    const result = player.excluded !== null || player.option_ids_json === null ? 'unanswered'
+      : selected.length === correct.length && correct.every(id => selected.includes(id)) ? 'correct' : 'wrong';
     insert.run(roomId, question.id, player.id, result, result === 'correct' ? question.points : 0);
   }
   // Retain navigation and original timer timestamps as completed-question context.

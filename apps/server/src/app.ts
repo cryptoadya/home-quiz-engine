@@ -202,7 +202,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.post(roundPath, (request, response) => {
     if (!getRound(db, request.params.quizId, request.params.roundId)) return response.status(404).json({ error: 'Round not found in quiz.' });
     const body = request.body;
-    if (body !== undefined && (typeof body !== 'object' || body === null || Array.isArray(body) || Object.keys(body).some(key => key !== 'type') || (body.type !== undefined && body.type !== 'single_choice' && body.type !== 'yes_no'))) return response.status(400).json({ error: 'Create question accepts only type: single_choice or yes_no.' });
+    if (body !== undefined && (typeof body !== 'object' || body === null || Array.isArray(body) || Object.keys(body).some(key => key !== 'type') || (body.type !== undefined && body.type !== 'single_choice' && body.type !== 'yes_no' && body.type !== 'multiple_choice'))) return response.status(400).json({ error: 'Create question accepts only type: single_choice, yes_no or multiple_choice.' });
     return response.status(201).json(createQuestion(db, request.params.roundId, body?.type));
   });
   app.put(`${roundPath}/order`, (request, response) => {
@@ -243,6 +243,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.put(`${optionsPath}/:optionId/correct`, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId) || !getOption(db, request.params.questionId, request.params.optionId)) return response.status(404).json({ error: 'Option not found in question.' });
     if (getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'yes_no' && listOptions(db, request.params.questionId).length !== 2) return response.status(400).json({ error: 'Yes / No needs exactly two options.' });
+    if (getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'multiple_choice') return response.status(400).json({ error: 'Use option fields to toggle Multiple Choice correctness.' });
     return response.json(selectCorrectOption(db, request.params.questionId, request.params.optionId));
   });
   app.put(`${optionsPath}/:optionId`, (request, response) => {

@@ -89,7 +89,13 @@ Acceptance: test the defined disconnect scenarios on real devices.
 
 Phase 5A complete: Yes/No editor, persistence, readiness, version-1 snapshots,
 shared single-select gameplay/scoring and focused reliability coverage. Automated
-checks and local browser mixed-quiz smoke passed; Phase 5 remains incomplete.
+checks and local browser mixed-quiz smoke passed.
+
+Phase 5B adds Multiple Choice with independent editor correctness, 2–10 options,
+at least two correct options, an always-visible required count, durable submitted
+sets and exact-set scoring through the shared lifecycle. Focused regressions cover
+mixed games, retries, reconnect/restart, Pause and Continue exclusions. Phase 5C
+and configurable count hints remain pending; Phase 5 remains incomplete.
 
 Scope:
 - Yes/No

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getRound } from './rounds.js';
 
-export type QuestionType = 'single_choice' | 'yes_no';
+export type QuestionType = 'single_choice' | 'yes_no' | 'multiple_choice';
 export type Question = {
   id: string; roundId: string; type: QuestionType; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean;
@@ -60,7 +60,7 @@ export function validateQuestionChanges(value: unknown): { changes: QuestionChan
   const input = value as Record<string, unknown>;
   const keys = ['type', 'textRu', 'textEn', 'points', 'answerTimeSeconds', 'showOptionsOnScreen'];
   if (Object.keys(input).length !== keys.length || Object.keys(input).some((key) => !keys.includes(key))) return { error: 'Provide all question fields.' };
-  if (input.type !== 'single_choice' && input.type !== 'yes_no') return { error: 'Choose single_choice or yes_no.' };
+  if (input.type !== 'single_choice' && input.type !== 'yes_no' && input.type !== 'multiple_choice') return { error: 'Choose single_choice, yes_no or multiple_choice.' };
   if (typeof input.textRu !== 'string' || typeof input.textEn !== 'string' || input.textRu.length > 5000 || input.textEn.length > 5000) return { error: 'Question text must be strings of at most 5000 characters.' };
   if (!Number.isSafeInteger(input.points) || (input.points as number) < 1) return { error: 'Points must be a positive integer.' };
   if (input.answerTimeSeconds !== null && (!Number.isInteger(input.answerTimeSeconds) || (input.answerTimeSeconds as number) < 1 || (input.answerTimeSeconds as number) > 3600)) return { error: 'Answer time must be null or 1–3600 seconds.' };

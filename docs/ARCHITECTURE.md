@@ -436,3 +436,28 @@ Reveal and full-points scoring pipeline. Type conversion keeps the first two
 option IDs/texts, fills blank labels with Да/Нет and Yes/No, preserves a retained
 correct option (otherwise selects the first), and removes extra options atomically.
 Converting back to Single Choice preserves both rows.
+
+## Multiple Choice questions (Phase 5B)
+
+Migration 16 adds `multiple_choice` to persisted question types. Readiness and
+version-1 frozen snapshots require 2–10 options and at least two correct options.
+The editor toggles correctness independently; conversion preserves options,
+with the existing Yes / No normalization still applied when converting to it.
+The required correct-option count is always shown to Player in this phase.
+
+Migration 17 replaces `player_answers.option_id` with `option_ids_json`, copying
+legacy answers into one-element arrays without changing identity, timestamps or
+answer keys. New submissions store sorted, distinct frozen option IDs. The HTTP
+contract retains `optionId` for Single Choice / Yes-No and uses `optionIds` for
+Multiple Choice; authenticated reconnect restores the corresponding accepted
+shape. Empty, duplicate, foreign or malformed sets fail even on retries. Valid
+retries return the original immutable set, including after Reveal/deadline.
+
+Player uses editable checkboxes and enables Submit with any nonempty selection.
+Before Reveal its projection includes only safe localized options, required count,
+its own submission and the existing timer. Reveal adds `correctOptionIds` and the
+personal result. Scoring compares the complete submitted set to the frozen correct
+set: exact equality earns full points; every other set earns zero. Existing answer
+row counts, timers, Pause, Wait/Continue, exclusions and navigation are reused;
+excluded/unanswered roster members still receive zero. Gameplay never reads the
+editable source, including after source deletion.

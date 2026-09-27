@@ -230,7 +230,7 @@ test('Phase 3E parent-table migration preserves Reveal state, scores, answers an
       DROP TRIGGER delete_quiz_lobbies; DROP TABLE game_sessions; ALTER TABLE old_sessions RENAME TO game_sessions;
       CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
       CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
-      DROP TABLE question_exclusions; DELETE FROM schema_migrations WHERE version >= 11`);
+      DROP TABLE question_exclusions; DELETE FROM schema_migrations WHERE version >= 11 AND version < 17`);
     db.close(); db = initializeDatabase(path);
     for (const [table, rows] of Object.entries(before)) assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), rows);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);

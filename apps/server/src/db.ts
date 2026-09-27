@@ -461,6 +461,38 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     ALTER TABLE questions_new RENAME TO questions;
     CREATE INDEX questions_round_position ON questions(round_id, position);`,
   },
+  {
+    version: 16,
+    rebuildForeignKeys: true,
+    sql: `CREATE TABLE questions_new (
+      id TEXT PRIMARY KEY,
+      round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK (type IN ('single_choice', 'yes_no', 'multiple_choice')),
+      text_ru TEXT NOT NULL, text_en TEXT NOT NULL,
+      points INTEGER NOT NULL CHECK (points > 0),
+      answer_time_seconds INTEGER CHECK (answer_time_seconds IS NULL OR answer_time_seconds BETWEEN 1 AND 3600),
+      show_options_on_screen INTEGER NOT NULL CHECK (show_options_on_screen IN (0, 1)),
+      position INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    INSERT INTO questions_new SELECT * FROM questions;
+    DROP TABLE questions;
+    ALTER TABLE questions_new RENAME TO questions;
+    CREATE INDEX questions_round_position ON questions(round_id, position);`,
+  },
+  {
+    version: 17,
+    sql: `CREATE TABLE player_answers_new (
+      session_id TEXT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+      player_id TEXT NOT NULL REFERENCES session_players(id) ON DELETE CASCADE,
+      question_id TEXT NOT NULL,
+      option_ids_json TEXT NOT NULL CHECK (json_valid(option_ids_json) AND json_type(option_ids_json) = 'array' AND json_array_length(option_ids_json) BETWEEN 1 AND 10),
+      submitted_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, question_id, player_id)
+    );
+    INSERT INTO player_answers_new SELECT session_id, player_id, question_id, json_array(option_id), submitted_at FROM player_answers;
+    DROP TABLE player_answers;
+    ALTER TABLE player_answers_new RENAME TO player_answers;`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

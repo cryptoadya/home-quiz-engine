@@ -18,11 +18,11 @@ function validOption(value: unknown): boolean {
   return record(value) && strings(value, ['id', 'textRu', 'textEn']) && typeof value.isCorrect === 'boolean';
 }
 function validQuestion(value: unknown): boolean {
-  return record(value) && strings(value, ['id', 'textRu', 'textEn']) && (value.type === 'single_choice' || value.type === 'yes_no')
+  return record(value) && strings(value, ['id', 'textRu', 'textEn']) && (value.type === 'single_choice' || value.type === 'yes_no' || value.type === 'multiple_choice')
     && integer(value.points, 1) && (value.answerTimeSeconds === null || integer(value.answerTimeSeconds, 1, 3600))
     && typeof value.showOptionsOnScreen === 'boolean' && ordered(value.options, validOption)
     && (value.type === 'yes_no' ? value.options.length === 2 : value.options.length >= 2 && value.options.length <= 10)
-    && value.options.filter(option => (option as SnapshotOption).isCorrect).length === 1;
+    && (value.type === 'multiple_choice' ? value.options.filter(option => (option as SnapshotOption).isCorrect).length >= 2 : value.options.filter(option => (option as SnapshotOption).isCorrect).length === 1);
 }
 function validRound(value: unknown): boolean {
   return record(value) && strings(value, ['id', 'titleRu', 'titleEn', 'descriptionRu', 'descriptionEn'])

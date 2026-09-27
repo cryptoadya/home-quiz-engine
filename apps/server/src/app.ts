@@ -1,3 +1,4 @@
+import { navigate, type NavigationAction } from './navigation.js';
 import { submitAnswer } from './answers.js';
 import { getSurfaceState, getPlayerGame, startRound, startQuestion } from './game.js';
 import { joinPlayer, reconnectPlayer, listPlayers } from './players.js';
@@ -39,6 +40,16 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
       response.set('Cache-Control', 'no-store');
       const state = getSurfaceState(db, request.params.roomId, audience);
       return state ? response.json(state) : response.status(404).json({ error: 'Room not found.' });
+    });
+  }
+  for (const action of ['next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner'] satisfies NavigationAction[]) {
+    app.post(`/api/rooms/:roomId/${action}`, (request, response) => {
+      const result = navigate(db, request.params.roomId, action);
+      if ('room' in result) {
+        lobbyChanged(result.room.id);
+        return response.json(result.room);
+      }
+      return response.status(result.status).json({ error: result.error });
     });
   }
   app.post('/api/rooms/:roomId/start-question', (request, response) => {

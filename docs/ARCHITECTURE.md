@@ -177,7 +177,7 @@ it does not introduce organizer authentication.
 SQLite. The existing `lobby:state` protocol broadcasts projections after commit
 and resends them on subscription/reconnect. Player's authenticated HTTP reconnect
 restores its safe state. Closed-room behavior takes precedence. Phases 3B–3D extend this foundation with Answering, timers, submissions and
-Reveal below; further navigation remains reserved for later slices.
+Reveal and post-Reveal navigation below.
 
 ## Answer timer (Phase 3B)
 
@@ -264,7 +264,7 @@ the frozen option ID, never editor data or client claims. These active-session
 rows support later `SUM(awarded_points)` totals; they are not detailed game history.
 Reveal leaves both navigation indexes and the original start/deadline timestamps
 unchanged. The UI stops showing the countdown; retained timestamps are context,
-not an active timer. No next-question transition is implemented.
+not an active timer. Phase 3E clears these timestamps on the next navigation transition.
 
 `deadlines.ts` owns cancellable in-process timeouts scheduled from persisted
 deadlines. A wakeup re-reads SQLite and checks question identity, closure, state
@@ -285,3 +285,31 @@ selected option, correct option ID, localized content and durable personal resul
 with earned points. RU/EN result UI has no rank or answer controls. Refresh and
 reconnect restore the same persisted result; closed-room display takes precedence.
 The existing trusted-LAN Host/Screen surface boundary is unchanged.
+
+
+## Post-Reveal navigation (Phase 3E)
+
+Migration 11 adds `ROUND_END`, `LEADERBOARD`, `FINAL_RESULTS` and `WINNER_SCREEN`
+without changing snapshots, roster, submissions or scores. Each completed-round
+boundary retains the final question index; `ROUND_INTRO` has a null question index.
+All non-answer states have null timer fields.
+
+Explicit HTTP commands `next`, `show-leaderboard`, `next-round`, `final-results`
+and `show-winner` validate the open session and frozen indexes/configuration in
+`BEGIN IMMEDIATE`, persist atomically, then broadcast through `lobby:state`.
+After Reveal, `next` enters the following `QUESTION` without starting its timer,
+or `ROUND_END` on the last question. Round End presents the completed round title;
+it enters Leaderboard only when the frozen `showLeaderboardAfter` is enabled.
+Next Round increments the frozen round index and enters Round Intro. The final
+boundary deliberately enters Final Results; only Show Winner enters Winner Screen.
+There is no automatic return or reset.
+
+`getLeaderboard` sums durable `question_scores.awarded_points` for fixed-roster,
+non-removed players, including zero-score players. It sorts by total descending,
+then joined timestamp/player ID for deterministic rendering; equal totals share
+competition rank (`1, 1, 3`) without a tie-break. Final Results uses all score rows;
+Winner Screen shows every rank-1 player. No mutable running total is stored.
+Host receives the valid next command; Screen presents standings/winners. Player
+receives simple localized boundary messages, with no personal per-question rank.
+HTTP reload and socket subscription rebuild each state from SQLite, snapshot and
+scores. Closed rooms override all views and reject every navigation command.

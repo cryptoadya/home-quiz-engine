@@ -481,3 +481,128 @@ for (const [outcome, language, label, points] of [
   assert.equal(view.queryByText(label), null);
   assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
 });
+
+const standingRows = [
+  { playerId: 'a', displayName: 'Alice', totalPoints: 10, rank: 1 },
+  { playerId: 'b', displayName: 'Bob', totalPoints: 10, rank: 1 },
+  { playerId: 'c', displayName: 'Carol', totalPoints: 8, rank: 3 },
+];
+const boundary = (phase: string, nextAction: string | null, leaderboard = standingRows) => ({
+  room: { ...room, state: phase },
+  game: { state: phase, roundNumber: 1, questionCount: 2, titleRu: 'Раунд один', titleEn: 'Round one', nextAction,
+    ...(phase === 'ROUND_END' ? {} : { leaderboard: phase === 'WINNER_SCREEN' ? leaderboard.filter(p => p.rank === 1) : leaderboard }) },
+});
+
+test('Host follows explicit Reveal, round, leaderboard and final commands, with reload at every boundary', async () => {
+  socket();
+  mock.method(window, 'confirm', () => { throw new Error('No confirmation for progression'); });
+  let snapshot: unknown = { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...questionGame, state: 'ANSWER_REVEAL', questionNumber: 1, questionCount: 2, nextAction: 'next' } };
+  const commands: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === 'POST') {
+      const command = String(url).split('/').at(-1)!;
+      commands.push(command);
+      if (command === 'next' && commands.length === 1) snapshot = { room: { ...room, state: 'QUESTION' }, game: { ...questionGame, state: 'QUESTION', questionNumber: 2, questionCount: 2 } };
+      else if (command === 'next') snapshot = boundary('ROUND_END', 'show-leaderboard');
+      else if (command === 'show-leaderboard') snapshot = boundary('LEADERBOARD', 'next-round');
+      else if (command === 'next-round') snapshot = { room: { ...room, state: 'ROUND_INTRO' }, game: { state: 'ROUND_INTRO', roundNumber: 2, questionCount: 1, titleRu: 'Второй', titleEn: 'Second', descriptionRu: '', descriptionEn: '' } };
+      else if (command === 'final-results') snapshot = boundary('FINAL_RESULTS', 'show-winner');
+      else if (command === 'show-winner') snapshot = boundary('WINNER_SCREEN', null);
+      else throw new Error(`Unexpected command: ${command}`);
+    }
+    return Response.json(snapshot);
+  };
+  let view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Next Question' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Next Question' })); });
+  assert.ok(view.getByRole('button', { name: 'Start Question' }));
+  assert.equal(view.queryByRole('timer'), null);
+  view.unmount();
+  snapshot = { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...questionGame, state: 'ANSWER_REVEAL', questionNumber: 2, questionCount: 2, nextAction: 'next' } };
+  view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Next' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Next' })); });
+  assert.ok(view.getByText('Раунд завершён / Round complete'));
+  assert.ok(view.getByText('Round one'));
+  for (const action of ['Show Leaderboard', 'Next Round']) {
+    view.unmount(); view = show('/host/room');
+    await waitFor(() => assert.ok(view.getByRole('button', { name: action })));
+    if (action === 'Next Round') {
+      const ranks = [...view.getByRole('table').querySelectorAll('tbody tr')].map(row => row.firstElementChild?.textContent);
+      assert.deepEqual(ranks, ['1', '1', '3']);
+      assert.ok(view.getByText('Alice')); assert.ok(view.getByText('Carol'));
+    }
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: action })); });
+  }
+  assert.ok(view.getByText('Second'));
+  assert.ok(view.getByRole('button', { name: 'Start Round' }));
+  view.unmount();
+  snapshot = boundary('ROUND_END', 'final-results');
+  view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Final Results' })));
+  assert.equal(view.queryByRole('button', { name: 'Show Leaderboard' }), null);
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Final Results' })); });
+  assert.ok(view.getByRole('table'));
+  assert.ok(view.getByRole('button', { name: 'Show Winner' }));
+  assert.equal(view.queryByText('Победители / Winners'), null);
+  view.unmount(); view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Show Winner' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Show Winner' })); });
+  view.unmount(); view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByText('Победители / Winners')));
+  assert.ok(view.getByText('Alice')); assert.ok(view.getByText('Bob'));
+  assert.equal(view.queryByRole('button', { name: /Next|Show|Start|Final/ }), null);
+  assert.deepEqual(commands, ['next', 'next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner']);
+});
+
+for (const tied of [false, true]) test(`Screen live navigation and reload renders ${tied ? 'tied' : 'single'} winners and closure`, async () => {
+  const live = socket();
+  const standings = tied ? standingRows : [standingRows[0], { ...standingRows[1], rank: 2, totalPoints: 9 }];
+  let snapshot: unknown = { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...questionGame, state: 'ANSWER_REVEAL' } };
+  globalThis.fetch = async () => Response.json(snapshot);
+  let view = show('/screen/room');
+  await waitFor(() => assert.ok(view.getByText(/Correct answer/)));
+  snapshot = { room: { ...room, state: 'QUESTION' }, game: { ...questionGame, state: 'QUESTION', questionNumber: 2, showOptionsOnScreen: true } };
+  await act(async () => { live.emit('lobby:state', snapshot); });
+  assert.ok(view.getByText(/Question 2/));
+  assert.equal(view.queryByText(/Correct answer/), null);
+  for (const phase of ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN']) {
+    snapshot = boundary(phase, null, standings);
+    await act(async () => { live.emit('lobby:state', snapshot); });
+    view.unmount(); view = show('/screen/room');
+    await waitFor(() => assert.ok(view.getByText(phase === 'ROUND_END' ? 'Round one' : 'Alice')));
+    assert.equal(view.queryByRole('button'), null);
+    if (phase === 'LEADERBOARD' || phase === 'FINAL_RESULTS') assert.ok(view.getByRole('table'));
+    if (phase === 'WINNER_SCREEN') {
+      assert.equal(Boolean(view.queryByText('Bob')), tied);
+      assert.equal(view.queryByText('Carol'), null);
+      assert.equal(view.queryByRole('table'), null);
+    }
+  }
+  const closed = { ...boundary('WINNER_SCREEN', null, standings), room: { ...room, state: 'WINNER_SCREEN', closedAt: 'now' } };
+  await act(async () => { live.emit('lobby:state', closed); });
+  assert.equal(view.queryByText('Alice'), null);
+  assert.ok(view.getByRole('status'));
+});
+
+for (const language of ['ru', 'en']) test(`Player ${language} new boundaries stay minimal across live navigation and reload`, async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let phase = 'ROUND_END';
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: phase }, player: { ...player, language }, active: true, game: null });
+  let view = show('/play/ABCDE');
+  const labels = language === 'ru' ? ['Раунд завершён', 'Смотрите на экран', 'Финальные результаты', 'Игра завершена'] : ['Round complete', 'Look at the screen', 'Final results', 'Game finished'];
+  for (const [index, next] of ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].entries()) {
+    phase = next;
+    await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
+    await waitFor(() => assert.ok(view.getByText(labels[index])));
+    view.unmount(); view = show('/play/ABCDE');
+    await waitFor(() => assert.ok(view.getByText(labels[index])));
+    assert.equal(view.queryByRole('button'), null);
+    assert.equal(view.queryByRole('table'), null);
+    assert.doesNotMatch(view.container.innerHTML, /rank/i);
+  }
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase, closedAt: 'now' } }); });
+  assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
+  assert.equal(view.queryByText(labels[3]), null);
+});

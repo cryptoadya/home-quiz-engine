@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { currentContent } from './snapshot.js';
 import { getRoom } from './rooms.js';
 import { effectiveDuration, createAnswerTimer, projectAnswerTimer } from './timer.js';
+import { getLeaderboard, navigationAction } from './navigation.js';
 import { listPlayers } from './players.js';
 
 export type Audience = 'host' | 'screen' | 'player';
@@ -18,11 +19,18 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
     titleRu: round.titleRu, titleEn: round.titleEn,
     descriptionRu: round.descriptionRu, descriptionEn: round.descriptionEn,
   };
+  if (room.state === 'ROUND_END' || room.state === 'LEADERBOARD' || room.state === 'FINAL_RESULTS' || room.state === 'WINNER_SCREEN') {
+    const leaderboard = room.state === 'ROUND_END' ? undefined : getLeaderboard(db, roomId);
+    return { state: room.state, ...numbering, titleRu: round.titleRu, titleEn: round.titleEn,
+      ...(leaderboard ? { leaderboard: room.state === 'WINNER_SCREEN' ? leaderboard.filter(player => player.rank === 1) : leaderboard } : {}),
+      ...(audience === 'host' ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}),
+    };
+  }
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
   const reveal = room.state === 'ANSWER_REVEAL';
   const timer = room.state === 'ANSWERING' || reveal ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
-  const common = { state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
+  const common = { ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
     textRu: question.textRu, textEn: question.textEn };
   if (audience === 'host') return { ...common, points: question.points,
     answerTimeSeconds: effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds),

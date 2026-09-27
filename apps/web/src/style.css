@@ -76,3 +76,8 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .answer-choices label:has(input:checked) { outline: 2px solid currentColor; border-radius: 0.4rem; }
 
 .correct-option { border: 2px solid #23834a; background: #eaf7ee; padding: 0.75rem; color: #153c24; }
+
+.leaderboard { width: 100%; border-collapse: collapse; text-align: left; }
+.leaderboard th, .leaderboard td { padding: .75rem; border-bottom: 1px solid #ccc; }
+.screen-lobby .leaderboard { font-size: clamp(1.5rem, 3vw, 3rem); }
+.winners { font-size: clamp(2rem, 5vw, 5rem); }

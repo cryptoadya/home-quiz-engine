@@ -23,3 +23,14 @@ export function QuestionContent({ question, host = false }: { question: CurrentQ
     </li>)}</ol>}
   </>;
 }
+
+export function BoundaryContent({ game }: { game: import('./lobby').GameBoundary }) {
+  return <>
+    <h2>{game.state === 'ROUND_END' ? 'Раунд завершён / Round complete' : game.state === 'LEADERBOARD' ? 'Таблица лидеров / Leaderboard' : game.state === 'FINAL_RESULTS' ? 'Финальные результаты / Final results' : 'Победители / Winners'}</h2>
+    {game.state === 'ROUND_END' && <><h3 lang="ru">{game.titleRu}</h3><h3 lang="en">{game.titleEn}</h3></>}
+    {game.leaderboard && (game.state === 'WINNER_SCREEN'
+      ? <div className="winners">{game.leaderboard.map(player => <p key={player.playerId}><strong>{player.displayName}</strong> — {player.totalPoints} <span>очков / points</span></p>)}</div>
+      : <table className="leaderboard"><thead><tr><th>Место / Rank</th><th>Игрок / Player</th><th>Очки / Points</th></tr></thead>
+        <tbody>{game.leaderboard.map(player => <tr key={player.playerId}><td>{player.rank}</td><td>{player.displayName}</td><td>{player.totalPoints}</td></tr>)}</tbody></table>)}
+  </>;
+}

@@ -116,6 +116,10 @@ function PlayerRoom({ code }: { code: string }) {
         ? (currentRoom?.state === 'ROUND_INTRO'
           ? (ru ? 'Раунд начинается…' : 'Round is starting…')
           : currentRoom?.state === 'QUESTION' ? (ru ? 'Приготовьтесь к вопросу' : 'Get ready for the question')
+           : currentRoom?.state === 'ROUND_END' ? (ru ? 'Раунд завершён' : 'Round complete')
+          : currentRoom?.state === 'LEADERBOARD' ? (ru ? 'Смотрите на экран' : 'Look at the screen')
+          : currentRoom?.state === 'FINAL_RESULTS' ? (ru ? 'Финальные результаты' : 'Final results')
+          : currentRoom?.state === 'WINNER_SCREEN' ? (ru ? 'Игра завершена' : 'Game finished')
           : (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…'))
         : (ru ? 'Комната закрыта' : 'Room closed')}</p>}
     </> : <>

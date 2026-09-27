@@ -2,8 +2,8 @@ import { Countdown } from './Countdown';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { useLobby } from './lobby';
-import { RoundIntroContent, QuestionContent } from './GameContent';
+import { useLobby, type NavigationAction } from './lobby';
+import { RoundIntroContent, QuestionContent, BoundaryContent } from './GameContent';
 
 export function Host() {
   const { roomId } = useParams();
@@ -12,14 +12,14 @@ export function Host() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function start(action: 'start' | 'start-round' | 'start-question' = 'start') {
+  async function start(action: 'start' | 'start-round' | 'start-question' | NavigationAction = 'start') {
     if (action === 'start' && !window.confirm('Start game? The player list and quiz content will be locked.')) return;
     setBusy(true);
     setError('');
     try {
       const response = await fetch(`/api/rooms/${roomId}/${action}`, { method: 'POST' });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Could not start game.');
+      if (!response.ok) throw new Error(body.error || 'Could not advance game.');
       await refresh();
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
@@ -50,7 +50,7 @@ export function Host() {
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       <ul>{state?.players?.map(player => <li key={player.id}>{player.name} — {player.language.toUpperCase()}</li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
-      <p>State: <span>{room.state === 'ROUND_INTRO' ? 'Round Intro' : room.state === 'QUESTION' ? 'Question' : room.state === 'ANSWER_REVEAL' ? 'Answer Reveal' : room.state === 'ANSWERING' ? 'Answering' : 'Lobby'}</span></p>
+      <p>State: <span>{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>
       {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
         <button onClick={() => void start()} disabled={busy}>Start Game</button>}
       {!room.closedAt && state?.game?.state === 'ROUND_INTRO' && <section className="game-content">
@@ -65,6 +65,12 @@ export function Host() {
         {state.game.state === 'QUESTION' && <button onClick={() => void start('start-question')} disabled={busy}>Start Question</button>}
         {state.game.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}
       </section>}
+      {!room.closedAt && state?.game && ('nextAction' in state.game) && <>
+        {['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <section className="game-content"><BoundaryContent game={state.game as import('./lobby').GameBoundary} /></section>}
+        {state.game.nextAction && <button onClick={() => void start((state.game as { nextAction: NavigationAction }).nextAction)} disabled={busy}>{state.game.nextAction === 'next'
+          ? ('questionNumber' in state.game && state.game.questionNumber < state.game.questionCount ? 'Next Question' : 'Next')
+          : { 'show-leaderboard': 'Show Leaderboard', 'next-round': 'Next Round', 'final-results': 'Final Results', 'show-winner': 'Show Winner' }[state.game.nextAction]}</button>}
+      </>}
       {room.closedAt ? <p role="status">Room closed</p> : <button onClick={() => void close()} disabled={busy}>Close room</button>}
     </>}
   </main>;

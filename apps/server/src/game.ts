@@ -1,5 +1,6 @@
+import { absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
 import { getRevealStats, getPlayerResult } from './reveal.js';
-import { getSubmission, getAnswerCounts } from './answers.js';
+import { getSubmission, getAnswerCounts, isQuestionExcluded } from './answers.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { currentContent } from './snapshot.js';
 import { getRoom } from './rooms.js';
@@ -9,7 +10,7 @@ import { listPlayers } from './players.js';
 
 export type Audience = 'host' | 'screen' | 'player';
 
-function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: number) {
+function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: number, presence: PlayerPresenceChecker) {
   const room = getRoom(db, roomId)!;
   if (room.closedAt || room.state === 'LOBBY' || audience === 'player') return null;
   if (room.state === 'PAUSED') {
@@ -18,6 +19,7 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
       ...(audience === 'host' ? { reason: row.pause_reason as 'manual' | 'player_disconnect',
         disconnectedPlayer: row.paused_player_id === null ? null : {
           id: String(row.paused_player_id),
+          present: presence(roomId, String(row.paused_player_id)),
           name: String(db.prepare('SELECT display_name FROM session_players WHERE session_id = ? AND id = ?').get(roomId, row.paused_player_id)!.display_name),
         },
       } : {}),
@@ -52,12 +54,12 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   };
 }
 
-export function getSurfaceState(db: DatabaseSync, roomId: string, audience: Audience, now = Date.now()) {
+export function getSurfaceState(db: DatabaseSync, roomId: string, audience: Audience, now = Date.now(), presence: PlayerPresenceChecker = absentPlayerPresence) {
   const room = getRoom(db, roomId);
   if (!room) return null;
   // Player receives only safe metadata, even when the stored content is invalid.
   if (audience === 'player') return { room };
-  return { room, players: listPlayers(db, roomId), game: projectGame(db, roomId, audience, now) };
+  return { room, players: listPlayers(db, roomId), game: projectGame(db, roomId, audience, now, presence) };
 }
 
 export function startRound(db: DatabaseSync, roomId: string) {
@@ -80,6 +82,7 @@ export function startRound(db: DatabaseSync, roomId: string) {
 
 function readTimer(db: DatabaseSync, roomId: string, now: number) {
   const row = db.prepare('SELECT answer_started_at, answer_deadline_at FROM game_sessions WHERE id = ?').get(roomId)!;
+  if (row.answer_started_at === null || row.answer_deadline_at === null) return undefined;
   return projectAnswerTimer(String(row.answer_started_at), String(row.answer_deadline_at), now);
 }
 
@@ -91,12 +94,14 @@ export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' |
   const question = questionIndex === null ? undefined : round.questions[questionIndex];
   if (!question) throw new Error('Current question not found.');
   const reveal = room.state === 'ANSWER_REVEAL';
+  const excluded = isQuestionExcluded(db, roomId, question.id, playerId);
   return {
+    excluded,
     state: room.state, questionId: question.id,
     ...(reveal ? { result: getPlayerResult(db, roomId, question.id, playerId), correctOptionId: question.options.find(option => option.isCorrect)!.id } : {}),
     submission: getSubmission(db, roomId, question.id, playerId),
     text: language === 'ru' ? question.textRu : question.textEn,
-    options: question.options.map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),
+    options: !reveal && excluded ? [] : question.options.map(option => ({ id: option.id, text: language === 'ru' ? option.textRu : option.textEn })),
     ...(reveal ? {} : { timer: readTimer(db, roomId, now) }),
   };
 }

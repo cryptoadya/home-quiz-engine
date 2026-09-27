@@ -109,6 +109,7 @@ for (const language of ['ru', 'en']) for (const reload of [false, true]) test(`P
   if (reload) {
     view.unmount(); view = show('/play/ABCDE');
     await waitFor(() => assert.ok(view.getByText(label)));
+    await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   }
   phase = 'ANSWERING'; remaining = 10000;
   globalThis.fetch = () => new Promise(resolve => { pending = resolve; });
@@ -123,7 +124,7 @@ for (const language of ['ru', 'en']) for (const reload of [false, true]) test(`P
   assert.equal(view.queryByText(label), null);
 });
 
-for (const audience of ['host', 'screen']) test(`${audience} disconnect pause renders the appropriate private/public message without resolution controls`, async () => {
+for (const audience of ['host', 'screen']) test(`${audience} disconnect pause renders the appropriate private/public resolution controls`, async () => {
   const live = socket();
   const snapshot = { ...paused, game: { ...paused.game, reason: 'player_disconnect', disconnectedPlayer: { id: 'a', name: 'Alice' } } };
   globalThis.fetch = async () => Response.json({ room, game: question });
@@ -133,7 +134,8 @@ for (const audience of ['host', 'screen']) test(`${audience} disconnect pause re
   if (audience === 'host') {
     assert.ok(view.getByText('Alice disconnected.'));
     assert.ok(view.getByText('Game paused.'));
-    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Resume', 'Close room']);
+    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Wait for Player', 'Continue Without Player', 'Close room']);
+    assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, true);
   } else {
     assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
     assert.equal(view.queryByText(/Alice/), null);
@@ -169,4 +171,57 @@ test('accepted Player answer survives socket disconnect without displaying an in
   assert.equal(view.queryByText('Paused'), null);
   assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
   assert.equal((view.getByRole('radio') as HTMLInputElement).disabled, true);
+});
+
+test('Host reconnect enables Wait without confirmation and resumes; Continue requires explicit confirmation', async () => {
+  const live = socket();
+  const disconnect = (present: boolean) => ({ ...paused, game: { ...paused.game, reason: 'player_disconnect', disconnectedPlayer: { id: 'a', name: 'Alice', present } } });
+  let snapshot: unknown = disconnect(false);
+  const commands: string[] = [];
+  const confirmations: string[] = [];
+  let confirm = false;
+  mock.method(dom.window, 'confirm', (message: string) => { confirmations.push(String(message)); return confirm; });
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === 'POST') {
+      commands.push(String(url).split('/').at(-1)!);
+      snapshot = { room: { ...room, state: 'ANSWERING' }, game: { ...question, state: 'ANSWERING', timer: timer(Date.now(), 10000) } };
+    }
+    return Response.json(snapshot);
+  };
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Wait for Player' })));
+  assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, true);
+  assert.equal(view.queryByRole('button', { name: 'Resume' }), null);
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Continue Without Player' })); });
+  assert.deepEqual(commands, []);
+  assert.match(confirmations[0], /Continue without Alice.*0 points for this question.*return for the next question/);
+  snapshot = disconnect(true);
+  await act(async () => { live.emit('lobby:state', snapshot); });
+  assert.ok(view.getByText(/Alice is back/));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Wait for Player' })); });
+  assert.deepEqual(commands, ['wait-for-player']); assert.equal(confirmations.length, 1);
+  assert.equal(view.getByRole('timer').textContent, '10');
+  snapshot = disconnect(false);
+  await act(async () => { live.emit('lobby:state', snapshot); });
+  confirm = true;
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Continue Without Player' })); });
+  assert.deepEqual(commands, ['wait-for-player', 'continue-without-player']);
+  assert.ok(view.getByRole('button', { name: 'Pause' }));
+});
+
+for (const language of ['ru', 'en']) test(`excluded Player ${language} has no controls and next question restores them`, async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let excluded = true;
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'ANSWERING' }, active: true, player: { id: 'a', name: 'Alice', language },
+    game: { state: 'ANSWERING', questionId: excluded ? 'q1' : 'q2', excluded, text: 'Pick', options: excluded ? [] : [{ id: 'a', text: 'Apple' }], submission: { submitted: false }, timer: timer(Date.now(), 10000) } });
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Этот вопрос продолжен без вас' : 'This question continued without you')));
+  assert.equal(view.queryByRole('radio'), null); assert.equal(view.queryByRole('timer'), null);
+  assert.equal(view.queryByRole('button', { name: /Submit|Отправить/ }), null);
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'QUESTION' } }); });
+  excluded = false;
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWERING' } }); });
+  await waitFor(() => assert.ok(view.getByRole('radio')));
+  assert.equal((view.getByRole('radio') as HTMLInputElement).disabled, false);
 });

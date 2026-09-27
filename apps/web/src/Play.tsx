@@ -115,7 +115,7 @@ function PlayerRoom({ code }: { code: string }) {
       <p>{currentRoom?.code}</p>
       <p>{identity.player.name}</p>
       {isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
-        {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
+        {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game?.excluded && currentRoom?.state === 'ANSWERING' ? <p role="status">{ru ? 'Этот вопрос продолжен без вас' : 'This question continued without you'}</p> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
           token={token} roomId={identity.room.id} language={identity.player.language} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
         {error && <button onClick={() => setRetry(value => value + 1)}>Retry</button>}
       </section> : <p role="status">{isActive

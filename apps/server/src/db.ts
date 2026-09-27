@@ -384,6 +384,65 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     END;
 `,
   },
+  {
+    version: 14,
+    rebuildForeignKeys: true,
+    sql: `CREATE TABLE game_sessions_new (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL CHECK (length(code) = 5 AND code NOT GLOB '*[^ABCDEFGHJKMNPQRSTUVWXYZ23456789]*'),
+      quiz_id TEXT REFERENCES quizzes(id) ON DELETE SET NULL,
+      state TEXT NOT NULL CHECK (state IN ('LOBBY', 'ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN', 'PAUSED')),
+      created_at TEXT NOT NULL,
+      closed_at TEXT,
+      snapshot_json TEXT CHECK (snapshot_json IS NULL OR json_valid(snapshot_json)),
+      roster_locked_at TEXT,
+      current_round_index INTEGER CHECK (current_round_index IS NULL OR (typeof(current_round_index) = 'integer' AND current_round_index >= 0)),
+      current_question_index INTEGER CHECK (current_question_index IS NULL OR (typeof(current_question_index) = 'integer' AND current_question_index >= 0)),
+      answer_started_at TEXT,
+      answer_deadline_at TEXT,
+      paused_from_state TEXT,
+      paused_at TEXT,
+      paused_remaining_ms INTEGER,
+      pause_reason TEXT,
+      paused_player_id TEXT,
+      CHECK ((state = 'PAUSED' AND pause_reason IS NOT NULL
+        AND ((pause_reason = 'manual' AND paused_player_id IS NULL)
+          OR (pause_reason = 'player_disconnect' AND paused_player_id IS NOT NULL AND paused_from_state = 'ANSWERING')))
+        OR (state <> 'PAUSED' AND pause_reason IS NULL AND paused_player_id IS NULL)),
+      CHECK ((state = 'PAUSED' AND paused_from_state IS NOT NULL
+        AND paused_from_state IN ('ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS')
+        AND paused_at IS NOT NULL AND julianday(paused_at) IS NOT NULL AND substr(paused_at, -1) = 'Z'
+        AND ((paused_from_state = 'ANSWERING' AND paused_remaining_ms IS NOT NULL
+          AND typeof(paused_remaining_ms) = 'integer' AND paused_remaining_ms > 0)
+          OR (paused_from_state <> 'ANSWERING' AND paused_remaining_ms IS NULL)))
+        OR (state <> 'PAUSED' AND paused_from_state IS NULL AND paused_at IS NULL AND paused_remaining_ms IS NULL)),
+      CHECK (((state IN ('ANSWERING', 'ANSWER_REVEAL') OR (state = 'PAUSED' AND paused_from_state = 'ANSWER_REVEAL')) AND answer_started_at IS NOT NULL AND answer_deadline_at IS NOT NULL
+        AND julianday(answer_started_at) IS NOT NULL AND julianday(answer_deadline_at) IS NOT NULL
+        AND substr(answer_started_at, -1) = 'Z' AND substr(answer_deadline_at, -1) = 'Z'
+        AND julianday(answer_deadline_at) > julianday(answer_started_at))
+        OR ((state = 'ANSWER_REVEAL' OR (state = 'PAUSED' AND paused_from_state = 'ANSWER_REVEAL')) AND answer_started_at IS NULL AND answer_deadline_at IS NULL)
+        OR (NOT (state IN ('ANSWERING', 'ANSWER_REVEAL') OR (state = 'PAUSED' AND paused_from_state = 'ANSWER_REVEAL')) AND answer_started_at IS NULL AND answer_deadline_at IS NULL)),
+      CHECK ((state = 'LOBBY' AND current_round_index IS NULL AND current_question_index IS NULL)
+        OR ((state = 'ROUND_INTRO' OR (state = 'PAUSED' AND paused_from_state = 'ROUND_INTRO')) AND current_round_index IS NOT NULL AND current_question_index IS NULL)
+        OR ((CASE WHEN state = 'PAUSED' THEN paused_from_state ELSE state END) IN ('QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN') AND current_round_index IS NOT NULL AND current_question_index IS NOT NULL)),
+      CHECK ((state = 'LOBBY' AND quiz_id IS NOT NULL AND snapshot_json IS NULL AND roster_locked_at IS NULL)
+        OR (state IN ('ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN', 'PAUSED') AND snapshot_json IS NOT NULL AND roster_locked_at IS NOT NULL))
+    );
+    INSERT INTO game_sessions_new SELECT * FROM game_sessions;
+    DROP TRIGGER delete_quiz_lobbies;
+    DROP TABLE game_sessions;
+    ALTER TABLE game_sessions_new RENAME TO game_sessions;
+    CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
+    CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN
+      DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY';
+    END;
+    CREATE TABLE question_exclusions (
+      session_id TEXT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+      question_id TEXT NOT NULL,
+      player_id TEXT NOT NULL REFERENCES session_players(id) ON DELETE CASCADE,
+      PRIMARY KEY (session_id, question_id, player_id)
+    );`,
+  },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

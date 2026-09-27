@@ -1,4 +1,4 @@
-import { pauseGame, resumeGame } from './pause.js';
+import { pauseGame, resumeGame, waitForPlayer, continueWithoutPlayer, absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
 import { navigate, type NavigationAction } from './navigation.js';
 import { submitAnswer } from './answers.js';
 import { getSurfaceState, getPlayerGame, startRound, startQuestion } from './game.js';
@@ -13,7 +13,7 @@ import { createQuestion, deleteQuestion, getQuestion, listQuestions, reorderQues
 import { getRound } from './rounds.js';
 import { validateQuizReadiness } from './validation.js';
 
-export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}) {
+export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}, presence: PlayerPresenceChecker = absentPlayerPresence) {
   const app = express();
   app.use(express.json());
 
@@ -39,7 +39,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   for (const audience of ['host', 'screen'] as const) {
     app.get(`/api/rooms/:roomId/game/${audience}`, (request, response) => {
       response.set('Cache-Control', 'no-store');
-      const state = getSurfaceState(db, request.params.roomId, audience);
+      const state = getSurfaceState(db, request.params.roomId, audience, Date.now(), presence);
       return state ? response.json(state) : response.status(404).json({ error: 'Room not found.' });
     });
   }
@@ -53,7 +53,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
       return response.status(result.status).json({ error: result.error });
     });
   }
-  for (const [action, command] of [['pause', pauseGame], ['resume', resumeGame]] as const) {
+  for (const [action, command] of [['pause', pauseGame], ['resume', resumeGame], ['wait-for-player', (db: DatabaseSync, roomId: string) => waitForPlayer(db, roomId, presence)], ['continue-without-player', continueWithoutPlayer]] as const) {
     app.post(`/api/rooms/:roomId/${action}`, (request, response) => {
       const result = command(db, request.params.roomId);
       if ('room' in result) {

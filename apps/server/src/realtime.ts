@@ -11,9 +11,17 @@ import { getSurfaceState, type Audience } from './game.js';
 const channel = (roomId: string, audience: Audience) => `lobby:${roomId}:${audience}`;
 
 export function createQuizServer(db: DatabaseSync) {
+  const presence = new Map<string, Set<string>>();
+  const isPlayerPresent = (roomId: string, playerId: string) => (presence.get(`${roomId}:${playerId}`)?.size ?? 0) > 0;
+  function broadcastPresence(roomId: string) {
+    const state = getSurfaceState(db, roomId, 'host', Date.now(), isPlayerPresent);
+    if (state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect') {
+      io.to(channel(roomId, 'host')).emit('lobby:state', state);
+    }
+  }
   function broadcast(roomId: string) {
     for (const audience of ['host', 'screen', 'player'] as const) {
-      const state = getSurfaceState(db, roomId, audience);
+      const state = getSurfaceState(db, roomId, audience, Date.now(), isPlayerPresent);
       if (state) io.to(channel(roomId, audience)).emit('lobby:state', state);
     }
   }
@@ -21,12 +29,11 @@ export function createQuizServer(db: DatabaseSync) {
   const app = createApp(db, roomId => {
     deadlines.sync(roomId);
     broadcast(roomId);
-  });
+  }, isPlayerPresent);
   const server = createServer(app);
   const io = new Server(server);
   // Presence is process-local. Only an observed loss of the last authenticated
   // socket invokes the durable transaction; an empty registry at startup does not.
-  const presence = new Map<string, Set<string>>();
   io.on('connection', socket => {
     let identity: { roomId: string; playerId: string } | undefined;
     function replacePresence(next?: typeof identity) {
@@ -42,14 +49,16 @@ export function createQuizServer(db: DatabaseSync) {
           if (autoPauseForDisconnectedPlayer(db, previous.roomId, previous.playerId)) {
             deadlines.sync(previous.roomId);
             broadcast(previous.roomId);
-          }
+          } else broadcastPresence(previous.roomId);
         }
       }
       if (next) {
         const key = `${next.roomId}:${next.playerId}`;
         const sockets = presence.get(key) ?? new Set<string>();
+        const wasAbsent = sockets.size === 0;
         sockets.add(socket.id);
         presence.set(key, sockets);
+        if (wasAbsent) broadcastPresence(next.roomId);
       }
     }
     socket.on('disconnect', () => replacePresence());
@@ -79,7 +88,7 @@ export function createQuizServer(db: DatabaseSync) {
       replacePresence(next);
       // SQLite reads and the local adapter are synchronous: no mutation can interleave
       // this fresh snapshot and subscription. Every reconnect repeats this operation.
-      const state = getSurfaceState(db, room.id, audience);
+      const state = getSurfaceState(db, room.id, audience, Date.now(), isPlayerPresent);
       void socket.join(channel(room.id, audience));
       socket.emit('lobby:state', state);
     });

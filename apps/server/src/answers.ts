@@ -12,10 +12,17 @@ export function getSubmission(db: DatabaseSync, roomId: string, questionId: stri
   return row ? { submitted: true, optionId: String(row.option_id) } : { submitted: false };
 }
 
+export function isQuestionExcluded(db: DatabaseSync, roomId: string, questionId: string, playerId: string): boolean {
+  return Boolean(db.prepare('SELECT 1 FROM question_exclusions WHERE session_id = ? AND question_id = ? AND player_id = ?').get(roomId, questionId, playerId));
+}
+
 export function getAnswerCounts(db: DatabaseSync, roomId: string, questionId: string) {
-  const answered = db.prepare('SELECT count(*) AS n FROM player_answers WHERE session_id = ? AND question_id = ?').get(roomId, questionId)!;
-  const expected = db.prepare('SELECT count(*) AS n FROM session_players WHERE session_id = ? AND in_roster = 1').get(roomId)!;
-  return { answered: Number(answered.n), expected: Number(expected.n) };
+  const counts = db.prepare(`SELECT count(*) AS expected, count(a.player_id) AS answered FROM session_players p
+    LEFT JOIN player_answers a ON a.session_id = p.session_id AND a.question_id = ? AND a.player_id = p.id
+    WHERE p.session_id = ? AND p.in_roster = 1
+    AND NOT EXISTS (SELECT 1 FROM question_exclusions e WHERE e.session_id = p.session_id AND e.question_id = ? AND e.player_id = p.id)`)
+    .get(questionId, roomId, questionId)!;
+  return { answered: Number(counts.answered), expected: Number(counts.expected) };
 }
 
 export function submitAnswer(db: DatabaseSync, roomId: string, body: unknown, clock: () => number = Date.now):
@@ -39,6 +46,7 @@ export function submitAnswer(db: DatabaseSync, roomId: string, body: unknown, cl
     const { round, questionIndex } = currentContent(db, roomId);
     const question = questionIndex === null ? undefined : round.questions[questionIndex];
     if (!question || question.id !== input.questionId) return { status: 409, error: 'Question is not current.' };
+    if (isQuestionExcluded(db, roomId, question.id, identity.player.id)) return { status: 409, error: 'This question continued without you.' };
     if (!question.options.some(option => option.id === input.optionId)) return { status: 400, error: 'Option does not belong to current question.' };
     const accepted = getSubmission(db, roomId, question.id, identity.player.id);
     // Identity, current question and option are validated even for retries.

@@ -379,4 +379,44 @@ clears both fields. Host alone receives reason and disconnected player ID/name
 alongside paused-from state and frozen time; Screen remains generic Paused and
 Player receives safe room metadata, rendering its localized Pause without answers.
 Durable metadata survives refresh/restart. Reconnect never resumes the game;
-Phase 4C will add Host resolution controls. No Wait, Continue or Kick is added here.
+Phase 4C adds Host resolution controls below; Kick remains out of scope.
+
+
+## Host disconnect-pause resolution (Phase 4C)
+
+Migration 14 adds `question_exclusions`, keyed by `(session_id, question_id,
+player_id)`, as active-session reliability state. Expected responders are the
+fixed roster minus exclusions for the current frozen question; answered counts
+include accepted submissions from those responders only. Exclusions survive
+restart and never change `in_roster` or reconnect tokens. The next question has
+a different ID, so normal participation returns without deleting exclusions.
+Excluded Players receive `excluded: true`, no answering options, localized waiting
+UI, and a server-side Submit conflict. Their disconnect cannot auto-pause that
+question. Reveal still scores every roster member; excluded Players get
+`unanswered` / zero points without a synthetic answer row.
+
+Explicit `wait-for-player` and `continue-without-player` HTTP commands each acquire
+`BEGIN IMMEDIATE`, validate the open disconnect Pause, frozen question, roster,
+positive remainder and absence of an accepted submission/exclusion, and clear all
+pause metadata on success. Generic `resume` accepts manual Pause only. Wait checks
+an injected room/player presence function, backed by the realtime runtime's
+socket sets; the default for direct `createApp` usage is absent. Reconnection
+alone never resumes. Wait restores Answering with `now + frozen remainder` and
+leaves expected responders unchanged.
+
+Continue requires Host confirmation and inserts only the current-question
+exclusion. If remaining expected responders have all submitted, shared scoring
+transitions directly from PAUSED to ANSWER_REVEAL in the same transaction, without
+creating a deadline. Migration 14 permits null timer context for this direct
+Reveal (including a subsequent manual Pause of it); ordinary Reveal retains its
+existing timestamps. Otherwise Continue restores Answering with the frozen
+remainder. After commit, both actions broadcast and resync the deadline manager;
+direct Reveal cancels scheduling. Closure overrides all controls.
+
+The runtime supplies the same presence checker to HTTP and Host projections.
+Host's disconnect-Pause projection includes `disconnectedPlayer.present`.
+First authenticated socket arrival and last socket departure refresh the Host
+projection while paused, without changing SQLite. Multiple tabs remain present
+until the last socket leaves. Screen/Player receive no presence details. Host
+shows only Wait for Player and Continue Without Player for disconnect Pause, and
+only Resume for manual Pause.

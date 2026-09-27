@@ -12,8 +12,12 @@ export function Host() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function start(action: 'start' | 'start-round' | 'start-question' | NavigationAction | 'pause' | 'resume' = 'start') {
+  async function start(action: 'start' | 'start-round' | 'start-question' | NavigationAction | 'pause' | 'resume' | 'wait-for-player' | 'continue-without-player' = 'start') {
     if (action === 'start' && !window.confirm('Start game? The player list and quiz content will be locked.')) return;
+    if (action === 'continue-without-player') {
+      const name = state?.game?.state === 'PAUSED' ? state.game.disconnectedPlayer?.name : 'Player';
+      if (!window.confirm(`Continue without ${name}? ${name} will receive 0 points for this question and can return for the next question.`)) return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -55,9 +59,15 @@ export function Host() {
         <button onClick={() => void start('pause')} disabled={busy}>Pause</button>}
       {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
         <p>Game paused.</p>
-        {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <p>{state.game.disconnectedPlayer?.name} disconnected.</p>}
+        {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <>
+          <p>{state.game.disconnectedPlayer?.name} disconnected.</p>
+          <p role="status">{state.game.disconnectedPlayer?.present ? `${state.game.disconnectedPlayer.name} is back — Host can resume with Wait for Player.` : 'Waiting for Player to reconnect…'}</p>
+        </>}
         {state?.game?.state === 'PAUSED' && <p>Paused from: {state.game.pausedFromState.toLowerCase().replaceAll('_', ' ')}</p>}
-        <button onClick={() => void start('resume')} disabled={busy}>Resume</button>
+        {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' ? <>
+          <button onClick={() => void start('wait-for-player')} disabled={busy || !state.game.disconnectedPlayer?.present}>Wait for Player</button>
+          <button onClick={() => void start('continue-without-player')} disabled={busy}>Continue Without Player</button>
+        </> : <button onClick={() => void start('resume')} disabled={busy}>Resume</button>}
       </section>}
       {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
         <button onClick={() => void start()} disabled={busy}>Start Game</button>}

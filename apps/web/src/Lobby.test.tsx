@@ -324,6 +324,7 @@ for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering 
   };
   let view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   answering = true;
   live.on('lobby:subscribe', input => assert.deepEqual(input, { roomId: 'room', audience: 'player', token: 'secret' }));
   await act(async () => { live.emit('connect'); live.emit('lobby:state', { room: { ...room, state: 'ANSWERING' } }); });
@@ -338,6 +339,7 @@ for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering 
   view = show('/play/ABCDE');
   await waitFor(() => assert.equal(view.getByRole('timer').textContent, '0'));
   assert.ok(view.getByText(language === 'ru' ? 'Время вышло' : 'Time is up'));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWERING', closedAt: 'now' } }); });
   assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
   assert.equal(view.queryByText(text), null);

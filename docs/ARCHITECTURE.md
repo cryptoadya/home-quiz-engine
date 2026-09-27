@@ -150,6 +150,11 @@ sends its reconnect token only in the Player subscription payload. It is never
 broadcast, logged or used as a channel name. Host/Screen surface selection remains
 a payload boundary, not organizer authentication, in this trusted LAN application.
 
+Player clears a previous question/reveal projection when realtime metadata changes
+phase or closes the room. Authenticated HTTP refreshes are discarded when a newer
+realtime invalidation or identity request supersedes them; same-phase refreshes
+preserve accepted-answer controls while the current projection is fetched.
+
 Screen QR codes are generated locally and use the browser origin with the same
 room code and `?lang=ru` / `?lang=en`. Opening Screen on loopback displays a LAN
 address warning. Start Game publishes the new state through the same `lobby:state`

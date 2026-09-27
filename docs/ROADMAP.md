@@ -67,6 +67,13 @@ Acceptance: full multi-round single-choice quiz playable from phones + TV + host
 
 Goal: refresh/disconnect does not ruin the game.
 
+Status: implementation and automated acceptance complete through Phase 4D.
+Recovery regressions cover Host/Screen snapshots across all major states, Player
+accepted submissions/exclusions, stale HTTP responses, confirmations, closure and
+runtime presence/restart semantics. A local two-Player browser smoke exercised
+refresh, disconnect Pause, reconnect, Wait, Continue Without Player and closure.
+Physical phone/Wi-Fi acceptance remains pending; no real-device test is claimed.
+
 Scope:
 - player reconnect token
 - Host reconnect

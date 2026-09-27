@@ -1,7 +1,7 @@
 import { PlayerRevealContent } from './PlayerReveal';
 import { PlayerAnswer } from './PlayerAnswer';
 import { useLobby, type Room, type PlayerQuestion, type PlayerReveal } from './lobby';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean; game?: PlayerQuestion | PlayerReveal | null };
@@ -26,10 +26,12 @@ function PlayerRoom({ code }: { code: string }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(Boolean(code));
   const [retry, setRetry] = useState(0);
+  const identityRevision = useRef(0);
 
   useEffect(() => {
     if (!code) return;
     let active = true;
+    const revision = ++identityRevision.current;
     setBusy(true);
     setError('');
     async function load() {
@@ -46,19 +48,20 @@ function PlayerRoom({ code }: { code: string }) {
         const response = await fetch(`/api/rooms/${encodeURIComponent(saved.roomId)}/reconnect`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: saved.token }),
         });
-        if (!active) return;
         const body = await response.json();
+        if (!active || revision !== identityRevision.current) return;
         if (response.ok) { if (active) { setToken(saved.token); setIdentity(body); } return; }
         if (response.status !== 401 && response.status !== 404) throw new Error(body.error || 'Could not reconnect. Please retry.');
         window.localStorage.removeItem(storageKey(code));
       }
       const response = await fetch(`/api/rooms/code/${encodeURIComponent(code)}`);
       const body = await response.json();
+      if (!active || revision !== identityRevision.current) return;
       if (!response.ok) throw new Error(body.error || 'Could not find room.');
       if (body.state !== 'LOBBY' || body.closedAt) throw new Error('Game has already started or room is no longer accepting players.');
       if (active) setRoom(body);
     }
-    void load().catch((cause: Error) => { if (active) setError(cause.message); })
+    void load().catch((cause: Error) => { if (active && revision === identityRevision.current) setError(cause.message); })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
   }, [code, retry]);
@@ -66,10 +69,13 @@ function PlayerRoom({ code }: { code: string }) {
   // Socket metadata invalidates the authenticated HTTP projection, including on reconnect.
   // Player subscriptions authenticate with the same stored token as HTTP reconnect.
   useEffect(() => {
-    if (live?.room.state === 'PAUSED') {
-      // Discard the old deadline before Resume triggers a fresh authenticated read.
-      setIdentity(previous => previous?.game ? { ...previous, game: null } : previous);
-      return;
+    if (live) identityRevision.current++;
+    const revision = identityRevision.current;
+    if (live) {
+      // A boundary or changed phase invalidates the previous question projection.
+      // Keep same-phase state so an acknowledged Submit remains locked while refreshing.
+      setIdentity(previous => previous?.game && (live.room.closedAt || previous.game.state !== live.room.state)
+        ? { ...previous, game: null } : previous);
     }
     if (!live || live.room.closedAt || (live.room.state !== 'ANSWERING' && live.room.state !== 'ANSWER_REVEAL') || !token) return;
     let active = true;
@@ -77,10 +83,10 @@ function PlayerRoom({ code }: { code: string }) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
     }).then(async response => {
       const body = await response.json();
-      if (!active) return;
+      if (!active || revision !== identityRevision.current) return;
       if (!response.ok) throw new Error(body.error || 'Could not load question.');
       setIdentity(body); setError('');
-    }).catch((cause: Error) => { if (active) setError(cause.message); });
+    }).catch((cause: Error) => { if (active && revision === identityRevision.current) setError(cause.message); });
     return () => { active = false; };
   }, [live, token]);
 

@@ -1,3 +1,5 @@
+import { PlayableMedia } from './PlayableMedia';
+import type { MediaAction } from './lobby';
 import { MatchingItemContent, MediaImage } from './MediaImage';
 import type { CurrentQuestion, RoundIntro } from './lobby';
 
@@ -11,14 +13,17 @@ export function RoundIntroContent({ round }: { round: RoundIntro }) {
   </>;
 }
 
-export function QuestionContent({ question, host = false }: { question: CurrentQuestion; host?: boolean }) {
+export function QuestionContent({ question, host = false, onMediaControl, mediaBusy = false }: { question: CurrentQuestion; host?: boolean; onMediaControl?: (mediaId: string, action: MediaAction) => void; mediaBusy?: boolean }) {
   return <>
     {question.answers && <p>Ответили / Answered: {question.answers.answered} / {question.answers.expected}</p>}
     {question.statistics && <p>Верно / Correct: {question.statistics.correct} · Неверно / Wrong: {question.statistics.wrong} · Нет ответа / Unanswered: {question.statistics.unanswered}</p>}
     <p>Раунд {question.roundNumber} / Round {question.roundNumber} · Вопрос / Question {question.questionNumber} / {question.questionCount}</p>
     <h2 lang="ru">{question.textRu}</h2>
     <h2 lang="en">{question.textEn}</h2>
-    <div className={host ? 'host-media' : 'question-media'}>{question.media?.map(media => <MediaImage key={media.mediaId} src={media.mediaUrl} alt={media.name} className="question-image" />)}</div>
+    <div className={host ? 'host-media' : 'question-media'}>{question.media?.map(media => media.kind === 'audio' || media.kind === 'video'
+      ? host ? <div key={media.mediaId}><p>{media.name} — {media.playback?.playing ? 'Playing' : 'Paused'}</p>{(['play', 'pause', 'restart'] as const).map(action => <button key={action} aria-label={`${action[0].toUpperCase() + action.slice(1)} ${media.name}`} disabled={mediaBusy} onClick={() => onMediaControl?.(media.mediaId, action)}>{action[0].toUpperCase() + action.slice(1)}</button>)}</div>
+        : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} media={media} />
+      : <MediaImage key={media.mediaId} src={media.mediaUrl} alt={media.name} className="question-image" />)}</div>
     {question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul>{question.correctMapping.map(pair => {
       const left = question.leftItems!.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);
       return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>;

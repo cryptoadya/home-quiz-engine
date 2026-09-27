@@ -657,3 +657,37 @@ it does not introduce organizer authentication. UI image failures show a bilingu
 unavailable placeholder. Source deletion, reconnect and restart retain frozen
 URLs/content. Audio/video serving/playback, Host media controls and media-driven
 timer transitions remain outside Phase 6B.
+
+
+## Audio/video and Host playback controls (Phase 6C)
+
+The room content endpoint now streams every supported frozen media kind from the
+same verified no-follow descriptor, with single byte-range requests (206/416),
+canonical MIME, nosniff and no-store. It never falls back to editable source files.
+Images/GIF and Matching image projections/rendering retain their Phase 6B behavior.
+
+Migration 22 adds `media_playback`, keyed by session, frozen question ID and stable
+media ID, storing playing flag, position in seconds, server update time and revision.
+Playing positions advance from the durable server timestamp, including across
+server restart; paused positions stay fixed. No answer or lifecycle columns change.
+`POST /api/rooms/:roomId/media/:mediaId/:action` accepts Play/Pause/Restart intents
+with the current `questionId`, rejects stale questions/images/foreign IDs and closed
+or non-question rooms, and commits before publishing the existing `lobby:state`.
+Play resumes position, Pause freezes position, Restart seeks to zero and plays.
+Starting an item atomically pauses all previously playing items in that room.
+The existing trusted organizer/LAN boundary applies to these commands.
+
+Host/Screen current-question projections carry all ordered frozen references;
+playable descriptors include kind, frozen `playBeforeTimer`, URL and current server
+playback projection. Host has per-item controls and status but no audio/video
+player. Screen alone renders audio/video without local playback controls, seeks
+from authoritative state on reload/reconnect/metadata load, and pauses peers before
+playing an item. Unmount stops local playback. Video preserves aspect ratio and
+fits the layout. Player projections remain unchanged: no normal media or controls.
+Browser autoplay restrictions are surfaced on Screen; allow autoplay for the Screen
+origin and retry Host Play if the browser blocks it. Codec support is browser-owned.
+At natural file end the browser stops; Restart explicitly begins another playback.
+The server timeline remains authoritative without a browser-driven end transition.
+
+Phase 6D owns pre-timer execution and game Pause/Resume media integration. Phase 6C
+keeps `playBeforeTimer` as metadata and leaves all game/timer transitions unchanged.

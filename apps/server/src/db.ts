@@ -550,6 +550,16 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
   );
   CREATE INDEX media_quiz ON media(quiz_id);
   ALTER TABLE questions ADD COLUMN media_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(media_json));` },
+  { version: 22, sql: `CREATE TABLE media_playback (
+    session_id TEXT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+    question_id TEXT NOT NULL,
+    media_id TEXT NOT NULL,
+    playing INTEGER NOT NULL CHECK (playing IN (0, 1)),
+    position_seconds REAL NOT NULL CHECK (position_seconds >= 0),
+    updated_at INTEGER NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    PRIMARY KEY (session_id, question_id, media_id)
+  );` },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

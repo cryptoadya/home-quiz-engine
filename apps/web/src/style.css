@@ -94,3 +94,5 @@ button.danger { color: #a12424; border-color: #c8a4a4; }
 .matching-columns > * { min-width: 0; }
 .matching-columns button { max-width: 100%; overflow-wrap: anywhere; }
 .editor-media-preview { max-width: 10rem; max-height: 7rem; object-fit: contain; }
+
+.question-video { display: block; max-width: 100%; max-height: 55vh; object-fit: contain; margin: auto; }

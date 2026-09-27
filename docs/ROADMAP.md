@@ -147,15 +147,30 @@ images. Room-scoped content serving validates the frozen manifest and session
 files, survives source deletion/restart, and fails safely for missing/broken files.
 Responsive images preserve aspect ratio. Focused editor, rendering, projection,
 reconnect/restart and ownership/path isolation tests cover this boundary.
-Audio/video playback, pre-timer execution and Host media controls remain deferred
-to Phase 6C. A local Chrome smoke decoded frozen JPG/GIF after source deletion
+Audio/video playback and Host media controls are implemented in Phase 6C below.
+Pre-timer execution remains deferred to Phase 6D. A local Chrome smoke decoded frozen JPG/GIF after source deletion
 and rendered mixed Matching at 390×844 without horizontal overflow. The GIF fixture
 was static; animation and physical device acceptance are not claimed.
 
-Remaining scope (Phase 6C):
-- audio/video playback
-- `playBeforeTimer` behavior
-- Host media controls
+Phase 6C adds frozen audio/video streaming with byte ranges, Screen-only playback
+in authored media order, and Host Play/Pause/Restart controls by stable media ID.
+SQLite playback positions and playing flags are authoritative and broadcast after
+commit through room state. Starting another playable item pauses the previous
+item. Host/Screen reload, socket reconnect and server restart restore playback;
+source deletion does not affect session copies. Player receives no normal media
+URLs or controls. Focused server/UI tests cover controls, ordering, isolation,
+recovery, timer independence and image/GIF regressions. A local headless Chrome
+smoke decoded MP3/MP4, exercised Host controls and audio-to-video exclusivity,
+and restored a paused position after Host/Screen reload and source quiz deletion.
+Fixtures are short; physical TV speakers and phone/Wi-Fi acceptance remain pending.
+
+Remaining scope (Phase 6D):
+- `playBeforeTimer` execution and ordered pre-timer playback
+- integration of game Pause/Resume with media playback
+
+Phase 6C leaves the existing question/timer lifecycle unchanged. Media commands
+never start, pause, resume or reset the answer timer; `playBeforeTimer` remains
+frozen metadata only.
 
 Acceptance: image, audio, video and multi-media questions work on the home LAN.
 

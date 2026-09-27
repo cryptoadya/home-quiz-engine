@@ -1,4 +1,5 @@
-import { constants, openSync, closeSync, fstatSync, readFileSync, realpathSync } from 'node:fs';
+import { controlMedia } from './media-playback.js';
+import { constants, openSync, closeSync, fstatSync, createReadStream, realpathSync } from 'node:fs';
 import { getGameSnapshot } from './snapshot.js';
 import { uploadFailure, deleteMedia, getMedia, listMedia, mediaAvailable, mediaFile, mediaUpload, persistUpload, referencesError } from './media.js';
 import { createPair, deletePair, getPair, listPairs, reorderPairs, updatePair, validatePairChanges } from './matching.js';
@@ -24,21 +25,51 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.get('/api/rooms/:roomId/media/:mediaId/content', (request, response) => {
     try {
       const media = getGameSnapshot(db, request.params.roomId)?.media?.find(item => item.id === request.params.mediaId);
-      if (!media || media.kind !== 'image') throw new Error('Unavailable');
+      if (!media) throw new Error('Unavailable');
       const file = mediaFile(db, request.params.roomId, media.id, true);
       // Reject symlinks in the file and all parent directories; never fall back to source storage.
       if (realpathSync(file) !== file) throw new Error('Unavailable');
       const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-      let bytes: Buffer;
+      let transferred = false;
       try {
         const stat = fstatSync(fd);
         if (!stat.isFile() || stat.size !== media.sizeBytes) throw new Error('Unavailable');
-        bytes = readFileSync(fd);
-      } finally { closeSync(fd); }
-      response.set('X-Content-Type-Options', 'nosniff');
-      response.set('Cache-Control', 'no-store');
-      return response.type(media.mimeType).send(bytes);
+        response.set('X-Content-Type-Options', 'nosniff');
+        response.set('Cache-Control', 'no-store');
+        response.set('Accept-Ranges', 'bytes');
+        let start = 0, end = stat.size - 1;
+        const range = request.headers.range;
+        if (range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+          if (match && (match[1] || match[2])) {
+            start = match[1] ? Number(match[1]) : Math.max(0, stat.size - Number(match[2]));
+            end = match[1] && match[2] ? Math.min(Number(match[2]), end) : end;
+          }
+          if (!match || (!match[1] && !match[2]) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+            || start > end || start >= stat.size || (!match[1] && Number(match[2]) === 0)) {
+            return response.status(416).set('Content-Range', `bytes */${stat.size}`).end();
+          }
+          response.status(206).set('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+        }
+        response.type(media.mimeType).set('Content-Length', String(end - start + 1));
+        // Stream from the verified no-follow descriptor, not a newly opened path.
+        const stream = createReadStream(file, { fd, autoClose: true, start, end });
+        transferred = true;
+        stream.on('error', () => response.destroy());
+        response.on('close', () => stream.destroy());
+        stream.pipe(response);
+        return;
+      } finally { if (!transferred) closeSync(fd); }
     } catch { return response.status(404).json({ error: 'Media not found.' }); }
+  });
+
+  app.post('/api/rooms/:roomId/media/:mediaId/:action', (request, response) => {
+    const result = controlMedia(db, request.params.roomId, request.body?.questionId, request.params.mediaId, request.params.action);
+    if (result.room) {
+      lobbyChanged(result.room.id);
+      return response.json(result.room);
+    }
+    return response.status(result.status).json({ error: result.error });
   });
 
   const mediaPath = '/api/quizzes/:quizId/media';

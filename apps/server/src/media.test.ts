@@ -313,3 +313,110 @@ test('frozen image content and projections survive source deletion/reconnect/res
     await f.app.get(content).expect(404);
   } finally { f.close(); }
 });
+
+test('frozen audio/video ranges, authoritative controls, ordered media, realtime and restart recovery leave timer untouched', async () => {
+  const { createQuizServer } = await import('./realtime.js');
+  const { io: connect } = await import('socket.io-client');
+  const { once } = await import('node:events');
+  const f = fixture();
+  const runtime = createQuizServer(f.db);
+  runtime.server.listen(0, '127.0.0.1');
+  await once(runtime.server, 'listening');
+  const app = request(runtime.server);
+  const sockets: ReturnType<typeof connect>[] = [];
+  const next = (socket: ReturnType<typeof connect>) => new Promise<any>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Missing media state')), 3000);
+    socket.once('lobby:state', state => { clearTimeout(timeout); resolve(state); });
+  });
+  try {
+    const { quiz, base, changes } = await ready(app);
+    const media = [];
+    for (const [filename, contentType, bytes] of [['sample.wav', 'audio/wav', readFileSync(new URL('./fixtures/media/sample.wav', import.meta.url))], ['animation.gif', 'image/gif', gif], ['sample.mp4', 'video/mp4', readFileSync(new URL('./fixtures/media/sample.mp4', import.meta.url))], ['sample.mp3', 'audio/mpeg', readFileSync(new URL('./fixtures/media/sample.mp3', import.meta.url))], ['sample.ogg', 'audio/ogg', readFileSync(new URL('./fixtures/media/sample.ogg', import.meta.url))], ['sample.webm', 'video/webm', readFileSync(new URL('./fixtures/media/sample.webm', import.meta.url))]] as const) {
+      media.push((await app.post(`/api/quizzes/${quiz.id}/media`).attach('file', bytes, { filename, contentType }).expect(201)).body);
+    }
+    await app.put(base).send({ ...changes, media: media.map(item => ({ mediaId: item.id, playBeforeTimer: item.kind !== 'image' })) }).expect(200);
+    const room = (await app.post(`/api/quizzes/${quiz.id}/rooms`).expect(201)).body;
+    const player = (await app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' })).body;
+    const root = `/api/rooms/${room.id}`;
+    await app.post(`${root}/start`).expect(200);
+    await app.post(`${root}/start-round`).expect(200);
+    await app.post(`${root}/start-question`).expect(200);
+    const timer = () => f.db.prepare('SELECT state, answer_started_at, answer_deadline_at FROM game_sessions WHERE id = ?').get(room.id);
+    const before = timer();
+    for (const item of media.filter(item => item.kind !== 'image')) {
+      const bytes = readFileSync(mediaFile(f.db, room.id, item.id, true));
+      const result = await app.get(`${root}/media/${item.id}/content`).set('Range', 'bytes=0-15').expect(206).expect('Content-Type', new RegExp(item.mimeType)).expect('X-Content-Type-Options', 'nosniff');
+      assert.equal(result.headers['content-range'], `bytes 0-15/${bytes.length}`);
+      assert.deepEqual(result.body, bytes.subarray(0, 16));
+      const suffix = await app.get(`${root}/media/${item.id}/content`).set('Range', 'bytes=-8').expect(206);
+      assert.deepEqual(suffix.body, bytes.subarray(-8));
+      await app.get(`${root}/media/${item.id}/content`).set('Range', `bytes=${bytes.length}-`).expect(416);
+    }
+    const port = (runtime.server.address() as { port: number }).port;
+    for (const audience of ['host', 'screen']) {
+      const socket = connect(`http://127.0.0.1:${port}`, { transports: ['websocket'], forceNew: true }); sockets.push(socket);
+      await once(socket, 'connect');
+      const pending = next(socket); socket.emit('lobby:subscribe', { roomId: room.id, audience });
+      const state = await pending;
+      assert.deepEqual(state.game.media.map((item: any) => item.mediaId), media.map(item => item.id));
+      assert.equal(state.game.media[0].playback.playing, false);
+    }
+    const playerSocket = connect(`http://127.0.0.1:${port}`, { transports: ['websocket'], forceNew: true }); sockets.push(playerSocket);
+    await once(playerSocket, 'connect');
+    const playerInitial = next(playerSocket);
+    playerSocket.emit('lobby:subscribe', { roomId: room.id, audience: 'player', token: player.token });
+    assert.equal((await playerInitial).game, undefined);
+    const command = async (index: number, action: string) => {
+      const pending = sockets.map(next);
+      await app.post(`${root}/media/${media[index].id}/${action}`).send({ questionId: base.split('/').at(-1) }).expect(200);
+      const states = await Promise.all(pending);
+      assert.deepEqual(timer(), before);
+      assert.ok(states.slice(0, 2).every(state => state.game.media.filter((item: any) => item.playback?.playing).length <= 1));
+      assert.ok(media.every(item => !JSON.stringify(states[2]).includes(item.id)));
+      assert.equal(states[2].game, undefined);
+      return states[1].game.media;
+    };
+    let projected = await command(0, 'play');
+    assert.equal(projected[0].playback.playing, true);
+    projected = await command(2, 'play');
+    assert.equal(projected[0].playback.playing, false); assert.equal(projected[2].playback.playing, true);
+    projected = await command(2, 'pause');
+    assert.equal(projected[2].playback.playing, false); assert.ok(projected[2].playback.positionSeconds > 0);
+    projected = await command(0, 'restart');
+    assert.equal(projected[0].playback.playing, true); assert.ok(projected[0].playback.positionSeconds < 1);
+    for (const [index, action] of [[1, 'play'], [0, 'invalid']] as const) await app.post(`${root}/media/${media[index].id}/${action}`).send({ questionId: base.split('/').at(-1) }).expect(409);
+    await app.post(`${root}/media/${media[0].id}/play`).send({ questionId: 'stale' }).expect(409);
+    const safe = (await app.post(`${root}/reconnect`).send({ token: player.token })).body;
+    assert.ok(media.every(item => !JSON.stringify(safe).includes(item.id)));
+    await app.delete(`/api/quizzes/${quiz.id}`).expect(204);
+    for (const item of media) await app.get(`${root}/media/${item.id}/content`).expect(200);
+    for (const [index, audience] of ['host', 'screen'].entries()) {
+      sockets[index].disconnect();
+      const pending = next(sockets[index]); sockets[index].connect(); await once(sockets[index], 'connect');
+      sockets[index].emit('lobby:subscribe', { roomId: room.id, audience });
+      assert.equal((await pending).game.media[0].playback.playing, true);
+    }
+    const reopened = initializeDatabase(f.path);
+    try {
+      for (const audience of ['host', 'screen']) {
+        const state = (await request(createApp(reopened)).get(`${root}/game/${audience}`)).body;
+        assert.equal(state.game.media[0].playback.playing, true);
+        assert.equal(state.game.media[2].playback.playing, false);
+        assert.equal(state.game.media[2].playback.positionSeconds, projected[2].playback.positionSeconds);
+        assert.deepEqual(state.game.media.map((item: any) => item.mediaId), media.map(item => item.id));
+      }
+    } finally { reopened.close(); }
+    const frozenFile = mediaFile(f.db, room.id, media[0].id, true);
+    const original = readFileSync(frozenFile);
+    writeFileSync(frozenFile, 'damaged');
+    await app.get(`${root}/media/${media[0].id}/content`).expect(404);
+    rmSync(frozenFile);
+    const outside = join(f.dir, 'outside.wav'); writeFileSync(outside, original);
+    symlinkSync(outside, frozenFile);
+    await app.get(`${root}/media/${media[0].id}/content`).expect(404);
+  } finally {
+    sockets.forEach(socket => socket.disconnect());
+    await new Promise<void>(resolve => runtime.io.close(() => resolve()));
+    f.close();
+  }
+});

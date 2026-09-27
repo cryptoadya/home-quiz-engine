@@ -29,6 +29,20 @@ export function Host() {
     finally { setBusy(false); }
   }
 
+  async function controlMedia(mediaId: string, action: import('./lobby').MediaAction) {
+    if (!state?.game || !('questionId' in state.game)) return;
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/media/${mediaId}/${action}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: state.game.questionId }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Could not control media.');
+      await refresh();
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  }
+
   async function close() {
     if (!window.confirm('Close this room and release its code?')) return;
     setBusy(true);
@@ -77,7 +91,7 @@ export function Host() {
         <button onClick={() => void start('start-round')} disabled={busy}>Start Round</button>
       </section>}
       {!room.closedAt && (state?.game?.state === 'QUESTION' || state?.game?.state === 'ANSWERING' || state?.game?.state === 'ANSWER_REVEAL') && <section className="game-content">
-        <QuestionContent question={state.game} host />
+        <QuestionContent question={state.game} host mediaBusy={busy} onMediaControl={(id, action) => void controlMedia(id, action)} />
         <p>Points: {state.game.points}</p>
         <p>Answer time: {state.game.answerTimeSeconds} seconds</p>
         {state.game.state === 'QUESTION' && <button onClick={() => void start('start-question')} disabled={busy}>Start Question</button>}

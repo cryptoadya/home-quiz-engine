@@ -87,6 +87,10 @@ Acceptance: test the defined disconnect scenarios on real devices.
 
 ## Phase 5 — Remaining question types
 
+Phase 5A complete: Yes/No editor, persistence, readiness, version-1 snapshots,
+shared single-select gameplay/scoring and focused reliability coverage. Automated
+checks and local browser mixed-quiz smoke passed; Phase 5 remains incomplete.
+
 Scope:
 - Yes/No
 - Multiple Choice

@@ -43,7 +43,7 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
     for (const [questionIndex, question] of questions.entries()) {
       const label = `Question ${questionIndex + 1}`;
       const location = { roundId: round.id, questionId: question.id };
-      if (question.type !== 'single_choice') add('QUESTION_TYPE_UNSUPPORTED', `${label} must be Single Choice`, location);
+      if (question.type !== 'single_choice' && question.type !== 'yes_no') add('QUESTION_TYPE_UNSUPPORTED', `${label} must be Single Choice or Yes / No`, location);
       for (const [language, value] of [['RU', question.textRu], ['EN', question.textEn]] as const) {
         if (!value.trim()) add(`QUESTION_TEXT_${language}_MISSING`, `${label} is missing ${language === 'RU' ? 'Russian' : 'English'} text`, location);
         else if (value.length > 5000) add(`QUESTION_TEXT_${language}_TOO_LONG`, `${label} ${language === 'RU' ? 'Russian' : 'English'} text exceeds 5000 characters`, location);
@@ -54,9 +54,10 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
       }
 
       const options = listOptions(db, question.id);
-      if (options.length < 2) add('SINGLE_CHOICE_TOO_FEW_OPTIONS', `${label} needs at least 2 answer options`, location);
-      if (options.length > 10) add('SINGLE_CHOICE_TOO_MANY_OPTIONS', `${label} has more than 10 answer options`, location);
-      if (options.filter((option) => option.isCorrect).length !== 1) add('SINGLE_CHOICE_CORRECT_COUNT', `${label} must have exactly 1 correct answer`, location);
+      if (question.type === 'yes_no' && options.length !== 2) add('YES_NO_OPTION_COUNT', `${label} (Yes / No) needs exactly 2 answer options`, location);
+      if (question.type === 'single_choice' && options.length < 2) add('SINGLE_CHOICE_TOO_FEW_OPTIONS', `${label} needs at least 2 answer options`, location);
+      if (question.type === 'single_choice' && options.length > 10) add('SINGLE_CHOICE_TOO_MANY_OPTIONS', `${label} has more than 10 answer options`, location);
+      if (options.filter((option) => option.isCorrect).length !== 1) add(question.type === 'yes_no' ? 'YES_NO_CORRECT_COUNT' : 'SINGLE_CHOICE_CORRECT_COUNT', `${label} must have exactly 1 correct answer`, location);
       for (const [optionIndex, option] of options.entries()) {
         const optionLocation = { ...location, optionId: option.id };
         for (const [language, value] of [['RU', option.textRu], ['EN', option.textEn]] as const) {

@@ -425,3 +425,14 @@ projection while paused, without changing SQLite. Multiple tabs remain present
 until the last socket leaves. Screen/Player receive no presence details. Host
 shows only Wait for Player and Continue Without Player for disconnect Pause, and
 only Resume for manual Pause.
+
+## Yes / No questions (Phase 5A)
+
+Persisted question types are `single_choice` and `yes_no`. Yes / No uses the existing
+`answer_options` table with exactly two options and one correct answer; readiness
+and the schema-version-1 snapshot parser independently enforce that shape.
+Both types share the single-select submission, deadline, disconnect recovery,
+Reveal and full-points scoring pipeline. Type conversion keeps the first two
+option IDs/texts, fills blank labels with Да/Нет and Yes/No, preserves a retained
+correct option (otherwise selects the first), and removes extra options atomically.
+Converting back to Single Choice preserves both rows.

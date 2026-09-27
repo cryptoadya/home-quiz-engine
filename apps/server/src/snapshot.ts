@@ -18,10 +18,10 @@ function validOption(value: unknown): boolean {
   return record(value) && strings(value, ['id', 'textRu', 'textEn']) && typeof value.isCorrect === 'boolean';
 }
 function validQuestion(value: unknown): boolean {
-  return record(value) && strings(value, ['id', 'textRu', 'textEn']) && value.type === 'single_choice'
+  return record(value) && strings(value, ['id', 'textRu', 'textEn']) && (value.type === 'single_choice' || value.type === 'yes_no')
     && integer(value.points, 1) && (value.answerTimeSeconds === null || integer(value.answerTimeSeconds, 1, 3600))
     && typeof value.showOptionsOnScreen === 'boolean' && ordered(value.options, validOption)
-    && value.options.length >= 2 && value.options.length <= 10
+    && (value.type === 'yes_no' ? value.options.length === 2 : value.options.length >= 2 && value.options.length <= 10)
     && value.options.filter(option => (option as SnapshotOption).isCorrect).length === 1;
 }
 function validRound(value: unknown): boolean {

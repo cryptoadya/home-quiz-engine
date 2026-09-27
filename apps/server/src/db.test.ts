@@ -5,6 +5,14 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { initializeDatabase } from './db.js';
 
+const legacyEditorSchema = `CREATE TABLE rounds (id TEXT PRIMARY KEY);
+  CREATE TABLE questions (id TEXT PRIMARY KEY, round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type = 'single_choice'), text_ru TEXT NOT NULL, text_en TEXT NOT NULL,
+    points INTEGER NOT NULL CHECK (points > 0), answer_time_seconds INTEGER,
+    show_options_on_screen INTEGER NOT NULL, position INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE INDEX questions_round_position ON questions(round_id, position);
+  CREATE TABLE answer_options (id TEXT PRIMARY KEY, question_id TEXT REFERENCES questions(id) ON DELETE CASCADE);`;
+
 test('SQLite initializes its migration ledger and reopens cleanly', () => {
   const directory = mkdtempSync(join(tmpdir(), 'home-quiz-'));
   const path = join(directory, 'nested', 'quiz.sqlite');
@@ -22,7 +30,7 @@ test('SQLite initializes its migration ledger and reopens cleanly', () => {
         assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)?.name, name);
       }
       const migration = db.prepare('SELECT version FROM schema_migrations').all();
-      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+      assert.deepEqual(migration.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
       db.close();
     }
   } finally {
@@ -51,6 +59,7 @@ test('migration from Phase 2C preserves existing players, tokens, closed rooms a
       token_hash TEXT NOT NULL UNIQUE, joined_at TEXT NOT NULL, removed_at TEXT);
     CREATE UNIQUE INDEX session_players_active_name ON session_players(session_id, normalized_name) WHERE removed_at IS NULL;
     INSERT INTO session_players VALUES ('player', 'room', 'Alice', 'alice', 'en', 'original-token-hash', 'now', NULL);`);
+  old.exec(legacyEditorSchema);
   old.close();
   try {
     const db = initializeDatabase(path);
@@ -98,6 +107,7 @@ test('Phase 2D Lobby and started sessions migrate navigation without changing sn
       token_hash TEXT, in_roster INTEGER);`);
   old.prepare("INSERT INTO game_sessions VALUES ('started', 'FGHJK', NULL, 'ROUND_INTRO', 'now', NULL, ?, 'locked')").run(snapshot);
   old.exec("INSERT INTO session_players VALUES ('player', 'started', 'unchanged-hash', 1)");
+  old.exec(legacyEditorSchema);
   old.close();
   try {
     const db = initializeDatabase(path);
@@ -144,6 +154,7 @@ test('Phase 3A migration preserves all navigation, snapshots and roster and cons
     CREATE TABLE session_players (id TEXT PRIMARY KEY, session_id TEXT REFERENCES game_sessions(id) ON DELETE CASCADE, token_hash TEXT, in_roster INTEGER);
     INSERT INTO session_players VALUES ('player', 'question', 'same-hash', 1);`);
   const sessions = old.prepare('SELECT * FROM game_sessions ORDER BY id').all();
+  old.exec(legacyEditorSchema);
   old.close();
   try {
     const db = initializeDatabase(path);

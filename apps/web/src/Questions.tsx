@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 type Question = {
-  id: string; roundId: string; type: 'single_choice'; textRu: string; textEn: string;
+  id: string; roundId: string; type: 'single_choice' | 'yes_no'; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean;
   position: number; createdAt: string; updatedAt: string;
 };
@@ -127,6 +127,10 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
         const question = await api<Question>(base, { method: 'POST' });
         setQuestions((items) => [...items, question]); setSelectedId(question.id);
       })}>Add Single Choice question</button>
+      <button disabled={busy} onClick={() => void afterSaves(async () => {
+        const question = await api<Question>(base, json('POST', { type: 'yes_no' }));
+        setQuestions(items => [...items, question]); setSelectedId(question.id);
+      })}>Add Yes / No question</button>
       {questions.length === 0 ? <p>No questions yet.</p> : <ol className="round-list">{questions.map((question, index) => <li key={question.id}>
         <button className={selectedId === question.id ? 'selected-round' : 'subtle'} disabled={busy}
           onClick={() => { flush(); setSelectedId(question.id); }}>
@@ -138,7 +142,16 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
         </div>
       </li>)}</ol>}
       {selected && fields && <div className="question-editor fields">
-        <h4>Single Choice question</h4>
+        <h4>{selected.type === 'yes_no' ? 'Yes / No' : 'Single Choice'} question</h4>
+        <label>Question type<select value={selected.type} disabled={busy} onChange={event => {
+          const type = event.target.value as Question['type'];
+          void afterSaves(async () => {
+            const question = await api<Question>(`${base}/${selected.id}`, json('PUT', { ...fields, type }));
+            const nextOptions = await api<Option[]>(`${base}/${selected.id}/options`);
+            setQuestions(items => items.map(item => item.id === question.id ? question : item));
+            setOptions(nextOptions);
+          });
+        }}><option value="single_choice">Single Choice</option><option value="yes_no">Yes / No</option></select></label>
         <label>Question text RU<textarea maxLength={5000} value={selected.textRu} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textRu: event.target.value })} /></label>
         <label>Question text EN<textarea maxLength={5000} value={selected.textEn} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textEn: event.target.value })} /></label>
         <label>Points<input type="number" min="1" step="1" value={selected.points} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, points: Number(event.target.value) })} /></label>
@@ -160,7 +173,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
             onChange={(event) => editOption(option, { textRu: event.target.value, textEn: option.textEn, isCorrect: option.isCorrect })} /></label>
           <label>Option {index + 1} EN<input maxLength={500} value={option.textEn} disabled={busy}
             onChange={(event) => editOption(option, { textRu: option.textRu, textEn: event.target.value, isCorrect: option.isCorrect })} /></label>
-          <div className="round-order">
+          {selected.type === 'single_choice' && <div className="round-order">
             <button className="subtle" aria-label={`Move option ${index + 1} up`} disabled={busy || index === 0} onClick={() => moveOption(index, -1)}>↑</button>
             <button className="subtle" aria-label={`Move option ${index + 1} down`} disabled={busy || index === options.length - 1} onClick={() => moveOption(index, 1)}>↓</button>
             <button className="subtle danger" aria-label={`Delete option ${index + 1}`} disabled={busy}
@@ -168,12 +181,12 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
                 await api<void>(`${base}/${selected.id}/options/${option.id}`, { method: 'DELETE' });
                 setOptions((items) => items.filter((item) => item.id !== option.id));
               })}>Delete</button>
-          </div>
+          </div>}
         </div>)}
-        <button disabled={busy || options.length >= 10} onClick={() => void afterSaves(async () => {
+        {selected.type === 'single_choice' && <button disabled={busy || options.length >= 10} onClick={() => void afterSaves(async () => {
           const option = await api<Option>(`${base}/${selected.id}/options`, { method: 'POST' });
           setOptions((items) => [...items, option]);
-        })}>Add option</button>
+        })}>Add option</button>}
         <button className="subtle danger" disabled={busy} onClick={() => {
           if (!window.confirm('Delete this question? This cannot be undone.')) return;
           void afterSaves(async () => {

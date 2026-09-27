@@ -201,8 +201,9 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   });
   app.post(roundPath, (request, response) => {
     if (!getRound(db, request.params.quizId, request.params.roundId)) return response.status(404).json({ error: 'Round not found in quiz.' });
-    if (request.body !== undefined && (typeof request.body !== 'object' || request.body === null || Array.isArray(request.body) || Object.keys(request.body).length)) return response.status(400).json({ error: 'Create question does not accept fields.' });
-    return response.status(201).json(createQuestion(db, request.params.roundId));
+    const body = request.body;
+    if (body !== undefined && (typeof body !== 'object' || body === null || Array.isArray(body) || Object.keys(body).some(key => key !== 'type') || (body.type !== undefined && body.type !== 'single_choice' && body.type !== 'yes_no'))) return response.status(400).json({ error: 'Create question accepts only type: single_choice or yes_no.' });
+    return response.status(201).json(createQuestion(db, request.params.roundId, body?.type));
   });
   app.put(`${roundPath}/order`, (request, response) => {
     if (!getRound(db, request.params.quizId, request.params.roundId)) return response.status(404).json({ error: 'Round not found in quiz.' });
@@ -212,6 +213,10 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.put(questionPath, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)) return response.status(404).json({ error: 'Question not found in round.' });
     const result = validateQuestionChanges(request.body);
+    if (!('error' in result) && result.changes.type === 'yes_no' && getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'yes_no') {
+      const options = listOptions(db, request.params.questionId);
+      if (options.length !== 2 || options.filter(option => option.isCorrect).length !== 1) return response.status(400).json({ error: 'Yes / No needs exactly two options and one correct answer.' });
+    }
     return 'error' in result ? response.status(400).json(result) : response.json(updateQuestion(db, request.params.roundId, request.params.questionId, result.changes));
   });
   app.delete(questionPath, (request, response) => {
@@ -226,6 +231,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.post(optionsPath, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)) return response.status(404).json({ error: 'Question not found in round.' });
     if (request.body !== undefined && (typeof request.body !== 'object' || request.body === null || Array.isArray(request.body) || Object.keys(request.body).length)) return response.status(400).json({ error: 'Create option does not accept fields.' });
+    if (getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'yes_no') return response.status(400).json({ error: 'Yes / No has exactly two fixed options.' });
     if (listOptions(db, request.params.questionId).length >= 10) return response.status(400).json({ error: 'A question can have at most 10 options.' });
     return response.status(201).json(createOption(db, request.params.questionId));
   });
@@ -236,15 +242,21 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   });
   app.put(`${optionsPath}/:optionId/correct`, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId) || !getOption(db, request.params.questionId, request.params.optionId)) return response.status(404).json({ error: 'Option not found in question.' });
+    if (getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'yes_no' && listOptions(db, request.params.questionId).length !== 2) return response.status(400).json({ error: 'Yes / No needs exactly two options.' });
     return response.json(selectCorrectOption(db, request.params.questionId, request.params.optionId));
   });
   app.put(`${optionsPath}/:optionId`, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId) || !getOption(db, request.params.questionId, request.params.optionId)) return response.status(404).json({ error: 'Option not found in question.' });
     const result = validateOptionChanges(request.body);
+    if (!('error' in result) && getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'yes_no') {
+      const correctCount = listOptions(db, request.params.questionId).filter(option => option.id === request.params.optionId ? result.changes.isCorrect : option.isCorrect).length;
+      if (listOptions(db, request.params.questionId).length !== 2 || correctCount !== 1) return response.status(400).json({ error: 'Yes / No must have exactly one correct option. Use the correct-answer selector.' });
+    }
     return 'error' in result ? response.status(400).json(result) : response.json(updateOption(db, request.params.questionId, request.params.optionId, result.changes));
   });
   app.delete(`${optionsPath}/:optionId`, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId) || !getOption(db, request.params.questionId, request.params.optionId)) return response.status(404).json({ error: 'Option not found in question.' });
+    if (getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'yes_no') return response.status(400).json({ error: 'Yes / No has exactly two fixed options.' });
     deleteOption(db, request.params.questionId, request.params.optionId);
     return response.status(204).end();
   });

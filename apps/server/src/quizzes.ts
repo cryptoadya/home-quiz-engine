@@ -1,3 +1,4 @@
+import { copyQuizMedia, removeMediaDirectory } from './media.js';
 import { listPairs } from './matching.js';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -74,6 +75,8 @@ export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
   try {
     db.prepare(`INSERT INTO quizzes (id, title, theme_id, default_answer_time_seconds, shuffle_answers, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, title, source.themeId, source.defaultAnswerTimeSeconds, Number(source.shuffleAnswers), now, now);
+    const mediaIds = copyQuizMedia(db, sourceId, id);
+    const remapSide = (side: import('./matching.js').MatchingSide) => side.kind === 'image' ? { ...side, mediaId: mediaIds.get(side.mediaId) ?? side.mediaId } : side;
     const insertRound = db.prepare(`INSERT INTO rounds (id, quiz_id, title_ru, title_en, description_ru, description_en,
       show_leaderboard_after, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const insertQuestion = db.prepare(`INSERT INTO questions (id, round_id, type, text_ru, text_en, points, answer_time_seconds,
@@ -88,9 +91,10 @@ export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
         const questionId = randomUUID();
         insertQuestion.run(questionId, roundId, question.type, question.textRu, question.textEn, question.points,
           question.answerTimeSeconds, Number(question.showOptionsOnScreen), Number(question.showCorrectCount), question.position, now, now);
+        db.prepare('UPDATE questions SET media_json = ? WHERE id = ?').run(JSON.stringify(question.media.map(ref => ({ ...ref, mediaId: mediaIds.get(ref.mediaId) ?? ref.mediaId }))), questionId);
         for (const pair of listPairs(db, question.id)) {
           db.prepare('INSERT INTO matching_pairs (id, question_id, left_json, right_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .run(randomUUID(), questionId, JSON.stringify(pair.left), JSON.stringify(pair.right), pair.position, now, now);
+            .run(randomUUID(), questionId, JSON.stringify(remapSide(pair.left)), JSON.stringify(remapSide(pair.right)), pair.position, now, now);
         }
         for (const option of listOptions(db, question.id)) {
           insertOption.run(randomUUID(), questionId, option.textRu, option.textEn, Number(option.isCorrect), option.position, now, now);
@@ -100,6 +104,7 @@ export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
+    removeMediaDirectory(db, id);
     throw error;
   }
   return getQuiz(db, id)!;
@@ -147,5 +152,7 @@ export function updateQuiz(db: DatabaseSync, id: string, changes: QuizChanges): 
 }
 
 export function deleteQuiz(db: DatabaseSync, id: string): boolean {
+  if (!getQuiz(db, id)) return false;
+  removeMediaDirectory(db, id);
   return db.prepare('DELETE FROM quizzes WHERE id = ?').run(id).changes > 0;
 }

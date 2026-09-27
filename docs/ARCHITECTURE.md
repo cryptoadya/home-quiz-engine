@@ -550,8 +550,84 @@ the correct mapping itself is still withheld before Reveal. Shuffle-enabled list
 are independent permutations and can coincidentally retain some authored positions.
 
 All non-media Phase 5 behavior is implemented. Matching image discriminants/media
-references remain structurally supported; image authoring, validation against local
-media and actual image rendering are deferred to Phase 6. No Phase 6 media support
-is implemented here. Cross-type regressions cover hint boundaries, both ordering
+references reserve the media boundary. Phase 6A below adds storage and reference
+validation; image editor controls and actual rendering remain deferred.
+Cross-type regressions cover hint boundaries, both ordering
 modes, frozen settings, two Players, reconnect/restart, exact scoring and Matching
 mapping identity; UI regressions cover hint autosave/reload and hidden-hint drafts.
+
+
+## Media storage and Admin management (Phase 6A)
+
+Migration 21 adds `media` rows with globally unique UUID `id`, exactly one cascading
+`quiz_id`, sanitized display `name`, `kind` (image/audio/video), canonical `mime_type`,
+`size_bytes` and `created_at`. There are no client-provided paths. Public metadata
+uses camelCase and contains only these fields. GIF uses image kind and image/gif MIME.
+
+Storage is relative to the SQLite database directory (normally `data/`):
+
+- `quizzes/<quizId>/media/<mediaId>`: copied quiz-owned originals, extensionless UUID filenames;
+- `uploads/<generatedId>`: bounded multipart disk staging, removed on success/failure;
+- `sessions/<sessionId>/media/<mediaId>`: independent copies of referenced files frozen at Start.
+
+`QUIZ_DB_PATH` therefore also relocates media storage. Back up the database and its
+adjacent quiz/session directories together. Media requires a file-backed database;
+non-media tests can continue using in-memory SQLite. These directories are not
+public static mounts. Files are addressed only through scoped IDs and checked
+metadata, never through uploaded names/paths.
+
+Admin HTTP endpoints:
+
+- `GET /api/quizzes/:quizId/media`: list safe metadata;
+- `POST /api/quizzes/:quizId/media`: multipart upload, exactly one `file`, no extra fields;
+- `DELETE /api/quizzes/:quizId/media/:mediaId`: delete metadata/file, preserving references;
+- `GET /api/quizzes/:quizId/media/:mediaId/content`: quiz-scoped content with canonical MIME and nosniff.
+
+The existing trusted organizer/LAN API boundary applies; this phase adds no public
+Player media projection. Upload accepts JPG/JPEG/PNG/WEBP/GIF, MP3/WAV/OGG,
+MP4/WEBM, checking extension, declared MIME and detected binary signature. Known
+WAV/MP3 MIME aliases normalize to canonical values. OGG audio includes Vorbis/Opus;
+video OGG is rejected. Paths, control characters, unsupported types, empty files,
+mismatched signatures and oversized files are rejected. Limits are 20 MiB images,
+100 MiB audio and 500 MiB video; multipart streams to disk with a 500 MiB hard cap,
+then enforces the detected kind's lower limit before persistence. Detection verifies
+format signatures, not complete codec decoding or browser playback compatibility.
+
+Questions now persist ordered `media` references in `media_json`, each
+`{ mediaId, playBeforeTimer }`; order is array order, IDs are distinct, and the flag
+is allowed only for audio/video. An omitted field in existing question updates
+preserves references. Matching sides retain `{ kind: 'image', mediaId }`; the scoped
+pair API validates that the ID belongs to this quiz and is an image. These shapes
+are foundations for future editor selectors, Screen rendering and media controls;
+this phase adds no media rendering, playback or pre-timer execution.
+
+Readiness validates ownership, reference shape and physical file presence/size,
+including Matching image sides. Media-only question text may be empty in both
+languages; any present text still needs both languages. Deleting referenced media
+is allowed by SPEC and leaves question/pair references untouched. Affected questions
+are invalid and both Lobby creation and Start's fresh validation block until fixed.
+Deleting already-missing files still removes their metadata. Quiz deletion removes
+its media directory and cascading metadata, preserving started session copies.
+
+Duplication copies all existing quiz media to new IDs and remaps question and
+Matching references to the new quiz's copies. Already-unresolved references remain
+unresolved; duplication does not repair or remove them. Missing physical files with
+existing metadata fail duplication. SQL rollback removes newly copied files.
+
+Version-1 snapshots add optional ordered question references and a safe media
+manifest; legacy snapshots without them still parse. The independent parser
+validates shapes, kind/MIME/limits and references against the frozen manifest.
+Start copies only referenced files into session storage before committing its
+snapshot/roster/state transaction, and removes those copies on failure. Repeated
+Start cannot delete existing frozen files. Gameplay continues to read only snapshots;
+source edits, media deletion, quiz deletion and restart cannot change frozen files
+or reference metadata. Session copies are retained with durable started sessions.
+Filesystem and SQLite changes are coordinated for ordinary failures, but do not
+constitute a single crash-atomic transaction; a process/power failure between file
+creation and SQL commit can leave an unreferenced local file.
+
+Admin's per-quiz Media panel opens on demand, lists type/name/MIME/size, uploads one
+file at a time and confirms deletion with the invalid-reference consequence. It
+shows busy, success and error feedback and refreshes readiness after mutations.
+Question/Matching image selection UI and all gameplay media work belong to later
+Phase 6 slices.

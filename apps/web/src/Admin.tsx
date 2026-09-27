@@ -1,3 +1,4 @@
+import { MediaManager } from './Media';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Rounds } from './Rounds';
@@ -233,6 +234,7 @@ export function QuizEditor() {
       <label>Default answer time (seconds)<input type="number" min="1" max="3600" step="1" value={quiz.defaultAnswerTimeSeconds} onChange={(event) => change({ ...settings, defaultAnswerTimeSeconds: Number(event.target.value) })} /></label>
       <label className="checkbox"><input type="checkbox" checked={quiz.shuffleAnswers} onChange={(event) => change({ ...settings, shuffleAnswers: event.target.checked })} /> Shuffle answers</label>
     </div>
+    <MediaManager key={quiz.id} quizId={quiz.id} onPersistedChange={refreshValidation} />
     <Rounds quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
   </main>;
 }

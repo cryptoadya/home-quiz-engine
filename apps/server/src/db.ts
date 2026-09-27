@@ -539,6 +539,17 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     version: 20,
     sql: `ALTER TABLE questions ADD COLUMN show_correct_count INTEGER NOT NULL DEFAULT 1 CHECK (show_correct_count IN (0, 1));`,
   },
+  { version: 21, sql: `CREATE TABLE media (
+    id TEXT PRIMARY KEY,
+    quiz_id TEXT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('image', 'audio', 'video')),
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX media_quiz ON media(quiz_id);
+  ALTER TABLE questions ADD COLUMN media_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(media_json));` },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

@@ -1,3 +1,4 @@
+import { uploadFailure, deleteMedia, getMedia, listMedia, mediaAvailable, mediaFile, mediaUpload, persistUpload, referencesError } from './media.js';
 import { createPair, deletePair, getPair, listPairs, reorderPairs, updatePair, validatePairChanges } from './matching.js';
 import { pauseGame, resumeGame, waitForPlayer, continueWithoutPlayer, absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
 import { navigate, type NavigationAction } from './navigation.js';
@@ -17,6 +18,30 @@ import { validateQuizReadiness } from './validation.js';
 export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}, presence: PlayerPresenceChecker = absentPlayerPresence) {
   const app = express();
   app.use(express.json());
+
+  const mediaPath = '/api/quizzes/:quizId/media';
+  app.use(mediaPath, (request, response, next) => {
+    if (!getQuiz(db, request.params.quizId)) return response.status(404).json({ error: 'Quiz not found.' });
+    next();
+  });
+  app.get(mediaPath, (request, response) => response.json(listMedia(db, request.params.quizId)));
+  app.post(mediaPath, (request, response) => {
+    mediaUpload(db)(request, response, async error => {
+      if (error) { const failure = uploadFailure(error); return response.status(failure.status).json({ error: failure.error }); }
+      if (!request.file) return response.status(400).json({ error: 'Upload one file in the file field.' });
+      try { return response.status(201).json(await persistUpload(db, request.params.quizId, request.file)); }
+      catch (cause) { const failure = uploadFailure(cause); return response.status(failure.status).json({ error: failure.error }); }
+    });
+  });
+  app.get(`${mediaPath}/:mediaId/content`, (request, response) => {
+    const media = getMedia(db, request.params.quizId, request.params.mediaId);
+    if (!media || !mediaAvailable(db, media.quizId, media.id)) return response.status(404).json({ error: 'Media not found.' });
+    response.set('X-Content-Type-Options', 'nosniff');
+    response.type(media.mimeType);
+    return response.sendFile(mediaFile(db, media.quizId, media.id));
+  });
+  app.delete(`${mediaPath}/:mediaId`, (request, response) => deleteMedia(db, request.params.quizId, request.params.mediaId)
+    ? response.status(204).end() : response.status(404).json({ error: 'Media not found.' }));
 
   app.post('/api/quizzes/:quizId/rooms', (request, response) => {
     const result = createRoom(db, request.params.quizId);
@@ -214,6 +239,10 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.put(questionPath, (request, response) => {
     if (!getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)) return response.status(404).json({ error: 'Question not found in round.' });
     const result = validateQuestionChanges(request.body);
+    if ('changes' in result && result.changes.media) {
+      const error = referencesError(db, request.params.quizId, result.changes.media);
+      if (error) return response.status(400).json({ error });
+    }
     if (!('error' in result) && result.changes.type === 'yes_no' && getQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId)?.type === 'yes_no') {
       const options = listOptions(db, request.params.questionId);
       if (options.length !== 2 || options.filter(option => option.isCorrect).length !== 1) return response.status(400).json({ error: 'Yes / No needs exactly two options and one correct answer.' });
@@ -249,6 +278,12 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.put(`${pairsPath}/:pairId`, (request, response) => {
     if (!getPair(db, request.params.questionId, request.params.pairId)) return response.status(404).json({ error: 'Pair not found in question.' });
     const result = validatePairChanges(request.body);
+    if ('changes' in result) {
+      for (const side of [result.changes.left, result.changes.right]) {
+        if (side.kind === 'image' && (referencesError(db, request.params.quizId, [{ mediaId: side.mediaId, playBeforeTimer: false }])
+          || getMedia(db, request.params.quizId, side.mediaId)?.kind !== 'image')) return response.status(400).json({ error: 'Matching requires a quiz-owned image.' });
+      }
+    }
     return 'error' in result ? response.status(400).json(result) : response.json(updatePair(db, request.params.questionId, request.params.pairId, result.changes));
   });
   app.delete(`${pairsPath}/:pairId`, (request, response) => {

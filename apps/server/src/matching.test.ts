@@ -154,7 +154,7 @@ test('Phase 5B migration preserves editor data, accepted answers, roster and old
     await api.post(`/api/rooms/${room.id}/answers`).send({ token: player.token, questionId: q.id, optionId: listOptions(db, q.id)[0].id }).expect(200);
     const tables = ['questions', 'answer_options', 'game_sessions', 'session_players', 'player_answers', 'question_scores'];
     const before = tables.map(table => db.prepare(`SELECT * FROM ${table}`).all());
-    db.exec('ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
+    db.exec('ALTER TABLE questions DROP COLUMN media_json; DROP TABLE media; DELETE FROM schema_migrations WHERE version = 21; ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
     const oldSchema = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'questions'").get()!.sql).replace(", 'matching'", '');
     db.exec('PRAGMA foreign_keys = OFF; BEGIN; DROP TABLE matching_pairs; CREATE TEMP TABLE saved AS SELECT * FROM questions; DROP TABLE questions');
     db.exec(oldSchema);

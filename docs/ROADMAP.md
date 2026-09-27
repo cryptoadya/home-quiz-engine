@@ -116,7 +116,7 @@ regressions cover these settings, mapping correctness and scoring.
 Matching image elements remain structurally supported but media-dependent image
 authoring/rendering is deferred to Phase 6; it is not claimed as implemented.
 This completes Phase 5's non-media acceptance; physical phone/Wi-Fi smoke remains
-pending. No Phase 6 work has started.
+pending. Phase 6A storage foundations are described below.
 
 Scope:
 - Yes/No
@@ -130,16 +130,29 @@ Acceptance: all types obey the same draft-selection -> Submit contract.
 
 ## Phase 6 — Media
 
-Scope:
-- images/GIF/video/audio upload
+Phase 6A implements local UUID-addressed per-quiz storage, SQLite metadata,
+scoped upload/list/delete/content API and a simple Admin media panel with confirmed
+deletion and status/error feedback. Validation covers supported extension/MIME/signature,
+file limits, quiz ownership and missing referenced files. Ordered question references
+and Matching image IDs persist and freeze with a safe media manifest. Duplication
+copies/remaps owned media; started games retain independent session copies after
+source edits/deletions and restart. Focused tests cover all supported extensions,
+path traversal, isolation, missing files, reference preservation, duplicate/Start
+rollback and restart, alongside Phase 5 regressions.
+
+Phase 6B has not started. Question media selectors, Matching image authoring UI,
+Screen/Player media rendering, playback, pre-timer ordering, Host controls and
+responsive TV media layout remain deferred. Physical device/media playback
+acceptance is not claimed by Phase 6A.
+
+Remaining scope:
+- question media selection and ordering UI
 - Matching image answer elements (deferred from Phase 5)
-- per-quiz storage
 - Screen-only normal question media
 - media ordering
 - `playBeforeTimer` behavior
 - Host media controls
 - responsive TV layout
-- validation when referenced media is removed
 
 Acceptance: image, audio, video and multi-media questions work on the home LAN.
 

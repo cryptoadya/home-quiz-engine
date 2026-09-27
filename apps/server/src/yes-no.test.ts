@@ -162,7 +162,7 @@ test('Phase 5A migration preserves old options and active version-1 game snapsho
     startQuestion(db, room.id, 100000);
     const tables = ['questions', 'answer_options', 'game_sessions', 'session_players'];
     const before = tables.map(table => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all());
-    db.exec('ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
+    db.exec('ALTER TABLE questions DROP COLUMN media_json; DROP TABLE media; DELETE FROM schema_migrations WHERE version = 21; ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
     const oldSchema = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'questions'").get()!.sql).replace("type IN ('single_choice', 'yes_no', 'multiple_choice', 'matching')", "type = 'single_choice'");
     db.exec('PRAGMA foreign_keys = OFF; BEGIN');
     db.exec('DROP TABLE matching_pairs; CREATE TEMP TABLE saved_questions AS SELECT * FROM questions; DROP TABLE questions');

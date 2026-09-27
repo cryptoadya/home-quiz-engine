@@ -1,13 +1,14 @@
-import { listPairs, validTextSide, type MatchingPair } from './matching.js';
+import { listMedia, validMediaMetadata, validMediaReferences, type Media, type MediaReference } from './media.js';
+import { listPairs, validMatchingSide, type MatchingPair } from './matching.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { getQuiz, type Quiz } from './quizzes.js';
 import { listRounds, type Round } from './rounds.js';
 import { listQuestions, listOptions, type Question, type AnswerOption } from './questions.js';
 
 type SnapshotOption = Pick<AnswerOption, 'id' | 'textRu' | 'textEn' | 'isCorrect' | 'position'>;
-type SnapshotQuestion = Pick<Question, 'id' | 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'position'> & { showCorrectCount?: boolean; options: SnapshotOption[]; pairs?: Pick<MatchingPair, 'id' | 'left' | 'right' | 'position'>[] };
+type SnapshotQuestion = Pick<Question, 'id' | 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'position'> & { media?: MediaReference[]; showCorrectCount?: boolean; options: SnapshotOption[]; pairs?: Pick<MatchingPair, 'id' | 'left' | 'right' | 'position'>[] };
 type SnapshotRound = Pick<Round, 'id' | 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'position'> & { questions: SnapshotQuestion[] };
-export type GameSnapshot = Pick<Quiz, 'title' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'> & { themeId: string; schemaVersion: 1; rounds: SnapshotRound[] };
+export type GameSnapshot = Pick<Quiz, 'title' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'> & { themeId: string; schemaVersion: 1; media?: Omit<Media, 'quizId'>[]; rounds: SnapshotRound[] };
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const strings = (value: Record<string, unknown>, keys: string[]) => keys.every(key => typeof value[key] === 'string');
@@ -21,11 +22,12 @@ function validOption(value: unknown): boolean {
 function validQuestion(value: unknown): boolean {
   if (!record(value) || !strings(value, ['id', 'textRu', 'textEn'])
     || !integer(value.points, 1) || !(value.answerTimeSeconds === null || integer(value.answerTimeSeconds, 1, 3600))
+    || (value.media !== undefined && !validMediaReferences(value.media))
     || typeof value.showOptionsOnScreen !== 'boolean' || (value.showCorrectCount !== undefined && typeof value.showCorrectCount !== 'boolean')) return false;
   if (value.type === 'matching') {
     return Array.isArray(value.options) && value.options.length === 0
       && ordered(value.pairs, pair => record(pair) && typeof pair.id === 'string' && pair.id.trim().length > 0
-        && validTextSide(pair.left, true) && validTextSide(pair.right, true))
+        && validMatchingSide(pair.left, true) && validMatchingSide(pair.right, true))
       && value.pairs.length >= 2 && new Set(value.pairs.map(pair => (pair as MatchingPair).id)).size === value.pairs.length;
   }
   return (value.type === 'single_choice' || value.type === 'yes_no' || value.type === 'multiple_choice')
@@ -44,7 +46,19 @@ export function parseGameSnapshot(json: string): GameSnapshot {
   if (!record(value) || value.schemaVersion !== 1 || !strings(value, ['title', 'themeId'])
     || !integer(value.defaultAnswerTimeSeconds, 1, 3600) || typeof value.shuffleAnswers !== 'boolean'
     || !ordered(value.rounds, validRound)) throw new Error('Invalid game snapshot.');
-  return value as GameSnapshot;
+  const snapshot = value as GameSnapshot;
+  if (snapshot.media !== undefined && (!Array.isArray(snapshot.media) || snapshot.media.some(media => !validMediaMetadata(media))
+    || new Set(snapshot.media.map(media => media.id)).size !== snapshot.media.length)) throw new Error('Invalid snapshot media.');
+  for (const round of snapshot.rounds) for (const question of round.questions) {
+    for (const ref of question.media ?? []) {
+      const media = snapshot.media?.find(media => media.id === ref.mediaId);
+      if (!media || (ref.playBeforeTimer && media.kind === 'image')) throw new Error('Invalid snapshot media reference.');
+    }
+    for (const pair of question.pairs ?? []) for (const side of [pair.left, pair.right]) {
+      if (side.kind === 'image' && !snapshot.media?.some(media => media.id === side.mediaId && media.kind === 'image')) throw new Error('Invalid snapshot image reference.');
+    }
+  }
+  return snapshot;
 }
 
 // Only Start reads the editor tree. Explicit field selection excludes editor metadata/FKs.
@@ -54,12 +68,13 @@ export function createGameSnapshot(db: DatabaseSync, quizId: string): GameSnapsh
   const snapshot: GameSnapshot = {
     schemaVersion: 1, title: quiz.title, themeId: quiz.themeId,
     defaultAnswerTimeSeconds: quiz.defaultAnswerTimeSeconds, shuffleAnswers: quiz.shuffleAnswers,
+    media: listMedia(db, quizId).map(({ quizId: _owner, ...media }) => media),
     rounds: listRounds(db, quizId).map(round => ({
       id: round.id, titleRu: round.titleRu, titleEn: round.titleEn,
       descriptionRu: round.descriptionRu, descriptionEn: round.descriptionEn,
       showLeaderboardAfter: round.showLeaderboardAfter, position: round.position,
       questions: listQuestions(db, round.id).map(question => ({
-        id: question.id, type: question.type, textRu: question.textRu, textEn: question.textEn,
+        media: question.media, id: question.id, type: question.type, textRu: question.textRu, textEn: question.textEn,
         points: question.points, answerTimeSeconds: question.answerTimeSeconds,
         showOptionsOnScreen: question.showOptionsOnScreen, showCorrectCount: question.showCorrectCount, position: question.position,
         ...(question.type === 'matching' ? { pairs: listPairs(db, question.id).map(pair => ({

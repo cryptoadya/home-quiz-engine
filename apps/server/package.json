@@ -11,10 +11,13 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "file-type": "^22.1.1",
+    "multer": "^2.4.0",
     "socket.io": "^4.8.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.1",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.15.0",
     "@types/supertest": "^6.0.2",
     "socket.io-client": "^4.8.4",

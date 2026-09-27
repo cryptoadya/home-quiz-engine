@@ -1,3 +1,4 @@
+import { freezeMedia, removeMediaDirectory } from './media.js';
 import { randomInt, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { validateQuizReadiness, type QuizValidation } from './validation.js';
@@ -65,6 +66,7 @@ export function closeRoom(db: DatabaseSync, id: string): Room | null {
 export function startRoom(db: DatabaseSync, id: string): { room: Room } | { status: 404 | 409; error: string; validation?: QuizValidation } {
   db.exec('BEGIN IMMEDIATE');
   let committed = false;
+  let freezing = false;
   try {
     const room = getRoom(db, id);
     if (!room) return { status: 404, error: 'Room not found.' };
@@ -77,6 +79,12 @@ export function startRoom(db: DatabaseSync, id: string): { room: Room } | { stat
     const count = db.prepare('SELECT count(*) AS n FROM session_players WHERE session_id = ? AND removed_at IS NULL').get(id)!;
     if (Number(count.n) === 0) return { status: 409, error: 'At least one active player is required.' };
     const snapshot = createGameSnapshot(db, room.quizId!);
+    const mediaIds = snapshot.rounds.flatMap(round => round.questions.flatMap(question => [
+      ...(question.media ?? []).map(ref => ref.mediaId),
+      ...(question.pairs ?? []).flatMap(pair => [pair.left, pair.right].flatMap(side => side.kind === 'image' ? [side.mediaId] : [])),
+    ]));
+    freezing = mediaIds.length > 0;
+    snapshot.media = freezeMedia(db, room.quizId!, id, mediaIds);
     db.prepare('UPDATE session_players SET in_roster = 1 WHERE session_id = ? AND removed_at IS NULL').run(id);
     db.prepare(`UPDATE game_sessions SET snapshot_json = ?, roster_locked_at = ?, state = 'ROUND_INTRO', current_round_index = 0, current_question_index = NULL WHERE id = ?`)
       .run(JSON.stringify(snapshot), new Date().toISOString(), id);
@@ -85,6 +93,6 @@ export function startRoom(db: DatabaseSync, id: string): { room: Room } | { stat
     committed = true;
     return { room: started };
   } finally {
-    if (!committed) db.exec('ROLLBACK');
+    if (!committed) { db.exec('ROLLBACK'); if (freezing) removeMediaDirectory(db, id, true); }
   }
 }

@@ -81,7 +81,7 @@ test('Start freezes ordered content and active roster; edits, deletion and resta
     const stored = db.prepare('SELECT snapshot_json, roster_locked_at FROM game_sessions WHERE id = ?').get(room.id)!;
     assert.ok(Number.isFinite(Date.parse(String(stored.roster_locked_at))));
     const snapshot = JSON.parse(String(stored.snapshot_json));
-    assert.deepEqual(Object.keys(snapshot).sort(), ['schemaVersion', 'title', 'themeId', 'defaultAnswerTimeSeconds', 'shuffleAnswers', 'rounds'].sort());
+    assert.deepEqual(Object.keys(snapshot).sort(), ['schemaVersion', 'title', 'themeId', 'defaultAnswerTimeSeconds', 'shuffleAnswers', 'rounds', 'media'].sort());
     assert.equal(snapshot.schemaVersion, 1);
     assert.equal(snapshot.title, 'Last Lobby edit');
     assert.equal(snapshot.themeId, 'halloween');

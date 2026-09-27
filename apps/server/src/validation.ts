@@ -1,4 +1,5 @@
-import { listPairs, validTextSide } from './matching.js';
+import { validMediaReferences, getMedia, mediaAvailable, referencesError } from './media.js';
+import { listPairs, validMatchingSide } from './matching.js';
 import { DatabaseSync } from 'node:sqlite';
 import { listOptions, listQuestions } from './questions.js';
 import { getQuiz } from './quizzes.js';
@@ -46,8 +47,10 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
       const label = `Question ${questionIndex + 1}`;
       const location = { roundId: round.id, questionId: question.id };
       if (question.type !== 'single_choice' && question.type !== 'yes_no' && question.type !== 'multiple_choice' && question.type !== 'matching') add('QUESTION_TYPE_UNSUPPORTED', `${label} must be Single Choice, Yes / No, Multiple Choice or Matching`, location);
+      const mediaError = validMediaReferences(question.media) ? referencesError(db, quizId, question.media) : 'Invalid media reference structure.';
+      if (mediaError) add('QUESTION_MEDIA_MISSING', `${label}: ${mediaError}`, location);
       for (const [language, value] of [['RU', question.textRu], ['EN', question.textEn]] as const) {
-        if (!value.trim()) add(`QUESTION_TEXT_${language}_MISSING`, `${label} is missing ${language === 'RU' ? 'Russian' : 'English'} text`, location);
+        if (!value.trim() && (question.textRu.trim() || question.textEn.trim() || (!Array.isArray(question.media) || question.media.length === 0))) add(`QUESTION_TEXT_${language}_MISSING`, `${label} is missing ${language === 'RU' ? 'Russian' : 'English'} text`, location);
         else if (value.length > 5000) add(`QUESTION_TEXT_${language}_TOO_LONG`, `${label} ${language === 'RU' ? 'Russian' : 'English'} text exceeds 5000 characters`, location);
       }
       if (!Number.isSafeInteger(question.points) || question.points < 1) add('QUESTION_POINTS_INVALID', `${label} needs a positive whole-number point value`, location);
@@ -60,7 +63,9 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
         if (pairs.length < 2) add('MATCHING_TOO_FEW_PAIRS', `${label} needs at least 2 complete pairs`, location);
         for (const [index, pair] of pairs.entries()) {
           for (const side of ['left', 'right'] as const) {
-            if (!validTextSide(pair[side], true)) add('MATCHING_SIDE_INCOMPLETE', `Pair ${index + 1} ${side} in ${label} needs RU/EN text of 1–500 characters; images are not supported yet`, { ...location, pairId: pair.id });
+            if (!validMatchingSide(pair[side], true)) add('MATCHING_SIDE_INCOMPLETE', `Pair ${index + 1} ${side} in ${label} needs bilingual text or an image reference`, { ...location, pairId: pair.id });
+            const item = pair[side];
+            if (item?.kind === 'image' && (!mediaAvailable(db, quizId, item.mediaId) || getMedia(db, quizId, item.mediaId)?.kind !== 'image')) add('MATCHING_MEDIA_MISSING', `Pair ${index + 1} ${side} in ${label} needs an available quiz-owned image`, { ...location, pairId: pair.id });
           }
         }
         continue;

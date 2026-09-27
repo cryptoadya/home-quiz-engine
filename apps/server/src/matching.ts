@@ -1,7 +1,8 @@
+import { validMediaId } from './media.js';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 
-// Image references use quiz-owned media IDs; storage and authoring arrive in Phase 6.
+// Image references share the quiz-owned media identity boundary.
 export type MatchingSide = { kind: 'text'; textRu: string; textEn: string } | { kind: 'image'; mediaId: string };
 export type MatchingPair = {
   id: string; questionId: string; left: MatchingSide; right: MatchingSide;
@@ -20,11 +21,17 @@ export function validTextSide(value: unknown, complete = false): value is Extrac
     && side.textRu.length <= 500 && side.textEn.length <= 500
     && (!complete || Boolean(side.textRu.trim() && side.textEn.trim()));
 }
+export function validMatchingSide(value: unknown, complete = false): value is MatchingSide {
+  if (validTextSide(value, complete)) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const side = value as Record<string, unknown>;
+  return Object.keys(side).length === 2 && side.kind === 'image' && validMediaId(side.mediaId);
+}
 export function validatePairChanges(value: unknown): { changes: PairChanges } | { error: string } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'Pair fields must be an object.' };
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).length !== 2 || !validTextSide(input.left) || !validTextSide(input.right)) {
-    return { error: 'Provide left and right text sides with RU/EN strings of at most 500 characters. Image editing is not available yet.' };
+  if (Object.keys(input).length !== 2 || !validMatchingSide(input.left) || !validMatchingSide(input.right)) {
+    return { error: 'Provide left and right bilingual text sides or image media IDs.' };
   }
   return { changes: input as PairChanges };
 }

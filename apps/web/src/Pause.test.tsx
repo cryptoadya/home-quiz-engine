@@ -122,3 +122,51 @@ for (const language of ['ru', 'en']) for (const reload of [false, true]) test(`P
   assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
   assert.equal(view.queryByText(label), null);
 });
+
+for (const audience of ['host', 'screen']) test(`${audience} disconnect pause renders the appropriate private/public message without resolution controls`, async () => {
+  const live = socket();
+  const snapshot = { ...paused, game: { ...paused.game, reason: 'player_disconnect', disconnectedPlayer: { id: 'a', name: 'Alice' } } };
+  globalThis.fetch = async () => Response.json({ room, game: question });
+  const view = show(`/${audience}/room`);
+  await waitFor(() => assert.ok(view.getByText('Party')));
+  await act(async () => { live.emit('lobby:state', snapshot); });
+  if (audience === 'host') {
+    assert.ok(view.getByText('Alice disconnected.'));
+    assert.ok(view.getByText('Game paused.'));
+    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Resume', 'Close room']);
+  } else {
+    assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
+    assert.equal(view.queryByText(/Alice/), null);
+    assert.equal(view.queryByRole('button'), null);
+  }
+});
+
+test('Player authenticates every socket reconnect, exposes subscription failure and retains durable identity', async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  globalThis.fetch = async () => Response.json({ room: paused.room, active: true, player: { id: 'a', name: 'Alice', language: 'en' }, game: null });
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Paused')));
+  const subscriptions: unknown[] = [];
+  live.on('lobby:subscribe', input => subscriptions.push(input));
+  await act(async () => { live.emit('connect'); live.emit('lobby:error', { error: 'Invalid player reconnect token.' }); });
+  assert.match(view.getByRole('alert').textContent!, /Invalid player reconnect token.*Reload/);
+  assert.ok(dom.window.localStorage.getItem('quiz-player:ABCDE'));
+  await act(async () => { live.emit('disconnect'); live.emit('connect'); live.emit('lobby:state', { room: paused.room }); });
+  assert.deepEqual(subscriptions, [{ roomId: 'room', audience: 'player', token: 'secret' }, { roomId: 'room', audience: 'player', token: 'secret' }]);
+  assert.equal(view.queryByRole('alert'), null);
+  assert.ok(view.getByText('Paused')); assert.equal(view.queryByRole('radio'), null);
+});
+
+test('accepted Player answer survives socket disconnect without displaying an invented Pause', async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'ANSWERING' }, active: true, player: { id: 'a', name: 'Alice', language: 'en' },
+    game: { state: 'ANSWERING', questionId: 'q', text: 'Pick', options: [{ id: 'a', text: 'Apple' }], submission: { submitted: true, optionId: 'a' }, timer: timer(Date.now(), 30000) } });
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByRole('radio')));
+  await act(async () => { live.emit('disconnect'); });
+  assert.equal(view.queryByText('Paused'), null);
+  assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
+  assert.equal((view.getByRole('radio') as HTMLInputElement).disabled, true);
+});

@@ -10,12 +10,12 @@ export type PlayerReveal = Omit<PlayerQuestion, 'state' | 'timer'> & { state: 'A
 export type NavigationAction = 'next' | 'show-leaderboard' | 'next-round' | 'final-results' | 'show-winner';
 export type GameBoundary = { state: 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; nextAction?: NavigationAction | null; leaderboard?: { playerId: string; displayName: string; totalPoints: number; rank: number }[] };
 export type CurrentQuestion = { nextAction?: NavigationAction | null; state: 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL'; timer?: AnswerTimer; statistics?: { correct: number; wrong: number; unanswered: number }; answers?: { answered: number; expected: number }; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
-export type PausedGame = { state: 'PAUSED'; pausedFromState: Exclude<Room['state'], 'LOBBY' | 'WINNER_SCREEN' | 'PAUSED'>; remainingMs: number | null };
+export type PausedGame = { state: 'PAUSED'; pausedFromState: Exclude<Room['state'], 'LOBBY' | 'WINNER_SCREEN' | 'PAUSED'>; remainingMs: number | null; reason?: 'manual' | 'player_disconnect'; disconnectedPlayer?: { id: string; name: string } | null };
 export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | GameBoundary | PausedGame | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };
 
-export function useLobby(roomId: string | undefined, audience: Audience) {
+export function useLobby(roomId: string | undefined, audience: Audience, token?: string | null) {
   const [state, setState] = useState<LobbyState | null>(null);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
@@ -30,7 +30,7 @@ export function useLobby(roomId: string | undefined, audience: Audience) {
   }, [roomId, audience]);
   useEffect(() => {
     setState(null); setError(''); setConnected(false);
-    if (!roomId) return;
+    if (!roomId || (audience === 'player' && !token)) return;
     const initialRevision = ++revision.current;
     let active = true;
     let receivedSnapshot = false;
@@ -48,7 +48,7 @@ export function useLobby(roomId: string | undefined, audience: Audience) {
     socket.on('connect', () => {
       // The subscription returns a fresh SQLite snapshot on EVERY connection;
       // no event history or client cache is used for recovery.
-      socket.emit('lobby:subscribe', { roomId, audience });
+      socket.emit('lobby:subscribe', { roomId, audience, ...(audience === 'player' ? { token } : {}) });
     });
     socket.on('lobby:state', (snapshot: LobbyState) => {
       if (!active || snapshot.room.id !== roomId) return;
@@ -61,6 +61,6 @@ export function useLobby(roomId: string | undefined, audience: Audience) {
     socket.on('connect_error', () => setConnected(false));
     socket.connect();
     return () => { revision.current++; active = false; socket.removeAllListeners(); socket.disconnect(); };
-  }, [roomId, audience]);
+  }, [roomId, audience, token]);
   return { state, refresh, error, connected };
 }

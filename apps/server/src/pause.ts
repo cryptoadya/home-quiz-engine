@@ -1,17 +1,33 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { getRoom, type Room } from './rooms.js';
+import { currentContent } from './snapshot.js';
+import { getSubmission } from './answers.js';
 import { completeQuestionInTransaction } from './reveal.js';
 
 const pausableStates = ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'];
 type Result = { room: Room } | { status: 404 | 409; error: string; changed?: boolean };
 
 export function pauseGame(db: DatabaseSync, roomId: string, clock: () => number = Date.now): Result {
+  return pause(db, roomId, clock);
+}
+
+export function autoPauseForDisconnectedPlayer(db: DatabaseSync, roomId: string, playerId: string, clock: () => number = Date.now): boolean {
+  const result = pause(db, roomId, clock, playerId);
+  return 'room' in result || result.changed === true;
+}
+
+function pause(db: DatabaseSync, roomId: string, clock: () => number, playerId?: string): Result {
   db.exec('BEGIN IMMEDIATE');
   let committed = false;
   try {
     const room = getRoom(db, roomId);
     if (!room) return { status: 404, error: 'Room not found.' };
     if (room.closedAt || !pausableStates.includes(room.state)) return { status: 409, error: 'Room cannot be paused in this state.' };
+    if (playerId !== undefined) {
+      if (room.state !== 'ANSWERING' || !db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND id = ? AND in_roster = 1').get(roomId, playerId)) {
+        return { status: 409, error: 'Disconnected player is not answering in the fixed roster.' };
+      }
+    }
     const row = db.prepare('SELECT answer_deadline_at FROM game_sessions WHERE id = ?').get(roomId)!;
     const now = clock();
     let remaining: number | null = null;
@@ -21,13 +37,20 @@ export function pauseGame(db: DatabaseSync, roomId: string, clock: () => number 
         db.exec('COMMIT'); committed = true;
         return { status: 409, error: 'Question has completed.', changed: true };
       }
+      if (playerId !== undefined) {
+        const { round, questionIndex } = currentContent(db, roomId);
+        if (getSubmission(db, roomId, round.questions[questionIndex!].id, playerId).submitted) {
+          return { status: 409, error: 'Disconnected player already submitted.' };
+        }
+      }
       remaining = Math.max(0, Date.parse(String(row.answer_deadline_at)) - now);
       if (!(remaining > 0)) return { status: 409, error: 'Invalid answer deadline.' };
     }
     db.prepare(`UPDATE game_sessions SET state = 'PAUSED', paused_from_state = ?, paused_at = ?, paused_remaining_ms = ?,
+      pause_reason = ?, paused_player_id = ?,
       answer_started_at = CASE WHEN state = 'ANSWERING' THEN NULL ELSE answer_started_at END,
       answer_deadline_at = CASE WHEN state = 'ANSWERING' THEN NULL ELSE answer_deadline_at END WHERE id = ?`)
-      .run(room.state, new Date(now).toISOString(), remaining, roomId);
+      .run(room.state, new Date(now).toISOString(), remaining, playerId === undefined ? 'manual' : 'player_disconnect', playerId ?? null, roomId);
     db.exec('COMMIT'); committed = true;
     return { room: getRoom(db, roomId)! };
   } finally { if (!committed) db.exec('ROLLBACK'); }
@@ -53,7 +76,7 @@ export function resumeGame(db: DatabaseSync, roomId: string, clock: () => number
       deadlineAt = new Date(now + remaining).toISOString();
     }
     db.prepare(`UPDATE game_sessions SET state = ?, answer_started_at = ?, answer_deadline_at = ?,
-      paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL WHERE id = ?`)
+      paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`)
       .run(state, startedAt, deadlineAt, roomId);
     db.exec('COMMIT'); committed = true;
     return { room: getRoom(db, roomId)! };

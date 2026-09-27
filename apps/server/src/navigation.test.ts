@@ -173,7 +173,7 @@ test('navigation broadcasts committed projections to every audience and socket r
     await Promise.all(sockets.map(socket => once(socket, 'connect')));
     await Promise.all(sockets.map(async (socket, index) => {
       const state = nextState(socket);
-      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][index] });
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][index], ...(index === 2 ? { token: identities[0].token } : {}) });
       assert.equal((await state).room.state, 'ROUND_INTRO');
     }));
     async function command(action: string, expected: string) {

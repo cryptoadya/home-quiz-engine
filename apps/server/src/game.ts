@@ -13,8 +13,15 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   const room = getRoom(db, roomId)!;
   if (room.closedAt || room.state === 'LOBBY' || audience === 'player') return null;
   if (room.state === 'PAUSED') {
-    const row = db.prepare('SELECT paused_from_state, paused_remaining_ms FROM game_sessions WHERE id = ?').get(roomId)!;
-    return { state: 'PAUSED' as const, pausedFromState: String(row.paused_from_state), remainingMs: row.paused_remaining_ms as number | null };
+    const row = db.prepare('SELECT paused_from_state, paused_remaining_ms, pause_reason, paused_player_id FROM game_sessions WHERE id = ?').get(roomId)!;
+    return { state: 'PAUSED' as const, pausedFromState: String(row.paused_from_state), remainingMs: row.paused_remaining_ms as number | null,
+      ...(audience === 'host' ? { reason: row.pause_reason as 'manual' | 'player_disconnect',
+        disconnectedPlayer: row.paused_player_id === null ? null : {
+          id: String(row.paused_player_id),
+          name: String(db.prepare('SELECT display_name FROM session_players WHERE session_id = ? AND id = ?').get(roomId, row.paused_player_id)!.display_name),
+        },
+      } : {}),
+    };
   }
   const { snapshot, round, roundIndex, questionIndex } = currentContent(db, roomId);
   const numbering = { roundNumber: roundIndex + 1, questionCount: round.questions.length };

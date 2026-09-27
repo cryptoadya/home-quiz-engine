@@ -132,6 +132,8 @@ room, player roster, join and identity restoration endpoints remain available.
 
 Socket protocol:
 - Client `lobby:subscribe`: `{ roomId, audience: 'host' | 'screen' | 'player' }`.
+  Player additionally supplies `token`, validated by the same room-scoped identity
+  and locked-roster rules as HTTP reconnect. Failed authentication joins no channel.
   Validates the ID and room existence; replaces the socket's previous subscription.
 - Server `lobby:state`: `{ room, players, game }` for Host/Screen, `{ room }` for Player.
   Host and Screen use separate audience channels; `game` is an audience-specific projection.
@@ -144,8 +146,9 @@ channel in one synchronous turn using the local Socket.IO adapter. This avoids a
 snapshot/subscription gap; clients never replay event history as durable state.
 Host/Screen also load an HTTP snapshot, discarding it if a newer socket snapshot
 arrives first. Player subscribes only after HTTP join/identity restoration, and
-never sends its reconnect token over Socket.IO. Surface selection is a payload
-boundary, not authentication, in this trusted LAN application.
+sends its reconnect token only in the Player subscription payload. It is never
+broadcast, logged or used as a channel name. Host/Screen surface selection remains
+a payload boundary, not organizer authentication, in this trusted LAN application.
 
 Screen QR codes are generated locally and use the browser origin with the same
 room code and `?lang=ru` / `?lang=en`. Opening Screen on loopback displays a LAN
@@ -206,7 +209,7 @@ socket reconnect, Player refetches the existing HTTP `POST /reconnect` using its
 stored token; initial reload uses that endpoint too. The server validates the
 room-scoped token and locked roster before returning `game`: only current frozen
 question ID, selected-language text, ordered option IDs/text and timer metadata.
-No token travels over Socket.IO. Host/Screen retain the existing trusted-LAN
+Phase 4B also authenticates Player socket subscriptions using this same token. Host/Screen retain the existing trusted-LAN
 surface boundary (not organizer authentication); no generic Player content
 endpoint is added. Screen options still depend on `showOptionsOnScreen`, and
 neither Screen nor Player receives correctness, future content or the snapshot.
@@ -239,8 +242,8 @@ Existing Host correctness display is unchanged; Player/Screen receive no
 correctness or individual answer mappings.
 
 Every new acceptance broadcasts updated state after commit. Phase 3D adds
-completion and scoring to this transaction; disconnect handling and further
-navigation remain reserved for later slices.
+completion and scoring to this transaction; later slices add navigation and
+authenticated disconnect handling below.
 
 
 ## Automatic Reveal and scoring (Phase 3D)
@@ -345,4 +348,35 @@ shows localized pause without answer controls. Player content is fetched again o
 resuming Answering. All Submit requests during Pause (including retries) return
 conflict; accepted answers remain stored and reconnect restores them after Resume.
 Normal navigation rejects PAUSED. Close remains available, overrides presentation,
-and prevents Resume. This slice adds no presence or automatic pause behavior.
+and prevents Resume. Phase 4B extends this model with automatic disconnect Pause below.
+
+
+## Authenticated Player presence / disconnect Pause (Phase 4B)
+
+Each server runtime tracks authenticated socket IDs in sets keyed by room/player.
+Multiple tabs count as one present Player: only removal of the last socket invokes
+`autoPauseForDisconnectedPlayer`. Disconnect and subscription replacement share
+cleanup; repeated subscription to the same identity preserves presence. Host and
+Screen sockets never count as Player presence. Reconnect authenticates again.
+Presence starts empty on restart; startup absence never synthesizes disconnects.
+Socket IDs remain ephemeral and never enter SQLite or broadcast payloads.
+
+The helper acquires `BEGIN IMMEDIATE`, requires an open ANSWERING session and
+fixed-roster membership, and checks the current frozen question's accepted answer.
+An unanswered Player's pre-deadline disconnect reuses the manual Pause transaction
+and freezes the remaining time. Other states and existing pauses are unchanged.
+Shared completion/scoring wins at or after the deadline. Submit-first leaves the
+accepted answer durable and does not pause; Pause-first rejects a later Submit.
+SQLite write-transaction ordering decides these races. A changed state resyncs the
+deadline manager and broadcasts only after commit; stale callbacks cannot Reveal
+PAUSED. No change means no broadcast.
+
+Migration 13 adds `pause_reason` (`manual` or `player_disconnect`) and nullable
+`paused_player_id`, with CHECK constraints requiring coherent metadata only in
+PAUSED. Existing manual pauses migrate to `manual` with no player ID. The helper
+verifies player/session roster membership within the same transaction. Resume
+clears both fields. Host alone receives reason and disconnected player ID/name
+alongside paused-from state and frozen time; Screen remains generic Paused and
+Player receives safe room metadata, rendering its localized Pause without answers.
+Durable metadata survives refresh/restart. Reconnect never resumes the game;
+Phase 4C will add Host resolution controls. No Wait, Continue or Kick is added here.

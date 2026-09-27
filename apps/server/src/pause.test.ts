@@ -70,7 +70,7 @@ for (const state of ['ROUND_INTRO', 'QUESTION', 'ANSWER_REVEAL', 'ROUND_END', 'L
       assert.ok(Date.parse(String(session(db).paused_at)));
       for (const audience of ['host', 'screen'] as const) {
         const projection = (await api.get(`${root}/game/${audience}`).expect(200)).body.game;
-        assert.deepEqual(projection, { state: 'PAUSED', pausedFromState: state, remainingMs: null });
+        assert.deepEqual(projection, { state: 'PAUSED', pausedFromState: state, remainingMs: null, ...(audience === 'host' ? { reason: 'manual', disconnectedPlayer: null } : {}) });
       }
       for (const action of ['pause', 'start', 'start-round', 'start-question', 'next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner']) await api.post(`${root}/${action}`).expect(409);
       assert.equal((await api.post(`${root}/resume`).expect(200)).body.state, state);
@@ -259,7 +259,7 @@ test('migration 12 preserves every migration 11 state and all dependent rows', a
       DROP TRIGGER delete_quiz_lobbies; DROP TABLE game_sessions; ALTER TABLE old_sessions RENAME TO game_sessions;
       CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
       CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
-      DELETE FROM schema_migrations WHERE version = 12`);
+      DELETE FROM schema_migrations WHERE version >= 12`);
     db.close(); db = initializeDatabase(path);
     for (const table of tables) assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), before[table]);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
@@ -287,7 +287,7 @@ test('live Pause/Resume reaches all audiences, subscription restores Pause, and 
     await Promise.all(sockets.map(socket => once(socket, 'connect')));
     await Promise.all(sockets.map(async (socket, index) => {
       const response = next(socket);
-      socket.emit('lobby:subscribe', { roomId: fixture.room.id, audience: ['host', 'screen', 'player'][index] });
+      socket.emit('lobby:subscribe', { roomId: fixture.room.id, audience: ['host', 'screen', 'player'][index], ...(index === 2 ? { token: fixture.identities[0].token } : {}) });
       await response;
     }));
     async function command(action: string, expected: string) {
@@ -306,7 +306,7 @@ test('live Pause/Resume reaches all audiences, subscription restores Pause, and 
     for (const [index, socket] of sockets.entries()) {
       socket.disconnect(); socket.connect(); await once(socket, 'connect');
       const restored = next(socket);
-      socket.emit('lobby:subscribe', { roomId: fixture.room.id, audience: ['host', 'screen', 'player'][index] });
+      socket.emit('lobby:subscribe', { roomId: fixture.room.id, audience: ['host', 'screen', 'player'][index], ...(index === 2 ? { token: fixture.identities[0].token } : {}) });
       assert.equal((await restored).room.state, 'PAUSED');
     }
     await command('resume', 'ANSWERING'); await command('pause', 'PAUSED');

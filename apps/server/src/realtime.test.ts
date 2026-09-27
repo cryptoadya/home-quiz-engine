@@ -43,10 +43,13 @@ test('shared HTTP/socket server validates subscriptions, broadcasts safe state a
     let state = nextState(host);
     host.emit('lobby:subscribe', { roomId: 'room', audience: 'host' });
     assert.deepEqual((await state).players, []);
+    const joinedState = nextState(host);
+    const identity = (await request(server).post('/api/rooms/code/ABCDE/players').send({ name: 'Sam', language: 'en' })).body;
+    await joinedState;
     state = nextState(player);
-    player.emit('lobby:subscribe', { roomId: 'room', audience: 'player' });
+    player.emit('lobby:subscribe', { roomId: 'room', audience: 'player', token: identity.token });
     assert.equal((await state).players, undefined);
-    for (const [name, language, count] of [['Alex', 'ru', 1], ['Jane', 'en', 2]] as const) {
+    for (const [name, language, count] of [['Alex', 'ru', 2], ['Jane', 'en', 3]] as const) {
       state = nextState(host);
       const playerState = nextState(player);
       const joined = await request(server).post('/api/rooms/code/ABCDE/players').send({ name, language });
@@ -57,7 +60,7 @@ test('shared HTTP/socket server validates subscriptions, broadcasts safe state a
       assert.ok(!JSON.stringify(payload).includes(joined.body.token));
       assert.equal((await playerState).players, undefined);
     }
-    assert.equal((await request(server).get('/api/rooms/room/lobby')).body.players.length, 2);
+    assert.equal((await request(server).get('/api/rooms/room/lobby')).body.players.length, 3);
     host.disconnect();
     await request(server).post('/api/rooms/room/close');
     state = nextState(host);
@@ -66,7 +69,7 @@ test('shared HTTP/socket server validates subscriptions, broadcasts safe state a
     host.emit('lobby:subscribe', { roomId: 'room', audience: 'host' });
     const restored = await state;
     assert.ok(restored.room.closedAt);
-    assert.equal(restored.players.length, 2);
+    assert.equal(restored.players.length, 3);
     // Repeated close also supplies the current durable snapshot to connected clients.
     state = nextState(host);
     const closedPlayer = nextState(player);
@@ -103,17 +106,24 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
   const room = (await api.post(`/api/quizzes/${quiz.id}/rooms`).expect(201)).body;
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const sockets = ['host', 'screen', 'player'].map(() => connect(url, { transports: ['websocket'], autoConnect: false, forceNew: true }));
+  const identities = [];
+  for (const name of ['Alice', 'Bob']) identities.push((await api.post(`/api/rooms/code/${room.code}/players`).send({ name, language: 'en' }).expect(201)).body);
+  // A second authenticated tab keeps the old reload scenario in ANSWERING.
+  const backup = connect(url, { transports: ['websocket'], forceNew: true });
+  await once(backup, 'connect');
+  const backupState = nextState(backup);
+  backup.emit('lobby:subscribe', { roomId: room.id, audience: 'player', token: identities[0].token });
+  await backupState;
   try {
     for (const [i, socket] of sockets.entries()) {
       const connected = once(socket, 'connect');
       socket.connect();
       await connected;
       const state = nextState(socket);
-      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i], ...(i === 2 ? { token: identities[0].token } : {}) });
       await state;
     }
-    const identities = [];
-    for (const name of ['Alice', 'Bob']) identities.push((await api.post(`/api/rooms/code/${room.code}/players`).send({ name, language: 'en' }).expect(201)).body);
+
     db.prepare("UPDATE quizzes SET title = 'Final Lobby title' WHERE id = ?").run(quiz.id);
     const states = sockets.map(nextState);
     await api.post(`/api/rooms/${room.id}/start`).expect(200);
@@ -132,7 +142,7 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
       socket.connect();
       await connected;
       const state = nextState(socket);
-      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i], ...(i === 2 ? { token: identities[0].token } : {}) });
       const refreshed = await state;
       assert.equal(refreshed.room.state, 'ROUND_INTRO');
       assert.equal(refreshed.room.quizTitle, 'Final Lobby title');
@@ -157,7 +167,7 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
       socket.connect();
       await connected;
       const refreshed = nextState(socket);
-      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i], ...(i === 2 ? { token: identities[0].token } : {}) });
       assert.deepEqual(await refreshed, payload);
     }
     const answeringStates = sockets.map(nextState);
@@ -174,7 +184,7 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
       const connected = once(socket, 'connect');
       socket.connect(); await connected;
       const refreshed = nextState(socket);
-      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i] });
+      socket.emit('lobby:subscribe', { roomId: room.id, audience: ['host', 'screen', 'player'][i], ...(i === 2 ? { token: identities[0].token } : {}) });
       const restored = await refreshed;
       assert.equal(restored.room.state, 'ANSWERING');
       if (i < 2) assert.equal(restored.game.timer.deadlineAt, deadline);
@@ -202,6 +212,7 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
     }
 
   } finally {
+    backup.disconnect();
     sockets.forEach(socket => socket.disconnect());
     await new Promise<void>(resolve => io.close(() => resolve()));
     db.close();
@@ -233,7 +244,7 @@ test('persisted deadline automatically broadcasts Reveal without further HTTP mu
     for (const audience of ['host', 'screen', 'player']) {
       const socket = connect(`http://127.0.0.1:${(server.address() as { port: number }).port}`, { transports: ['websocket'], forceNew: true });
       sockets.push(socket); await once(socket, 'connect');
-      const state = nextState(socket); socket.emit('lobby:subscribe', { roomId: room.id, audience }); await state;
+      const state = nextState(socket); socket.emit('lobby:subscribe', { roomId: room.id, audience, ...(audience === 'player' ? { token: identities[0].token } : {}) }); await state;
     }
     let updates = sockets.map(nextState);
     await api.post(`/api/rooms/${room.id}/start-question`).expect(200); await Promise.all(updates);

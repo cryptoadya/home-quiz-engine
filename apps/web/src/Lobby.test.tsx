@@ -73,7 +73,7 @@ test('query preference initializes language and restored Player reacts to live c
   view = show('/play/ABCDE?lang=ru');
   await waitFor(() => assert.ok(view.getByText('Waiting for the host…')));
   await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
-  live.on('lobby:subscribe', input => assert.deepEqual(input, { roomId: 'room', audience: 'player' }));
+  live.on('lobby:subscribe', input => assert.deepEqual(input, { roomId: 'room', audience: 'player', token: 'secret' }));
   await act(async () => { live.emit('connect'); live.emit('lobby:state', { room: { ...room, closedAt: 'now' } }); });
   assert.ok(view.getByText('Room closed'));
 });
@@ -325,7 +325,7 @@ for (const language of ['ru', 'en']) test(`Player ${language} fetches Answering 
   let view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question')));
   answering = true;
-  live.on('lobby:subscribe', input => assert.deepEqual(input, { roomId: 'room', audience: 'player' }));
+  live.on('lobby:subscribe', input => assert.deepEqual(input, { roomId: 'room', audience: 'player', token: 'secret' }));
   await act(async () => { live.emit('connect'); live.emit('lobby:state', { room: { ...room, state: 'ANSWERING' } }); });
   await waitFor(() => assert.ok(view.getByText(text)));
   assert.equal(view.getByRole('timer').textContent, '12');

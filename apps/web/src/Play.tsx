@@ -22,7 +22,7 @@ function PlayerRoom({ code }: { code: string }) {
   const [name, setName] = useState('');
   const [searchParams] = useSearchParams();
   const [language, setLanguage] = useState<'ru' | 'en'>(() => searchParams.get('lang') === 'en' ? 'en' : 'ru');
-  const { state: live } = useLobby(identity?.room.id, 'player');
+  const { state: live, error: subscriptionError } = useLobby(identity?.room.id, 'player', token);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(Boolean(code));
   const [retry, setRetry] = useState(0);
@@ -64,7 +64,7 @@ function PlayerRoom({ code }: { code: string }) {
   }, [code, retry]);
 
   // Socket metadata invalidates the authenticated HTTP projection, including on reconnect.
-  // The token stays in HTTP and is never part of a socket subscription.
+  // Player subscriptions authenticate with the same stored token as HTTP reconnect.
   useEffect(() => {
     if (live?.room.state === 'PAUSED') {
       // Discard the old deadline before Resume triggers a fresh authenticated read.
@@ -109,6 +109,7 @@ function PlayerRoom({ code }: { code: string }) {
   return <main className="player">
     <h1>Player</h1>
     {error && <p role="alert">{error}</p>}
+    {subscriptionError && <p role="alert">{subscriptionError} {ru ? 'Обновите страницу для повторного подключения.' : 'Reload to reconnect.'}</p>}
     {identity ? <>
       <h2>{currentRoom?.quizTitle}</h2>
       <p>{currentRoom?.code}</p>

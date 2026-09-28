@@ -73,6 +73,7 @@ export function Host() {
         <button onClick={() => void start('pause')} disabled={busy}>Pause</button>}
       {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
         <p>Game paused.</p>
+        {state?.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} host mediaBusy />}
         {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <>
           <p>{state.game.disconnectedPlayer?.name} disconnected.</p>
           <p role="status">{state.game.disconnectedPlayer?.present ? `${state.game.disconnectedPlayer.name} is back — Host can resume with Wait for Player.` : 'Waiting for Player to reconnect…'}</p>
@@ -94,7 +95,7 @@ export function Host() {
         <QuestionContent question={state.game} host mediaBusy={busy} onMediaControl={(id, action) => void controlMedia(id, action)} />
         <p>Points: {state.game.points}</p>
         <p>Answer time: {state.game.answerTimeSeconds} seconds</p>
-        {state.game.state === 'QUESTION' && <button onClick={() => void start('start-question')} disabled={busy}>Start Question</button>}
+        {state.game.state === 'QUESTION' && !state.game.preTimer && <button onClick={() => void start('start-question')} disabled={busy}>Start Question</button>}
         {state.game.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}
       </section>}
       {!room.closedAt && state?.game && ('nextAction' in state.game) && <>

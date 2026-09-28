@@ -1,4 +1,4 @@
-import { projectMediaPlayback } from './media-playback.js';
+import { projectMediaPlayback, preTimerMediaId, beginMedia, beginAnswering } from './media-playback.js';
 import { answerOrder } from './answer-order.js';
 import { matchingContent } from './matching-game.js';
 import { absentPlayerPresence, type PlayerPresenceChecker } from './pause.js';
@@ -7,27 +7,16 @@ import { getSubmission, getAnswerCounts, isQuestionExcluded } from './answers.js
 import type { DatabaseSync } from 'node:sqlite';
 import { currentContent } from './snapshot.js';
 import { getRoom } from './rooms.js';
-import { effectiveDuration, createAnswerTimer, projectAnswerTimer } from './timer.js';
+import { effectiveDuration, projectAnswerTimer } from './timer.js';
 import { getLeaderboard, navigationAction } from './navigation.js';
 import { listPlayers } from './players.js';
 
 export type Audience = 'host' | 'screen' | 'player';
 
-function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: number, presence: PlayerPresenceChecker) {
+function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience, now: number, underlyingState?: string) {
   const room = getRoom(db, roomId)!;
+  if (underlyingState) room.state = underlyingState as typeof room.state;
   if (room.closedAt || room.state === 'LOBBY' || audience === 'player') return null;
-  if (room.state === 'PAUSED') {
-    const row = db.prepare('SELECT paused_from_state, paused_remaining_ms, pause_reason, paused_player_id FROM game_sessions WHERE id = ?').get(roomId)!;
-    return { state: 'PAUSED' as const, pausedFromState: String(row.paused_from_state), remainingMs: row.paused_remaining_ms as number | null,
-      ...(audience === 'host' ? { reason: row.pause_reason as 'manual' | 'player_disconnect',
-        disconnectedPlayer: row.paused_player_id === null ? null : {
-          id: String(row.paused_player_id),
-          present: presence(roomId, String(row.paused_player_id)),
-          name: String(db.prepare('SELECT display_name FROM session_players WHERE session_id = ? AND id = ?').get(roomId, row.paused_player_id)!.display_name),
-        },
-      } : {}),
-    };
-  }
   const { snapshot, round, roundIndex, questionIndex } = currentContent(db, roomId);
   const numbering = { roundNumber: roundIndex + 1, questionCount: round.questions.length };
   if (room.state === 'ROUND_INTRO') return {
@@ -46,7 +35,9 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   if (!question) throw new Error('Current question not found.');
   const reveal = room.state === 'ANSWER_REVEAL';
   const timer = room.state === 'ANSWERING' || reveal ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
-  const common = { ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
+  const preTimer = preTimerMediaId(db, roomId);
+  const ordered = question.media?.filter(ref => ref.playBeforeTimer) ?? [];
+  const common = { ...(preTimer ? { preTimer: { mediaId: preTimer, number: ordered.findIndex(ref => ref.mediaId === preTimer) + 1, total: ordered.length } } : {}), ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
     questionId: question.id, textRu: question.textRu, textEn: question.textEn,
     media: (question.media ?? []).flatMap(ref => {
       const media = snapshot.media?.find(item => item.id === ref.mediaId);
@@ -62,6 +53,26 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   return { ...common, ...matchingProjection, showOptionsOnScreen: question.showOptionsOnScreen,
     ...(question.showOptionsOnScreen || reveal ? { options: answerOrder(question.options, snapshot.shuffleAnswers, roomId, question.id).map(option => ({ textRu: option.textRu, textEn: option.textEn, ...(reveal ? { isCorrect: option.isCorrect } : {}) })) } : {}),
   };
+}
+
+function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: number, presence: PlayerPresenceChecker) {
+  const room = getRoom(db, roomId)!;
+  if (room.closedAt || audience === 'player') return null;
+  if (room.state === 'PAUSED') {
+    const row = db.prepare('SELECT paused_from_state, paused_remaining_ms, pause_reason, paused_player_id FROM game_sessions WHERE id = ?').get(roomId)!;
+    const content = ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL'].includes(String(row.paused_from_state))
+      ? projectActiveGame(db, roomId, audience, now, String(row.paused_from_state)) : null;
+    return { ...(content && 'media' in content && content.media.length ? { content } : {}), state: 'PAUSED' as const, pausedFromState: String(row.paused_from_state), remainingMs: row.paused_remaining_ms as number | null,
+      ...(audience === 'host' ? { reason: row.pause_reason as 'manual' | 'player_disconnect',
+        disconnectedPlayer: row.paused_player_id === null ? null : {
+          id: String(row.paused_player_id),
+          present: presence(roomId, String(row.paused_player_id)),
+          name: String(db.prepare('SELECT display_name FROM session_players WHERE session_id = ? AND id = ?').get(roomId, row.paused_player_id)!.display_name),
+        },
+      } : {}),
+    };
+  }
+  return projectActiveGame(db, roomId, audience, now);
 }
 
 export function getSurfaceState(db: DatabaseSync, roomId: string, audience: Audience, now = Date.now(), presence: PlayerPresenceChecker = absentPlayerPresence) {
@@ -129,16 +140,19 @@ export function startQuestion(db: DatabaseSync, roomId: string, now = Date.now()
   try {
     const room = getRoom(db, roomId);
     if (!room) return { status: 404, error: 'Room not found.' };
-    if (room.closedAt || room.state !== 'QUESTION') return { status: 409, error: 'Room is not in an active Question.' };
-    let timer;
+    if (room.closedAt || room.state !== 'QUESTION' || preTimerMediaId(db, roomId)) return { status: 409, error: 'Room is not in an active Question.' };
+    let question;
     try {
       const { snapshot, round, questionIndex } = currentContent(db, roomId);
-      const question = questionIndex === null ? undefined : round.questions[questionIndex];
-      if (!question) throw new Error('Current question not found.');
-      timer = createAnswerTimer(effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds), now);
+      question = round.questions[questionIndex!];
+      if (!question) throw new Error('Missing question.');
+      effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds);
     } catch { return { status: 409, error: 'Invalid game snapshot, navigation or duration.' }; }
-    db.prepare("UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = ?, answer_deadline_at = ? WHERE id = ?")
-      .run(timer.startedAt, timer.deadlineAt, roomId);
+    const first = question.media?.find(ref => ref.playBeforeTimer);
+    if (first) {
+      db.prepare('UPDATE game_sessions SET pre_timer_media_id = ? WHERE id = ?').run(first.mediaId, roomId);
+      beginMedia(db, roomId, question.id, first.mediaId, now);
+    } else beginAnswering(db, roomId, now);
     db.exec('COMMIT');
     committed = true;
     return { room: getRoom(db, roomId)! };

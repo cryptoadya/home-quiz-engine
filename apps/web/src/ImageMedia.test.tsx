@@ -36,10 +36,10 @@ test('question attachments preserve ordered IDs, reorder/remove, and Matching im
     fireEvent.change(view.getByLabelText('Pair 1 left kind'), { target: { value: 'image' } });
     await waitFor(() => assert.deepEqual(pair.left, { kind: 'image', mediaId: 'a' }));
     assert.equal(view.queryByLabelText('Pair 1 left EN'), null);
-    assert.equal(view.queryByText('Play before timer (playback deferred)'), null);
+    assert.equal(view.queryByText('Play before timer'), null);
     await waitFor(() => assert.deepEqual(question.media, [{ mediaId: 'a', playBeforeTimer: false }]));
     fireEvent.change(view.getByLabelText('Attach question media'), { target: { value: 'c' } });
-    fireEvent.click(view.getByLabelText('Play before timer (playback deferred)'));
+    fireEvent.click(view.getByLabelText('Play before timer'));
     await waitFor(() => assert.deepEqual(question.media, [{ mediaId: 'a', playBeforeTimer: false }, { mediaId: 'c', playBeforeTimer: true }]));
     fireEvent.change(view.getByLabelText('Question text EN'), { target: { value: 'Media question' } });
     await waitFor(() => assert.equal(question.textEn, 'Media question'));

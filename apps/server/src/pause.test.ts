@@ -260,7 +260,7 @@ test('migration 12 preserves every migration 11 state and all dependent rows', a
       CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
       CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
       DROP TABLE question_exclusions; DELETE FROM schema_migrations WHERE version >= 12 AND version < 17`);
-    db.exec('ALTER TABLE questions DROP COLUMN media_json; DROP TABLE media; DELETE FROM schema_migrations WHERE version = 21; ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
+    db.exec('ALTER TABLE media_playback DROP COLUMN resume_on_game_resume; DELETE FROM schema_migrations WHERE version = 23; ALTER TABLE questions DROP COLUMN media_json; DROP TABLE media; DELETE FROM schema_migrations WHERE version = 21; ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
     db.close(); db = initializeDatabase(path);
     for (const table of tables) assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), before[table]);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);

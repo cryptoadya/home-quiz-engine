@@ -691,3 +691,49 @@ The server timeline remains authoritative without a browser-driven end transitio
 
 Phase 6D owns pre-timer execution and game Pause/Resume media integration. Phase 6C
 keeps `playBeforeTimer` as metadata and leaves all game/timer transitions unchanged.
+
+## Pre-timer playback and game Pause (Phase 6D)
+
+Migration 23 extends the existing lifecycle with `pre_timer_media_id` on
+`game_sessions` and a resume marker on `media_playback`; no parallel game engine
+or new top-level phase is introduced. Start Question either starts ANSWERING
+immediately or remains in QUESTION with an active pre-timer cursor. The cursor
+walks only flagged audio/video in frozen authored array order, skipping images
+and unflagged items. Repeated Start cannot bypass it. Host/Screen expose the
+current ID, ordinal/total and playback state; Player has no answer projection or
+Submit access until ANSWERING. Host media controls are restricted to the current
+item during pre-timer playback.
+
+Screen sends Socket.IO `media:ended` with `{ roomId, questionId, mediaId,
+revision, duration }`. Only a socket currently subscribed as Screen for that room
+can report it (the existing trusted LAN surface boundary, not authentication).
+One write transaction validates the open room, current frozen question, playing
+media, active cursor, exact playback revision and finite positive duration. It
+stops that playback and starts the next required item, or creates the answer
+deadline after the last item. Duplicate, stale, paused and foreign reports cannot
+advance the cursor. The optional acknowledgement is `{ accepted }`; committed
+changes broadcast and reschedule the existing deadline manager. Normal media
+completion also stops its persisted playback without extending an answer timer.
+An overdue ANSWERING deadline takes precedence through shared Reveal/scoring.
+
+Manual and disconnect Pause freeze the server playback position and remember
+which media was playing in the same transaction as the game state/timer. Revision
+changes invalidate in-flight completion reports. Resume and Wait restore only
+that previously playing media and use the existing frozen timer remainder;
+media paused by Host stays paused. Disconnect handling now also covers active
+pre-timer QUESTION. Continue retains current-question exclusion semantics and
+continues required playback; if everyone is excluded, finishing playback resolves
+directly to Reveal through the normal completion helper. Paused media questions
+remain visible on Host/Screen with frozen playback and disabled Host controls.
+
+SQLite preserves the cursor, position, revision and resume marker across reload,
+reconnect and restart. As in 6C, a playing server timeline includes elapsed time;
+a paused timeline never does. Screen seeks to that position and reports completion
+when an elapsed restored item has reached its browser-decoded duration, recovering
+a lost end report. Finished audio stays stopped without seeking EOF (which can
+fail in browser MP3 demuxers); its persisted completed position is unchanged.
+It does not advance merely because server time passed: a Screen
+completion report is required. Playback failures/autoplay blocks remain visible;
+Host can retry/restart the current item. Only Screen plays audio/video, and starting
+another item pauses its peers. Host Play/Pause/Restart in ANSWERING never changes
+the deadline; game Pause/Resume is the only operation that freezes/restores it.

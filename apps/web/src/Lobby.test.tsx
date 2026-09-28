@@ -593,13 +593,15 @@ for (const language of ['ru', 'en']) test(`Player ${language} new boundaries sta
   dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
   let phase = 'ROUND_END';
   globalThis.fetch = async () => Response.json({ room: { ...room, state: phase }, player: { ...player, language }, active: true, game: null });
-  let view = show('/play/ABCDE');
+  let view!: ReturnType<typeof show>;
+  await act(async () => { view = show('/play/ABCDE'); });
   const labels = language === 'ru' ? ['Раунд завершён', 'Смотрите на экран', 'Финальные результаты', 'Игра завершена'] : ['Round complete', 'Look at the screen', 'Final results', 'Game finished'];
   for (const [index, next] of ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].entries()) {
     phase = next;
     await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
     await waitFor(() => assert.ok(view.getByText(labels[index])));
-    view.unmount(); view = show('/play/ABCDE');
+    view.unmount();
+    await act(async () => { view = show('/play/ABCDE'); });
     await waitFor(() => assert.ok(view.getByText(labels[index])));
     assert.equal(view.queryByRole('button'), null);
     assert.equal(view.queryByRole('table'), null);

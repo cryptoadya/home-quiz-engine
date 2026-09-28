@@ -6,7 +6,7 @@ import { RoundIntroContent, QuestionContent, BoundaryContent } from './GameConte
 
 export function Screen() {
   const { roomId } = useParams();
-  const { state, error, connected } = useLobby(roomId, 'screen');
+  const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
   const local = /^(localhost|127(?:\.\d+){3}|\[::1\]|0\.0\.0\.0)$/.test(window.location.hostname);
   return <main className="screen-lobby">
     <h1>{state?.room.closedAt ? 'Викторина / Quiz' : state?.room.state === 'PAUSED' ? 'Пауза / Paused' : state?.room.state && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.room.state) ? 'Игра / Game' : state?.room.state === 'ANSWER_REVEAL' ? 'Ответ / Answer Reveal' : state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : (state?.room.state === 'QUESTION' || state?.room.state === 'ANSWERING') ? 'Вопрос / Question' : 'Лобби / Lobby'}</h1>
@@ -16,7 +16,7 @@ export function Screen() {
       <h2>{state.room.quizTitle}</h2>
       <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
       {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state !== 'LOBBY'
-        ? <section className="game-content">{state.game && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <BoundaryContent game={state.game as import('./lobby').GameBoundary} />}{state.game?.state === 'ROUND_INTRO' && <RoundIntroContent round={state.game} />}{(state.game?.state === 'QUESTION' || state.game?.state === 'ANSWERING' || state.game?.state === 'ANSWER_REVEAL') && <QuestionContent question={state.game} />}{state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}</section> : <>
+        ? <section className="game-content">{state.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} />}{state.game && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <BoundaryContent game={state.game as import('./lobby').GameBoundary} />}{state.game?.state === 'ROUND_INTRO' && <RoundIntroContent round={state.game} />}{(state.game?.state === 'QUESTION' || state.game?.state === 'ANSWERING' || state.game?.state === 'ANSWER_REVEAL') && <QuestionContent question={state.game} onMediaEnded={(id, revision, duration) => reportMediaEnded(state.game && 'questionId' in state.game ? state.game.questionId! : '', id, revision, duration)} />}{state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}</section> : <>
         <p>Код комнаты / Room code</p>
         <strong className="room-code">{state.room.code}</strong>
         <p>Подключитесь к Wi-Fi и сканируйте QR / Join the Wi-Fi and scan a QR code</p>

@@ -1,3 +1,4 @@
+import { preTimerMediaId, freezeMediaPlayback, resumeMediaPlayback } from './media-playback.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { getRoom, type Room } from './rooms.js';
 import { currentContent } from './snapshot.js';
@@ -24,9 +25,13 @@ function pause(db: DatabaseSync, roomId: string, clock: () => number, playerId?:
     if (!room) return { status: 404, error: 'Room not found.' };
     if (room.closedAt || !pausableStates.includes(room.state)) return { status: 409, error: 'Room cannot be paused in this state.' };
     if (playerId !== undefined) {
-      if (room.state !== 'ANSWERING' || !db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND id = ? AND in_roster = 1').get(roomId, playerId)) {
+      if ((room.state !== 'ANSWERING' && !(room.state === 'QUESTION' && preTimerMediaId(db, roomId))) || !db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND id = ? AND in_roster = 1').get(roomId, playerId)) {
         return { status: 409, error: 'Disconnected player is not answering in the fixed roster.' };
       }
+    }
+    if (playerId !== undefined && room.state === 'QUESTION') {
+      const { round, questionIndex } = currentContent(db, roomId);
+      if (isQuestionExcluded(db, roomId, round.questions[questionIndex!].id, playerId)) return { status: 409, error: 'Player is excluded.' };
     }
     const row = db.prepare('SELECT answer_deadline_at FROM game_sessions WHERE id = ?').get(roomId)!;
     const now = clock();
@@ -47,6 +52,7 @@ function pause(db: DatabaseSync, roomId: string, clock: () => number, playerId?:
       remaining = Math.max(0, Date.parse(String(row.answer_deadline_at)) - now);
       if (!(remaining > 0)) return { status: 409, error: 'Invalid answer deadline.' };
     }
+    freezeMediaPlayback(db, roomId, now);
     db.prepare(`UPDATE game_sessions SET state = 'PAUSED', paused_from_state = ?, paused_at = ?, paused_remaining_ms = ?,
       pause_reason = ?, paused_player_id = ?,
       answer_started_at = CASE WHEN state = 'ANSWERING' THEN NULL ELSE answer_started_at END,
@@ -68,18 +74,19 @@ export function resumeGame(db: DatabaseSync, roomId: string, clock: () => number
     if (row.pause_reason !== 'manual') return { status: 409, error: 'Use Wait for Player or Continue Without Player to resolve this pause.' };
     const state = String(row.paused_from_state);
     if (!pausableStates.includes(state)) return { status: 409, error: 'Invalid paused state.' };
+    const now = clock();
     let startedAt = row.answer_started_at;
     let deadlineAt = row.answer_deadline_at;
     if (state === 'ANSWERING') {
       const remaining = Number(row.paused_remaining_ms);
       if (!Number.isSafeInteger(remaining) || remaining <= 0) return { status: 409, error: 'Invalid frozen answer time.' };
-      const now = clock();
       startedAt = new Date(now).toISOString();
       deadlineAt = new Date(now + remaining).toISOString();
     }
     db.prepare(`UPDATE game_sessions SET state = ?, answer_started_at = ?, answer_deadline_at = ?,
       paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`)
       .run(state, startedAt, deadlineAt, roomId);
+    resumeMediaPlayback(db, roomId, now);
     db.exec('COMMIT'); committed = true;
     return { room: getRoom(db, roomId)! };
   } finally { if (!committed) db.exec('ROLLBACK'); }
@@ -103,7 +110,7 @@ function resolveDisconnectPause(db: DatabaseSync, roomId: string, exclude: boole
     const room = getRoom(db, roomId);
     if (!room) return { status: 404, error: 'Room not found.' };
     const row = db.prepare('SELECT pause_reason, paused_from_state, paused_player_id, paused_remaining_ms FROM game_sessions WHERE id = ?').get(roomId)!;
-    if (room.closedAt || room.state !== 'PAUSED' || row.pause_reason !== 'player_disconnect' || row.paused_from_state !== 'ANSWERING') {
+    if (room.closedAt || room.state !== 'PAUSED' || row.pause_reason !== 'player_disconnect' || !['QUESTION', 'ANSWERING'].includes(String(row.paused_from_state))) {
       return { status: 409, error: 'Room is not paused for a disconnected player.' };
     }
     const playerId = String(row.paused_player_id);
@@ -118,7 +125,7 @@ function resolveDisconnectPause(db: DatabaseSync, roomId: string, exclude: boole
       questionId = question.id;
     } catch { return { status: 409, error: 'Invalid current frozen question.' }; }
     const remaining = Number(row.paused_remaining_ms);
-    if (!Number.isSafeInteger(remaining) || remaining <= 0) return { status: 409, error: 'Invalid frozen answer time.' };
+    if (row.paused_from_state === 'ANSWERING' && (!Number.isSafeInteger(remaining) || remaining <= 0)) return { status: 409, error: 'Invalid frozen answer time.' };
     if (getSubmission(db, roomId, questionId, playerId).submitted || isQuestionExcluded(db, roomId, questionId, playerId)) {
       return { status: 409, error: 'Paused player has already submitted or is excluded.' };
     }
@@ -127,11 +134,14 @@ function resolveDisconnectPause(db: DatabaseSync, roomId: string, exclude: boole
     const now = clock();
     // Score directly from PAUSED when exclusion completes the question. No timer
     // is created and no intermediate state can escape this transaction.
-    if (!exclude || !completeQuestionInTransaction(db, roomId, now, questionId, true)) {
+    if (row.paused_from_state === 'QUESTION') {
+      db.prepare(`UPDATE game_sessions SET state = 'QUESTION', paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`).run(roomId);
+    } else if (!exclude || !completeQuestionInTransaction(db, roomId, now, questionId, true)) {
       db.prepare(`UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = ?, answer_deadline_at = ?,
         paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`)
         .run(new Date(now).toISOString(), new Date(now + remaining).toISOString(), roomId);
     }
+    resumeMediaPlayback(db, roomId, now);
     db.exec('COMMIT'); committed = true;
     return { room: getRoom(db, roomId)! };
   } finally { if (!committed) db.exec('ROLLBACK'); }

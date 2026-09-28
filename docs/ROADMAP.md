@@ -164,13 +164,18 @@ smoke decoded MP3/MP4, exercised Host controls and audio-to-video exclusivity,
 and restored a paused position after Host/Screen reload and source quiz deletion.
 Fixtures are short; physical TV speakers and phone/Wi-Fi acceptance remain pending.
 
-Remaining scope (Phase 6D):
-- `playBeforeTimer` execution and ordered pre-timer playback
-- integration of game Pause/Resume with media playback
-
-Phase 6C leaves the existing question/timer lifecycle unchanged. Media commands
-never start, pause, resume or reset the answer timer; `playBeforeTimer` remains
-frozen metadata only.
+Phase 6D implements ordered `playBeforeTimer` audio/video within the existing
+QUESTION lifecycle. The durable current-media cursor gates ANSWERING and Submit;
+Screen completion reports are room/question/media/revision checked atomically.
+Manual/disconnect Pause freeze media alongside the timer; Resume, Wait and
+Continue restore the frozen state with existing question exclusions. Replay and
+Host media controls cannot extend an ANSWERING deadline. Focused tests cover
+mixed ordering, completion races, restart/reload, pause resolution and deadline
+precedence. A local Chrome smoke exercised ordered MP3/MP4 completion into
+ANSWERING, pre-timer and ANSWERING Pause/Resume, media replay and Screen reload.
+An EOF seek issue found with the short MP3 fixture was fixed and rechecked.
+Autoplay was enabled for this smoke; physical phone/TV/Wi-Fi acceptance remains
+pending. Phase 7 is not started.
 
 Acceptance: image, audio, video and multi-media questions work on the home LAN.
 

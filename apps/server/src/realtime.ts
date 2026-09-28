@@ -1,3 +1,4 @@
+import { completeMedia } from './media-playback.js';
 import { createDeadlineManager } from './deadlines.js';
 import { createServer } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
@@ -35,6 +36,13 @@ export function createQuizServer(db: DatabaseSync) {
   // Presence is process-local. Only an observed loss of the last authenticated
   // socket invokes the durable transaction; an empty registry at startup does not.
   io.on('connection', socket => {
+    let screenRoom: string | undefined;
+    socket.on('media:ended', (input: unknown, acknowledge?: (result: { accepted: boolean }) => void) => {
+      const event = input as { roomId?: unknown; questionId?: unknown; mediaId?: unknown; revision?: unknown; duration?: unknown } | null;
+      const accepted = !!screenRoom && event?.roomId === screenRoom && completeMedia(db, screenRoom, event.questionId, event.mediaId, event.revision, event.duration);
+      if (accepted) { deadlines.sync(screenRoom!); broadcast(screenRoom!); }
+      if (typeof acknowledge === 'function') acknowledge({ accepted });
+    });
     let identity: { roomId: string; playerId: string } | undefined;
     function replacePresence(next?: typeof identity) {
       if (identity?.roomId === next?.roomId && identity?.playerId === next?.playerId) return;
@@ -63,6 +71,7 @@ export function createQuizServer(db: DatabaseSync) {
     }
     socket.on('disconnect', () => replacePresence());
     socket.on('lobby:subscribe', (input: unknown) => {
+      screenRoom = undefined;
       // A socket watches one room/surface at a time, including after invalid requests.
       for (const name of socket.rooms) if (name !== socket.id) void socket.leave(name);
       const request = input as { roomId?: unknown; audience?: unknown; token?: unknown } | null;
@@ -85,6 +94,7 @@ export function createQuizServer(db: DatabaseSync) {
         }
         next = { roomId: room.id, playerId: restored.player.id };
       }
+      screenRoom = audience === 'screen' && !room.closedAt ? room.id : undefined;
       replacePresence(next);
       // SQLite reads and the local adapter are synchronous: no mutation can interleave
       // this fresh snapshot and subscription. Every reconnect repeats this operation.

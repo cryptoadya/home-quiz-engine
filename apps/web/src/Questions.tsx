@@ -210,7 +210,7 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
           const move = (direction: -1 | 1) => { const next = [...refs]; [next[index], next[index + direction]] = [next[index + direction], next[index]]; update(next); };
           return <li key={ref.mediaId}>{item?.name ?? `Media ${ref.mediaId}`}
             {item?.kind === 'image' && <MediaImage src={`/api/quizzes/${quizId}/media/${ref.mediaId}/content`} alt={item.name} className="editor-media-preview" />}
-            {item && item.kind !== 'image' && <label><input type="checkbox" checked={ref.playBeforeTimer} disabled={busy} onChange={event => update(refs.map(value => value.mediaId === ref.mediaId ? { ...value, playBeforeTimer: event.target.checked } : value))} />Play before timer (playback deferred)</label>}
+            {item && item.kind !== 'image' && <label><input type="checkbox" checked={ref.playBeforeTimer} disabled={busy} onChange={event => update(refs.map(value => value.mediaId === ref.mediaId ? { ...value, playBeforeTimer: event.target.checked } : value))} />Play before timer</label>}
             <button aria-label={`Move media ${index + 1} up`} disabled={busy || index === 0} onClick={() => move(-1)}>↑</button>
             <button aria-label={`Move media ${index + 1} down`} disabled={busy || index === refs.length - 1} onClick={() => move(1)}>↓</button>
             <button aria-label={`Remove media ${index + 1}`} disabled={busy} onClick={() => update(refs.filter(value => value.mediaId !== ref.mediaId))}>Remove reference</button>

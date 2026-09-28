@@ -94,6 +94,28 @@ test('Screen restores an elapsed finished item without implicitly replaying it',
     Object.defineProperty(element, 'readyState', { get: () => 1 });
     fireEvent.loadedMetadata(element);
     assert.equal(plays, 0);
-    assert.equal(element.currentTime, 5);
+    assert.equal(element.currentTime, 0); // Finished audio needs no EOF seek.
   } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; }
+});
+
+test('pre-timer Screen reports ended revision and elapsed reload; Host restricts controls to the current item', async () => {
+  const proto = window.HTMLMediaElement.prototype;
+  const oldPause = proto.pause; proto.pause = function () {};
+  const completions: unknown[] = [];
+  const question: CurrentQuestion = { state: 'QUESTION', questionId: 'q', preTimer: { mediaId: 'a', number: 1, total: 2 }, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: ['a', 'b'].map(mediaId => ({ mediaId, kind: 'audio', name: mediaId, mediaUrl: `/media/${mediaId}`, playback: { playing: mediaId === 'a', positionSeconds: 10, serverNow: 0, revision: 3 } })) };
+  try {
+    const view = render(createElement(QuestionContent, { question, onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    assert.ok(view.getByText(/Before timer.*1.*2/));
+    const element = view.container.querySelector('audio')!;
+    Object.defineProperty(element, 'duration', { get: () => 5 });
+    Object.defineProperty(element, 'readyState', { get: () => 1 });
+    fireEvent.loadedMetadata(element);
+    await waitFor(() => assert.deepEqual(completions, [['a', 3, 5]]));
+    fireEvent.ended(element);
+    assert.equal(completions.length, 1);
+    view.unmount();
+    const host = render(createElement(QuestionContent, { question, host: true }));
+    assert.equal((host.getByRole('button', { name: 'Play b' }) as HTMLButtonElement).disabled, true);
+    assert.equal((host.getByRole('button', { name: 'Play a' }) as HTMLButtonElement).disabled, false);
+  } finally { proto.pause = oldPause; }
 });

@@ -15,8 +15,8 @@ export type NavigationAction = 'next' | 'show-leaderboard' | 'next-round' | 'fin
 export type GameBoundary = { state: 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; nextAction?: NavigationAction | null; leaderboard?: { playerId: string; displayName: string; totalPoints: number; rank: number }[] };
 export type MediaAction = 'play' | 'pause' | 'restart';
 export type QuestionMedia = { mediaId: string; name: string; mediaUrl: string; kind?: 'image' | 'audio' | 'video'; playBeforeTimer?: boolean; playback?: { playing: boolean; positionSeconds: number; serverNow: number; revision: number } };
-export type CurrentQuestion = MatchingContent & { questionId?: string; media?: QuestionMedia[]; nextAction?: NavigationAction | null; state: 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL'; timer?: AnswerTimer; statistics?: { correct: number; wrong: number; unanswered: number }; answers?: { answered: number; expected: number }; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
-export type PausedGame = { state: 'PAUSED'; pausedFromState: Exclude<Room['state'], 'LOBBY' | 'WINNER_SCREEN' | 'PAUSED'>; remainingMs: number | null; reason?: 'manual' | 'player_disconnect'; disconnectedPlayer?: { id: string; name: string; present: boolean } | null };
+export type CurrentQuestion = MatchingContent & { preTimer?: { mediaId: string; number: number; total: number }; questionId?: string; media?: QuestionMedia[]; nextAction?: NavigationAction | null; state: 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL'; timer?: AnswerTimer; statistics?: { correct: number; wrong: number; unanswered: number }; answers?: { answered: number; expected: number }; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
+export type PausedGame = { content?: RoundIntro | CurrentQuestion | GameBoundary | null; state: 'PAUSED'; pausedFromState: Exclude<Room['state'], 'LOBBY' | 'WINNER_SCREEN' | 'PAUSED'>; remainingMs: number | null; reason?: 'manual' | 'player_disconnect'; disconnectedPlayer?: { id: string; name: string; present: boolean } | null };
 export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | GameBoundary | PausedGame | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };
@@ -26,6 +26,10 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const revision = useRef(0);
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
+  const reportMediaEnded = useCallback((questionId: string, mediaId: string, playbackRevision: number, duration: number) => {
+    if (audience === 'screen' && socketRef.current?.connected) socketRef.current.emit('media:ended', { roomId, questionId, mediaId, revision: playbackRevision, duration });
+  }, [roomId, audience]);
   const refresh = useCallback(async () => {
     const expected = ++revision.current;
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomId!)}/game/${audience}`, { cache: 'no-store' });
@@ -51,6 +55,7 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
         }).catch((cause: Error) => { if (active && !receivedSnapshot && initialRevision === revision.current) setError(cause.message); });
     }
     const socket = lobbyTransport.connect();
+    socketRef.current = socket;
     socket.on('connect', () => {
       // The subscription returns a fresh SQLite snapshot on EVERY connection;
       // no event history or client cache is used for recovery.
@@ -68,5 +73,5 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
     socket.connect();
     return () => { revision.current++; active = false; socket.removeAllListeners(); socket.disconnect(); };
   }, [roomId, audience, token]);
-  return { state, refresh, error, connected };
+  return { state, refresh, error, connected, reportMediaEnded };
 }

@@ -334,7 +334,7 @@ test('frozen audio/video ranges, authoritative controls, ordered media, realtime
     for (const [filename, contentType, bytes] of [['sample.wav', 'audio/wav', readFileSync(new URL('./fixtures/media/sample.wav', import.meta.url))], ['animation.gif', 'image/gif', gif], ['sample.mp4', 'video/mp4', readFileSync(new URL('./fixtures/media/sample.mp4', import.meta.url))], ['sample.mp3', 'audio/mpeg', readFileSync(new URL('./fixtures/media/sample.mp3', import.meta.url))], ['sample.ogg', 'audio/ogg', readFileSync(new URL('./fixtures/media/sample.ogg', import.meta.url))], ['sample.webm', 'video/webm', readFileSync(new URL('./fixtures/media/sample.webm', import.meta.url))]] as const) {
       media.push((await app.post(`/api/quizzes/${quiz.id}/media`).attach('file', bytes, { filename, contentType }).expect(201)).body);
     }
-    await app.put(base).send({ ...changes, media: media.map(item => ({ mediaId: item.id, playBeforeTimer: item.kind !== 'image' })) }).expect(200);
+    await app.put(base).send({ ...changes, media: media.map(item => ({ mediaId: item.id, playBeforeTimer: false })) }).expect(200);
     const room = (await app.post(`/api/quizzes/${quiz.id}/rooms`).expect(201)).body;
     const player = (await app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' })).body;
     const root = `/api/rooms/${room.id}`;
@@ -419,4 +419,135 @@ test('frozen audio/video ranges, authoritative controls, ordered media, realtime
     await new Promise<void>(resolve => runtime.io.close(() => resolve()));
     f.close();
   }
+});
+
+test('pre-timer order gates answering, rejects stale completion, and freezes across manual/disconnect recovery', async () => {
+  const { startQuestion, getSurfaceState } = await import('./game.js');
+  const { controlMedia, completeMedia } = await import('./media-playback.js');
+  const { pauseGame, resumeGame, autoPauseForDisconnectedPlayer, waitForPlayer, continueWithoutPlayer } = await import('./pause.js');
+  const f = fixture();
+  try {
+    const { quiz, base, question, changes } = await ready(f.app);
+    const media = [];
+    for (const [filename, contentType] of [['sample.mp3', 'audio/mpeg'], ['sample.jpg', 'image/jpeg'], ['sample.mp4', 'video/mp4']] as const)
+      media.push((await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', readFileSync(new URL(`./fixtures/media/${filename}`, import.meta.url)), { filename, contentType }).expect(201)).body);
+    await f.app.put(base).send({ ...changes, media: media.map(m => ({ mediaId: m.id, playBeforeTimer: m.kind !== 'image' })) }).expect(200);
+    const room = (await f.app.post(`/api/quizzes/${quiz.id}/rooms`)).body;
+    const root = `/api/rooms/${room.id}`;
+    const player = (await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' })).body;
+    await f.app.post(`${root}/start`); await f.app.post(`${root}/start-round`);
+    const state = (now: number): any => getSurfaceState(f.db, room.id, 'host', now)!.game;
+    const finish = (id: string, revision: number, now: number) => completeMedia(f.db, room.id, question.id, id, revision, 5, now);
+    startQuestion(f.db, room.id, 1000);
+    assert.equal(state(1000).state, 'QUESTION');
+    assert.equal(state(1000).preTimer.mediaId, media[0].id);
+    assert.equal(state(1000).timer, undefined);
+    await f.app.post(`${root}/answers`).send({ token: player.token, questionId: question.id, optionId: 'anything' }).expect(409);
+    assert.equal(startQuestion(f.db, room.id, 2000).status, 409);
+    assert.equal(controlMedia(f.db, room.id, question.id, media[2].id, 'play', 2000).status, 409);
+    const first = state(2000).media[0].playback.revision;
+    assert.equal(finish(media[2].id, first, 2000), false);
+    assert.equal(finish(media[0].id, first + 1, 2000), false);
+    pauseGame(f.db, room.id, () => 3000);
+    assert.equal(finish(media[0].id, first, 4000), false);
+    assert.equal(state(5000).content.media[0].playback.positionSeconds, 2);
+    resumeGame(f.db, room.id, () => 10000);
+    assert.equal(state(10000).media[0].playback.positionSeconds, 2);
+    assert.equal(finish(media[0].id, first, 11000), false);
+    assert.equal(autoPauseForDisconnectedPlayer(f.db, room.id, player.player.id, () => 11000), true);
+    assert.equal(waitForPlayer(f.db, room.id, () => false, () => 12000).status, 409);
+    waitForPlayer(f.db, room.id, () => true, () => 20000);
+    assert.equal(state(20000).media[0].playback.positionSeconds, 3);
+    const revision = state(20000).media[0].playback.revision;
+    assert.equal(finish(media[0].id, revision, 22000), true);
+    assert.equal(state(22000).preTimer.mediaId, media[2].id);
+    assert.equal(finish(media[0].id, revision, 22000), false);
+    const reopened = initializeDatabase(f.path);
+    assert.equal((getSurfaceState(reopened, room.id, 'screen', 23000)!.game as any).preTimer.mediaId, media[2].id);
+    reopened.close();
+    autoPauseForDisconnectedPlayer(f.db, room.id, player.player.id, () => 23000);
+    continueWithoutPlayer(f.db, room.id, () => 30000);
+    assert.equal(state(30000).preTimer.mediaId, media[2].id);
+    assert.equal(finish(media[2].id, state(30000).media[2].playback.revision, 34000), true);
+    assert.equal(state(34000).state, 'ANSWER_REVEAL'); // zero remaining participants
+  } finally { f.close(); }
+});
+
+test('single pre-timer completion starts one deadline; answering media pause/replay and expiry preserve Submit boundary', async () => {
+  const { startQuestion, getSurfaceState } = await import('./game.js');
+  const { completeMedia, controlMedia } = await import('./media-playback.js');
+  const { pauseGame, resumeGame, autoPauseForDisconnectedPlayer, waitForPlayer } = await import('./pause.js');
+  const f = fixture();
+  try {
+    const { quiz, base, question, changes } = await ready(f.app);
+    const item = (await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', readFileSync(new URL('./fixtures/media/sample.mp3', import.meta.url)), { filename: 'sample.mp3', contentType: 'audio/mpeg' })).body;
+    await f.app.put(base).send({ ...changes, answerTimeSeconds: 10, media: [{ mediaId: item.id, playBeforeTimer: true }] });
+    const room = (await f.app.post(`/api/quizzes/${quiz.id}/rooms`)).body;
+    const root = `/api/rooms/${room.id}`;
+    const player = (await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' })).body;
+    await f.app.post(`${root}/start`); await f.app.post(`${root}/start-round`);
+    const state = (now: number): any => getSurfaceState(f.db, room.id, 'screen', now)!.game;
+    startQuestion(f.db, room.id, 1000);
+    assert.equal(completeMedia(f.db, 'foreign', question.id, item.id, 1, 5, 6000), false);
+    assert.equal(completeMedia(f.db, room.id, 'foreign', item.id, 1, 5, 6000), false);
+    assert.equal(completeMedia(f.db, room.id, question.id, item.id, 1, 5, 6000), true);
+    assert.equal(state(6000).state, 'ANSWERING');
+    assert.equal(state(6000).timer.deadlineAt, '1970-01-01T00:00:16.000Z');
+    assert.equal(completeMedia(f.db, room.id, question.id, item.id, 1, 5, 7000), false);
+    for (const action of ['restart', 'pause', 'play']) {
+      controlMedia(f.db, room.id, question.id, item.id, action, 7000);
+      assert.equal(state(7000).timer.deadlineAt, '1970-01-01T00:00:16.000Z');
+    }
+    pauseGame(f.db, room.id, () => 8000);
+    assert.equal(state(9000).remainingMs, 8000);
+    assert.equal(state(9000).content.media[0].playback.positionSeconds, 1);
+    resumeGame(f.db, room.id, () => 20000);
+    assert.equal(state(20000).timer.deadlineAt, '1970-01-01T00:00:28.000Z');
+    assert.equal(state(20000).media[0].playback.positionSeconds, 1);
+    autoPauseForDisconnectedPlayer(f.db, room.id, player.player.id, () => 21000);
+    waitForPlayer(f.db, room.id, () => true, () => 30000);
+    assert.equal(state(30000).timer.deadlineAt, '1970-01-01T00:00:37.000Z');
+    assert.equal(state(30000).media[0].playback.positionSeconds, 2);
+    controlMedia(f.db, room.id, question.id, item.id, 'restart', 37000);
+    assert.equal(state(37000).state, 'ANSWER_REVEAL');
+    assert.equal(state(37000).statistics.unanswered, 1);
+    assert.equal(f.db.prepare('SELECT count(*) AS n FROM question_scores').get()!.n, 1);
+  } finally { f.close(); }
+});
+
+test('completion socket accepts only the subscribed Screen room and current playback revision', async () => {
+  const { createQuizServer } = await import('./realtime.js');
+  const { io: connect } = await import('socket.io-client');
+  const { once } = await import('node:events');
+  const f = fixture(); const runtime = createQuizServer(f.db);
+  runtime.server.listen(0, '127.0.0.1'); await once(runtime.server, 'listening');
+  const socket = connect(`http://127.0.0.1:${(runtime.server.address() as { port: number }).port}`, { transports: ['websocket'] });
+  await once(socket, 'connect');
+  try {
+    const { quiz, base, question, changes } = await ready(f.app);
+    const item = (await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', readFileSync(new URL('./fixtures/media/sample.mp3', import.meta.url)), { filename: 'sample.mp3', contentType: 'audio/mpeg' })).body;
+    await f.app.put(base).send({ ...changes, media: [{ mediaId: item.id, playBeforeTimer: true }] });
+    const room = (await f.app.post(`/api/quizzes/${quiz.id}/rooms`)).body;
+    await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' });
+    for (const action of ['start', 'start-round', 'start-question']) await f.app.post(`/api/rooms/${room.id}/${action}`).expect(200);
+    const event = { roomId: room.id, questionId: question.id, mediaId: item.id, revision: 1, duration: 1 };
+    const ended = (data = event) => socket.timeout(2000).emitWithAck('media:ended', data);
+    assert.deepEqual(await ended(), { accepted: false });
+    const subscribe = async (audience: string) => {
+      const pending = once(socket, 'lobby:state'); socket.emit('lobby:subscribe', { roomId: room.id, audience }); await pending;
+    };
+    await subscribe('host'); assert.deepEqual(await ended(), { accepted: false });
+    await subscribe('screen');
+    assert.deepEqual(await ended({ ...event, roomId: 'foreign' }), { accepted: false });
+    assert.deepEqual(await ended({ ...event, questionId: 'foreign' }), { accepted: false });
+    assert.deepEqual(await ended({ ...event, revision: 0 }), { accepted: false });
+    assert.deepEqual(await ended({ ...event, duration: -1 }), { accepted: false });
+    const broadcast = once(socket, 'lobby:state');
+    assert.deepEqual(await ended(), { accepted: true });
+    assert.equal((await broadcast)[0].game.state, 'ANSWERING');
+    const before = f.db.prepare('SELECT answer_deadline_at FROM game_sessions WHERE id = ?').get(room.id);
+    assert.deepEqual(await ended(), { accepted: false });
+    assert.deepEqual(f.db.prepare('SELECT answer_deadline_at FROM game_sessions WHERE id = ?').get(room.id), before);
+    assert.equal(runtime.deadlines !== undefined, true);
+  } finally { socket.disconnect(); await new Promise<void>(resolve => runtime.io.close(() => resolve())); f.close(); }
 });

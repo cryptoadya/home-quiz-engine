@@ -11,6 +11,8 @@ h1 { font-size: clamp(2rem, 8vw, 4rem); margin-bottom: 0.5rem; }
 p { line-height: 1.5; }
 
 .admin { max-width: 48rem; margin-top: 3rem; }
+.history-list { list-style: none; padding: 0; }
+.history-list > li { padding: 1rem 0; border-bottom: 1px solid var(--theme-border, #d4dbe3); overflow-wrap: anywhere; }
 .admin-header, .editor-heading, .quiz-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .admin-header h1, .editor h1 { font-size: 2rem; }
 .admin-header p, .quiz-list p { color: var(--theme-muted, #5b6470); margin: 0.3rem 0; }

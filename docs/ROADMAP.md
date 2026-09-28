@@ -278,8 +278,28 @@ game. All 369 tests, typecheck, build and diff checks passed. An isolated Chrome
 Admin smoke downloaded ZIP, deleted the source quiz/media, imported with a missing
 theme warning, opened the new Draft, saved edits and opened its Host lobby. The
 existing favicon 404 was the only browser console error. Physical phone/TV/Wi-Fi
-acceptance remains pending. Completed-game history/UI remains Phase 8D and is not
-started here.
+acceptance remains pending. Completed-game history/UI follows in Phase 8D below.
+
+Phase 8D implements minimal completed-game history. Migration 25 preserves original
+quiz identity and frozen title at Start independently of the editable source.
+The first Final Results transition atomically records an immutable UTC completion
+timestamp and final roster IDs/names/total points from existing competition scores;
+removed/non-roster players are excluded. Winner, Close, reconnect and restart do
+not rewrite completion. Closed/abandoned incomplete games stay outside history.
+`GET /api/history` explicitly requires `is_test = 0` and a completion marker,
+orders newest first and returns at most 100 minimal records. No answers,
+correctness, per-question scores, snapshots, media, tokens or language enter the
+history record/API. Admin History shows quiz title/date and final scores with a
+clear empty state. Source rename/deletion and restart preserve recorded history;
+seven-day Test Game cleanup is unchanged. Pre-8D completion dates cannot be
+reconstructed, and deleted pre-8D source IDs remain unavailable rather than guessed.
+Focused tests cover completion uniqueness, timestamp stability, participant/score
+boundaries, Test Game exclusion/cleanup, incomplete closure, deletion/restart,
+transaction rollback, migration and UI empty/populated/error states. All 377 tests,
+typecheck, build and diff checks passed. An isolated Chrome Admin smoke verified
+empty/populated states, Test Game exclusion, source deletion, final scores (3/0)
+and unchanged date/identity/scores after server restart. Phase 8E polish and
+physical phone/TV/Wi-Fi acceptance remain pending.
 
 Scope:
 - Preview modes

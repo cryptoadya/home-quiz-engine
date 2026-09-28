@@ -3,6 +3,7 @@ import { Play } from './Play';
 import { Host } from './Host';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { QuizEditor, QuizList } from './Admin';
+import { History } from './History';
 
 const interfaces = [
   { path: '/host', title: 'Host', description: 'Game controls' },
@@ -14,6 +15,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/admin" replace />} />
       <Route path="/admin" element={<QuizList />} />
+      <Route path="/admin/history" element={<History />} />
       <Route path="/admin/quizzes/:quizId" element={<QuizEditor />} />
       <Route path="/play" element={<Play />} />
       <Route path="/play/:code" element={<Play />} />

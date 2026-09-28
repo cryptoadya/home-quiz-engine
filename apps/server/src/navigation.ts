@@ -59,6 +59,11 @@ export function navigate(db: DatabaseSync, roomId: string, action: NavigationAct
     }
     db.prepare(`UPDATE game_sessions SET state = ?, current_round_index = ?, current_question_index = ?,
       answer_started_at = NULL, answer_deadline_at = NULL WHERE id = ?`).run(state, roundIndex, questionIndex, roomId);
+    if (state === 'FINAL_RESULTS') {
+      const players = getLeaderboard(db, roomId).map(({ playerId, displayName, totalPoints }) => ({ playerId, displayName, totalPoints }));
+      db.prepare(`UPDATE game_history SET completed_at = ?, players_json = ?
+        WHERE session_id = ? AND completed_at IS NULL`).run(new Date().toISOString(), JSON.stringify(players), roomId);
+    }
     db.exec('COMMIT');
     committed = true;
     return { room: getRoom(db, roomId)! };

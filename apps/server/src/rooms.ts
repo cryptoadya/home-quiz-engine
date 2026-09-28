@@ -92,6 +92,7 @@ export function startRoom(db: DatabaseSync, id: string): { room: Room } | { stat
     ]));
     freezing = mediaIds.length > 0;
     snapshot.media = freezeMedia(db, room.quizId!, id, mediaIds);
+    db.prepare('INSERT INTO game_history (session_id, quiz_id, quiz_title) VALUES (?, ?, ?)').run(id, room.quizId!, snapshot.title);
     db.prepare('UPDATE session_players SET in_roster = 1 WHERE session_id = ? AND removed_at IS NULL').run(id);
     db.prepare(`UPDATE game_sessions SET snapshot_json = ?, roster_locked_at = ?, state = 'ROUND_INTRO', current_round_index = 0, current_question_index = NULL WHERE id = ?`)
       .run(JSON.stringify(snapshot), new Date().toISOString(), id);

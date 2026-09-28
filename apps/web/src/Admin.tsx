@@ -122,6 +122,7 @@ export function QuizList() {
   }
 
   return <main className="admin">
+    <Link to="/admin/history">History</Link>
     <header className="admin-header"><div><h1>Quizzes</h1><p>Your saved drafts</p></div><button onClick={create} disabled={busy}>Create quiz</button></header>
     <button disabled={busy} onClick={() => importInput.current?.click()}>Import Quiz</button>
     <input ref={importInput} type="file" accept=".zip,application/zip" aria-label="Quiz ZIP" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importQuiz(file); }} />

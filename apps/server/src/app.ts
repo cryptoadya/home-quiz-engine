@@ -1,4 +1,5 @@
 import { archiveUpload, exportQuizArchive, importQuizArchive, ArchiveValidationError } from './quiz-archive.js';
+import { listHistory } from './history.js';
 import { rmSync } from 'node:fs';
 import { controlMedia } from './media-playback.js';
 import { constants, openSync, closeSync, fstatSync, createReadStream, realpathSync } from 'node:fs';
@@ -23,6 +24,9 @@ import { validateQuizReadiness } from './validation.js';
 export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}, presence: PlayerPresenceChecker = absentPlayerPresence) {
   const app = express();
   app.use(express.json());
+  app.get('/api/history', (_request, response) => {
+    response.set('Cache-Control', 'no-store').json(listHistory(db));
+  });
 
   app.get('/api/quizzes/:quizId/export', async (request, response) => {
     if (!getQuiz(db, request.params.quizId)) return response.status(404).json({ error: 'Quiz not found.' });

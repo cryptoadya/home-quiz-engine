@@ -612,6 +612,18 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     ALTER TABLE game_sessions ADD COLUMN pre_timer_media_id TEXT;
     ALTER TABLE media_playback ADD COLUMN resume_on_game_resume INTEGER NOT NULL DEFAULT 0 CHECK (resume_on_game_resume IN (0, 1));` },
   { version: 24, sql: `ALTER TABLE game_sessions ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0 CHECK (is_test IN (0, 1));` },
+  { version: 25, sql: `CREATE TABLE game_history (
+    session_id TEXT PRIMARY KEY REFERENCES game_sessions(id) ON DELETE CASCADE,
+    quiz_id TEXT,
+    quiz_title TEXT NOT NULL,
+    completed_at TEXT CHECK (completed_at IS NULL OR (julianday(completed_at) IS NOT NULL AND substr(completed_at, -1) = 'Z')),
+    players_json TEXT CHECK (players_json IS NULL OR (json_valid(players_json) AND json_type(players_json) = 'array')),
+    CHECK ((completed_at IS NULL AND players_json IS NULL) OR (completed_at IS NOT NULL AND players_json IS NOT NULL))
+  );
+  CREATE INDEX game_history_completed ON game_history(completed_at DESC) WHERE completed_at IS NOT NULL;
+  INSERT INTO game_history (session_id, quiz_id, quiz_title)
+    SELECT id, quiz_id, json_extract(snapshot_json, '$.title') FROM game_sessions
+    WHERE snapshot_json IS NOT NULL AND json_type(snapshot_json, '$.title') = 'text';` },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

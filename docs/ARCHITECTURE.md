@@ -835,10 +835,10 @@ privacy, submissions, disconnect Pause/Wait/Continue, scoring, navigation and
 restart recovery all use the real-game engine. Source edits/deletion after Start
 cannot change the running session or its independent media copies.
 
-There is no completed-game history query or UI yet. Phase 8D must filter normal
-completed-game history with `is_test = 0` by default, in addition to its completion
-criteria; closure alone is not proof of completion. Test sessions must never enter
-that default query. No history records or history UI are introduced here.
+Phase 8B introduced no completed-game history query or UI. Phase 8D below filters
+normal completed-game history with `is_test = 0`, in addition to its completion
+marker; closure alone is not proof of completion. Test sessions never enter that
+default query.
 
 Retention is deterministic: delete only `is_test = 1` sessions with non-null
 `closed_at` at least **seven days** before cleanup's UTC clock, inclusive at the
@@ -913,3 +913,43 @@ list. Success exposes an immediate **Open imported quiz** link; failures remain
 visible and can be retried. Missing bundled themes preserve the authored ID and
 show a clear warning; the existing resolver uses Default until that theme exists.
 No theme package, history query or history UI is introduced.
+
+## Minimal completed-game history (Phase 8D)
+
+Migration 25 adds `game_history`, keyed by session ID with a cascading session FK.
+Start records the original quiz ID (a plain value, without an editor FK) and frozen
+title in its existing snapshot/roster transaction. The history table contains only
+that identity, nullable `completed_at` and nullable final `players_json`. Identity
+survives source rename/deletion, including deletion before completion.
+
+The first successful `final-results` command sets the UTC ISO completion timestamp
+and final participants/totals in the same `BEGIN IMMEDIATE` transaction as entering
+`FINAL_RESULTS`. The update requires `completed_at IS NULL`; one row per session
+and no other completion writer make Winner, Pause/Resume, reconnect, repeat Close
+and restart unable to move the timestamp or duplicate a completion. Incomplete
+closure and final Round End/Leaderboard do not create completed history.
+
+Participants come directly from `getLeaderboard`: Start roster members with
+`removed_at IS NULL`, including zero totals, sorted by the existing competition
+standings order. Only player ID, display name and total points are copied; no
+history rank model is added. Answers, correctness, question score rows, played
+snapshot, media, tokens, language and other player metadata are not copied into
+history or returned by its API. Existing gameplay durability remains unchanged.
+
+`GET /api/history` uses explicit selected fields and `s.is_test = 0 AND
+h.completed_at IS NOT NULL`, newest first with stable session-ID ordering for
+equal timestamps, limited to 100 entries. It reads frozen final totals only and
+never reads editable quizzes, snapshots or active-session answer/score/player
+tables. The existing trusted organizer/LAN boundary applies. Admin `/admin/history`
+is linked from the quiz list and shows title, local completion date/time, original
+quiz/game IDs and final player scores, with loading, error and clear empty states.
+There are no charts, filters or pagination framework.
+
+SQLite stores the complete minimal record across restart. Tests use the same
+completion path but are excluded explicitly; their history rows cascade through
+the unchanged seven-day closed-Test-Game cleanup. Migration preserves available
+identity for already-started sessions but never invents historical completion
+times. Games already in Final/Winner before migration therefore stay outside
+history. An older session whose source was deleted before migration has an
+unrecoverable original quiz ID, represented as null if it later completes; all
+games started with Phase 8D retain that ID independently of source deletion.

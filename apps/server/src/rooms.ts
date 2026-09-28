@@ -86,10 +86,10 @@ export function startRoom(db: DatabaseSync, id: string): { room: Room } | { stat
     const count = db.prepare('SELECT count(*) AS n FROM session_players WHERE session_id = ? AND removed_at IS NULL').get(id)!;
     if (Number(count.n) === 0) return { status: 409, error: 'At least one active player is required.' };
     const snapshot = createGameSnapshot(db, room.quizId!);
-    const mediaIds = snapshot.rounds.flatMap(round => round.questions.flatMap(question => [
+    const mediaIds = snapshot.rounds.flatMap(round => [...(round.artMediaId ? [round.artMediaId] : []), ...round.questions.flatMap(question => [
       ...(question.media ?? []).map(ref => ref.mediaId),
       ...(question.pairs ?? []).flatMap(pair => [pair.left, pair.right].flatMap(side => side.kind === 'image' ? [side.mediaId] : [])),
-    ]));
+    ])]);
     freezing = mediaIds.length > 0;
     snapshot.media = freezeMedia(db, room.quizId!, id, mediaIds);
     db.prepare('INSERT INTO game_history (session_id, quiz_id, quiz_title) VALUES (?, ?, ?)').run(id, room.quizId!, snapshot.title);

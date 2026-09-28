@@ -624,6 +624,9 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
   INSERT INTO game_history (session_id, quiz_id, quiz_title)
     SELECT id, quiz_id, json_extract(snapshot_json, '$.title') FROM game_sessions
     WHERE snapshot_json IS NOT NULL AND json_type(snapshot_json, '$.title') = 'text';` },
+  { version: 26, sql: `ALTER TABLE questions ADD COLUMN explanation_ru TEXT NOT NULL DEFAULT '';
+    ALTER TABLE questions ADD COLUMN explanation_en TEXT NOT NULL DEFAULT '';
+    ALTER TABLE rounds ADD COLUMN art_media_id TEXT;` },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

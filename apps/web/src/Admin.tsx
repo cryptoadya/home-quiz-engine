@@ -81,13 +81,13 @@ export function QuizList() {
 
   async function remove(quiz: Quiz) {
     if (!window.confirm(`Delete “${quiz.title}”? This cannot be undone.`)) return;
-    setError('');
+    setError(''); setBusy(true);
     try {
       await api<void>(`/api/quizzes/${quiz.id}`, { method: 'DELETE' });
       setQuizzes((current) => current.filter((item) => item.id !== quiz.id));
     } catch (cause) {
       setError((cause as Error).message);
-    }
+    } finally { setBusy(false); }
   }
 
   async function duplicate(quiz: Quiz) {
@@ -135,7 +135,7 @@ export function QuizList() {
         <div className="quiz-actions">
           <button className="subtle" onClick={() => void exportQuiz(quiz)} disabled={busy} aria-label={`Export ${quiz.title}`}>Export</button>
           <button className="subtle" onClick={() => void duplicate(quiz)} disabled={busy} aria-label={`Duplicate ${quiz.title}`}>Duplicate</button>
-          <button className="subtle danger" onClick={() => void remove(quiz)} aria-label={`Delete ${quiz.title}`}>Delete</button>
+          <button className="subtle danger" onClick={() => void remove(quiz)} disabled={busy} aria-label={`Delete ${quiz.title}`}>Delete</button>
         </div>
       </li>)}</ul>}
   </main>;

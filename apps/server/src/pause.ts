@@ -25,7 +25,7 @@ function pause(db: DatabaseSync, roomId: string, clock: () => number, playerId?:
     if (!room) return { status: 404, error: 'Room not found.' };
     if (room.closedAt || !pausableStates.includes(room.state)) return { status: 409, error: 'Room cannot be paused in this state.' };
     if (playerId !== undefined) {
-      if ((room.state !== 'ANSWERING' && !(room.state === 'QUESTION' && preTimerMediaId(db, roomId))) || !db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND id = ? AND in_roster = 1').get(roomId, playerId)) {
+      if ((room.state !== 'ANSWERING' && !(room.state === 'QUESTION' && preTimerMediaId(db, roomId))) || !db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND id = ? AND in_roster = 1 AND removed_at IS NULL').get(roomId, playerId)) {
         return { status: 409, error: 'Disconnected player is not answering in the fixed roster.' };
       }
     }
@@ -86,6 +86,7 @@ export function resumeGame(db: DatabaseSync, roomId: string, clock: () => number
     db.prepare(`UPDATE game_sessions SET state = ?, answer_started_at = ?, answer_deadline_at = ?,
       paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`)
       .run(state, startedAt, deadlineAt, roomId);
+    completeQuestionInTransaction(db, roomId, now);
     resumeMediaPlayback(db, roomId, now);
     db.exec('COMMIT'); committed = true;
     return { room: getRoom(db, roomId)! };
@@ -107,42 +108,49 @@ function resolveDisconnectPause(db: DatabaseSync, roomId: string, exclude: boole
   db.exec('BEGIN IMMEDIATE');
   let committed = false;
   try {
-    const room = getRoom(db, roomId);
-    if (!room) return { status: 404, error: 'Room not found.' };
-    const row = db.prepare('SELECT pause_reason, paused_from_state, paused_player_id, paused_remaining_ms FROM game_sessions WHERE id = ?').get(roomId)!;
-    if (room.closedAt || room.state !== 'PAUSED' || row.pause_reason !== 'player_disconnect' || !['QUESTION', 'ANSWERING'].includes(String(row.paused_from_state))) {
-      return { status: 409, error: 'Room is not paused for a disconnected player.' };
-    }
-    const playerId = String(row.paused_player_id);
-    if (!db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND id = ? AND in_roster = 1').get(roomId, playerId)) {
-      return { status: 409, error: 'Paused player is not in the fixed roster.' };
-    }
-    let questionId: string;
-    try {
-      const { round, questionIndex } = currentContent(db, roomId);
-      const question = questionIndex === null ? undefined : round.questions[questionIndex];
-      if (!question) throw new Error('Missing question.');
-      questionId = question.id;
-    } catch { return { status: 409, error: 'Invalid current frozen question.' }; }
-    const remaining = Number(row.paused_remaining_ms);
-    if (row.paused_from_state === 'ANSWERING' && (!Number.isSafeInteger(remaining) || remaining <= 0)) return { status: 409, error: 'Invalid frozen answer time.' };
-    if (getSubmission(db, roomId, questionId, playerId).submitted || isQuestionExcluded(db, roomId, questionId, playerId)) {
-      return { status: 409, error: 'Paused player has already submitted or is excluded.' };
-    }
-    if (!exclude && !presence(roomId, playerId)) return { status: 409, error: 'Player has not reconnected yet.' };
-    if (exclude) db.prepare('INSERT INTO question_exclusions (session_id, question_id, player_id) VALUES (?, ?, ?)').run(roomId, questionId, playerId);
-    const now = clock();
-    // Score directly from PAUSED when exclusion completes the question. No timer
-    // is created and no intermediate state can escape this transaction.
-    if (row.paused_from_state === 'QUESTION') {
-      db.prepare(`UPDATE game_sessions SET state = 'QUESTION', paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`).run(roomId);
-    } else if (!exclude || !completeQuestionInTransaction(db, roomId, now, questionId, true)) {
-      db.prepare(`UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = ?, answer_deadline_at = ?,
-        paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`)
-        .run(new Date(now).toISOString(), new Date(now + remaining).toISOString(), roomId);
-    }
-    resumeMediaPlayback(db, roomId, now);
+    const result = resolveDisconnectPauseInTransaction(db, roomId, exclude, presence, clock);
+    if ('status' in result) return result;
     db.exec('COMMIT'); committed = true;
     return { room: getRoom(db, roomId)! };
   } finally { if (!committed) db.exec('ROLLBACK'); }
+}
+
+// Shared by Continue and permanent roster removal; caller owns the transaction.
+export function resolveDisconnectPauseInTransaction(db: DatabaseSync, roomId: string, exclude: boolean, presence: PlayerPresenceChecker, clock: () => number, removed = false): Result {
+  const room = getRoom(db, roomId);
+  if (!room) return { status: 404, error: 'Room not found.' };
+  const row = db.prepare('SELECT pause_reason, paused_from_state, paused_player_id, paused_remaining_ms FROM game_sessions WHERE id = ?').get(roomId)!;
+  if (room.closedAt || room.state !== 'PAUSED' || row.pause_reason !== 'player_disconnect' || !['QUESTION', 'ANSWERING'].includes(String(row.paused_from_state))) {
+    return { status: 409, error: 'Room is not paused for a disconnected player.' };
+  }
+  const playerId = String(row.paused_player_id);
+  if (!removed && !db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND id = ? AND in_roster = 1 AND removed_at IS NULL').get(roomId, playerId)) {
+    return { status: 409, error: 'Paused player is not in the fixed roster.' };
+  }
+  let questionId: string;
+  try {
+    const { round, questionIndex } = currentContent(db, roomId);
+    const question = questionIndex === null ? undefined : round.questions[questionIndex];
+    if (!question) throw new Error('Missing question.');
+    questionId = question.id;
+  } catch { return { status: 409, error: 'Invalid current frozen question.' }; }
+  const remaining = Number(row.paused_remaining_ms);
+  if (row.paused_from_state === 'ANSWERING' && (!Number.isSafeInteger(remaining) || remaining <= 0)) return { status: 409, error: 'Invalid frozen answer time.' };
+  if (!removed && (getSubmission(db, roomId, questionId, playerId).submitted || isQuestionExcluded(db, roomId, questionId, playerId))) {
+    return { status: 409, error: 'Paused player has already submitted or is excluded.' };
+  }
+  if (!exclude && !presence(roomId, playerId)) return { status: 409, error: 'Player has not reconnected yet.' };
+  if (exclude && !removed) db.prepare('INSERT INTO question_exclusions (session_id, question_id, player_id) VALUES (?, ?, ?)').run(roomId, questionId, playerId);
+  const now = clock();
+  // Score directly from PAUSED when exclusion completes the question. No timer
+  // is created and no intermediate state can escape this transaction.
+  if (row.paused_from_state === 'QUESTION') {
+    db.prepare(`UPDATE game_sessions SET state = 'QUESTION', paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`).run(roomId);
+  } else if (!exclude || !completeQuestionInTransaction(db, roomId, now, questionId, true)) {
+    db.prepare(`UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = ?, answer_deadline_at = ?,
+      paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`)
+      .run(new Date(now).toISOString(), new Date(now + remaining).toISOString(), roomId);
+  }
+  resumeMediaPlayback(db, roomId, now);
+  return { room: getRoom(db, roomId)! };
 }

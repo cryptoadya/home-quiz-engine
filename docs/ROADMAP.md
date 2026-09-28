@@ -113,8 +113,7 @@ honors `shuffleAnswers` for all three option types and independently for Matchin
 sides, with stable IDs, shared order across Players and reconnect/restart durability.
 Disabled shuffle preserves authored order. Focused mixed-quiz server and UI
 regressions cover these settings, mapping correctness and scoring.
-Matching image elements remain structurally supported but media-dependent image
-authoring/rendering is deferred to Phase 6; it is not claimed as implemented.
+Matching image authoring/rendering is implemented in Phase 6B.
 This completes Phase 5's non-media acceptance; physical phone/Wi-Fi smoke remains
 pending. Phase 6A storage foundations are described below.
 
@@ -123,7 +122,7 @@ Scope:
 - Multiple Choice
 - configurable correct-count hint
 - Matching using tap-left/tap-right UX
-- matching image elements — deferred to Phase 6 media
+- matching image elements — implemented in Phase 6B
 - shuffle
 
 Acceptance: all types obey the same draft-selection -> Submit contract.
@@ -148,7 +147,7 @@ files, survives source deletion/restart, and fails safely for missing/broken fil
 Responsive images preserve aspect ratio. Focused editor, rendering, projection,
 reconnect/restart and ownership/path isolation tests cover this boundary.
 Audio/video playback and Host media controls are implemented in Phase 6C below.
-Pre-timer execution remains deferred to Phase 6D. A local Chrome smoke decoded frozen JPG/GIF after source deletion
+Phase 6D implements pre-timer execution. A local Chrome smoke decoded frozen JPG/GIF after source deletion
 and rendered mixed Matching at 390×844 without horizontal overflow. The GIF fixture
 was static; animation and physical device acceptance are not claimed.
 
@@ -211,7 +210,7 @@ The two correct submissions scored 3 + 2 points. No horizontal overflow was foun
 images retained contain fitting. Source selection changed to Default after Start,
 while all three room surfaces retained Halloween after Player reload. The existing
 missing favicon produced a 404; physical phone/TV/Wi-Fi acceptance remains pending.
-Dedicated Preview modes are implemented in Phase 8A below; later Phase 8 scope remains pending.
+Dedicated Preview modes and the remaining Phase 8 features are implemented below.
 
 Scope:
 - Default theme
@@ -247,8 +246,7 @@ Screen/Player flow. Migration 24 persists a boolean session marker (`is_test`,
 projected as `isTest`); existing and normal rooms default to false. Host and Screen
 clearly label tests. Readiness, Start-time frozen content/media/roster, phones,
 timers, media, reconnect, disconnect handling and scoring reuse the real engine.
-Phase 8D's default completed-game history query must require `is_test = 0`; no
-history UI/query is implemented in 8B; import/export follows in 8C. Startup opportunistically
+Phase 8D implements the default completed-game history query with `is_test = 0`; import/export is implemented in 8C. Startup opportunistically
 cleans only tests closed for at least seven days (inclusive, measured from UTC
 closure), including frozen media and dependent gameplay rows. Open tests and all
 real sessions are retained. Focused regressions cover creation/readiness, durable
@@ -298,8 +296,7 @@ boundaries, Test Game exclusion/cleanup, incomplete closure, deletion/restart,
 transaction rollback, migration and UI empty/populated/error states. All 377 tests,
 typecheck, build and diff checks passed. An isolated Chrome Admin smoke verified
 empty/populated states, Test Game exclusion, source deletion, final scores (3/0)
-and unchanged date/identity/scores after server restart. Phase 8E polish and
-physical phone/TV/Wi-Fi acceptance remain pending.
+and unchanged date/identity/scores after server restart. Phase 8E completes local acceptance and polish below; physical phone/TV/Wi-Fi acceptance remains pending.
 
 Scope:
 - Preview modes
@@ -310,3 +307,26 @@ Scope:
 - final browser/device pass on current Safari iPhone + Chrome Android
 
 Acceptance: party rehearsal from clean start succeeds without developer intervention.
+
+### Phase 8E — final local V1 acceptance
+
+Implemented confirmed Host Kick using the existing removal marker, including
+fixed-roster/completion/leaderboard filtering, immutable accepted records, shared
+disconnect resolution, pre-timer recovery and realtime token/tab revocation.
+Kick is unavailable after completion so final standings match immutable history.
+The full spec audit also closed missing Lobby rename, live RU/EN switching, Host
+presence/timer progress, bilingual Reveal explanations and optional round art.
+Content additions reuse existing readiness, snapshots, media and archive boundaries.
+Local favicon, empty/disabled states, phone wrapping, Preview guidance and stale
+operator/implementation wording are polished without redesign.
+
+Automated/local Chromium V1 acceptance is complete. The full required tests,
+typecheck, build and diff checks are recorded in `docs/V1_ACCEPTANCE.md`; its local
+rehearsal covers all question types, two Player contexts, reliability/removal,
+media, Preview/Test Game, final/history and browser ZIP round-trip. `README.md`
+contains install/start, LAN URLs, TV/audio/autoplay and backup operating instructions.
+
+Real-hardware acceptance remains **pending**: current Safari iPhone/Chrome Android,
+actual Wi-Fi loss/load, real TV picture/sound/mirroring, actual media codecs and
+animated GIF/autoplay, offline party rehearsal and backup restore. Use the exact
+seven-item checklist in `docs/V1_ACCEPTANCE.md`. No physical test is claimed.

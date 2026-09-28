@@ -1,6 +1,6 @@
 # Architecture v0
 
-This document is intentionally small. It defines boundaries, not implementation ceremony.
+This document defines the local service and state boundaries. Historical phase notes record how those boundaries evolved; Phase 8E below records current V1 acceptance.
 
 ## One local application
 
@@ -420,7 +420,7 @@ clears both fields. Host alone receives reason and disconnected player ID/name
 alongside paused-from state and frozen time; Screen remains generic Paused and
 Player receives safe room metadata, rendering its localized Pause without answers.
 Durable metadata survives refresh/restart. Reconnect never resumes the game;
-Phase 4C adds Host resolution controls below; Kick remains out of scope.
+Phase 4C adds Host resolution controls below; Phase 8E implements Kick through the same membership and pause boundaries.
 
 
 ## Host disconnect-pause resolution (Phase 4C)
@@ -587,7 +587,7 @@ are independent permutations and can coincidentally retain some authored positio
 
 All non-media Phase 5 behavior is implemented. Matching image discriminants/media
 references reserve the media boundary. Phase 6A below adds storage and reference
-validation; image editor controls and actual rendering remain deferred.
+validation; Phase 6B implements image editor controls and rendering.
 Cross-type regressions cover hint boundaries, both ordering
 modes, frozen settings, two Players, reconnect/restart, exact scoring and Matching
 mapping identity; UI regressions cover hint autosave/reload and hidden-hint drafts.
@@ -665,15 +665,14 @@ creation and SQL commit can leave an unreferenced local file.
 Admin's per-quiz Media panel opens on demand, lists type/name/MIME/size, uploads one
 file at a time and confirms deletion with the invalid-reference consequence. It
 shows busy, success and error feedback and refreshes readiness after mutations.
-Question/Matching image selection UI and all gameplay media work belong to later
-Phase 6 slices.
+Phase 6B implements question/Matching image selection and rendering; Phases 6C/6D implement playback and timer integration.
 
 ## Image authoring and frozen rendering (Phase 6B)
 
 Admin loads/refreshes quiz-owned uploaded media in the question editor, attaches,
 removes and reorders stable-ID references without deleting files. Existing ordered
 references survive all edits. Only audio/video expose the stored Play before timer
-flag; playback and flag execution remain deferred. Matching sides switch between
+flag; Phases 6C/6D implement playback and execution. Matching sides switch between
 bilingual text and quiz-owned image IDs, with source previews in the editor.
 
 Host/Screen projections include ordered image/GIF descriptors for the current
@@ -810,7 +809,7 @@ identity storage, session snapshot or gameplay mutation endpoint. Opening, chang
 mode/state, selecting answers, local Submit, playing media and closing cannot create
 rooms, players, submissions, scores or history. Existing editor autosave remains the
 only content mutation path. Test Game is implemented in Phase 8B below; portable quiz archives are implemented
-in Phase 8C. History UI remains a later slice.
+in Phase 8C. Phase 8D implements minimal history.
 
 
 ## Real Test Game sessions (Phase 8B)
@@ -912,7 +911,7 @@ Admin offers Export on the list and saved quiz settings, and Import Quiz on the
 list. Success exposes an immediate **Open imported quiz** link; failures remain
 visible and can be retried. Missing bundled themes preserve the authored ID and
 show a clear warning; the existing resolver uses Default until that theme exists.
-No theme package, history query or history UI is introduced.
+Archives include no theme package or gameplay history; Phase 8D provides the separate history query/UI.
 
 ## Minimal completed-game history (Phase 8D)
 
@@ -953,3 +952,52 @@ times. Games already in Final/Winner before migration therefore stay outside
 history. An older session whose source was deleted before migration has an
 unrecoverable original quiz ID, represented as null if it later completes; all
 games started with Phase 8D retain that ID independently of source deletion.
+
+## Final V1 gaps and acceptance (Phase 8E)
+
+Kick uses the existing `session_players.removed_at` boundary, never a second
+membership table or a permanent question exclusion. A confirmed Host command
+runs under `BEGIN IMMEDIATE`, marks only an active room-scoped player removed,
+retains Start membership and all accepted answer/score rows, and recalculates
+completion from unremoved roster members. HTTP roster, Reveal statistics, scores
+and standings consistently exclude removed players. Reconnect, Submit and identity
+updates reject their tokens. After commit the realtime runtime emits a private
+`player:removed` event to every authenticated tab of that identity, disconnects
+those sockets, reschedules the existing deadline manager and publishes Host/Screen
+state. Player hides controls and invalidates pending HTTP reads.
+
+Kicking the player responsible for disconnect Pause uses the shared Continue
+resolution transaction without inserting an exclusion: it restores the frozen
+remainder/media or commits Reveal if the remaining responders are done. Kicking
+another player leaves that disconnect Pause unresolved. Manual Pause remains
+paused; Resume checks completion against the remaining roster. Pre-timer playback
+still gates answers. Kick after Final Results (including paused Final Results),
+Winner or closure returns conflict, preserving immutable completed history.
+Lobby removal releases the name/capacity reservation; V1 revokes identities and
+does not implement device bans. After Start a new identity cannot join.
+
+Token-authenticated identity updates atomically reserve a new name only in Lobby
+and allow RU/EN changes throughout an open game. They do not change accepted
+answers, side/option IDs or scores. Host presence comes from the existing socket
+registry and is refreshed on first/last connection. Screen/Player payloads gain
+no presence details or private answers.
+
+Migration 26 adds optional bilingual question explanations and quiz-owned round
+image art. Readiness validates bilingual completeness and available owned image
+references. Start freezes explanation text and copies round art through the same
+media manifest/storage boundary. Host can inspect explanations; Screen receives
+them only at Reveal; Player answering projections never receive them. Shared
+Round Intro and question Preview/Reveal render these additions. Duplicate and
+version-1 ZIP import/export preserve/remap them; older version-1 snapshots/archives
+without these optional fields remain valid.
+
+The application has a local favicon, a timer progress bar, explicit empty Host/
+standings states, long-text Preview guidance, working entry-route guidance and
+phone wrapping for existing controls. These do not change gameplay or themes.
+Operator commands, URLs, backups and autoplay are documented in `README.md`.
+
+Automated and isolated local Chromium acceptance are recorded in
+`docs/V1_ACCEPTANCE.md`. This establishes local V1 acceptance, not real-hardware
+acceptance. Current Safari on iPhone, Chrome on Android, actual home Wi-Fi, TV
+picture/audio/mirroring and sustained physical media/autoplay checks remain the
+explicit checklist there. No real phone/TV/Wi-Fi test is claimed.

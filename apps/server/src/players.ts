@@ -10,7 +10,7 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 
 export function listPlayers(db: DatabaseSync, roomId: string): Player[] {
   return db.prepare(`SELECT ${publicFields} FROM session_players
-    WHERE session_id = ? AND CASE
+    WHERE session_id = ? AND removed_at IS NULL AND CASE
       WHEN (SELECT roster_locked_at FROM game_sessions WHERE id = session_id) IS NULL THEN removed_at IS NULL
       ELSE in_roster = 1 END ORDER BY joined_at, id`).all(roomId) as Player[];
 }
@@ -58,4 +58,28 @@ export function reconnectPlayer(db: DatabaseSync, roomId: string, token: unknown
   const room = getRoom(db, roomId);
   if (!player || !room) return invalid;
   return { player, room, active: room.closedAt === null };
+}
+
+export function updatePlayer(db: DatabaseSync, roomId: string, body: unknown): Identity | Failure {
+  const input = body as { token?: unknown; name?: unknown; language?: unknown } | null;
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['token', 'name', 'language'].includes(key))
+    || (input.name === undefined && input.language === undefined)) return { status: 400, error: 'Provide name or language and a reconnect token.' };
+  db.exec('BEGIN IMMEDIATE');
+  let committed = false;
+  try {
+    const identity = reconnectPlayer(db, roomId, input.token);
+    if ('status' in identity) return identity;
+    if (!identity.active) return { status: 409, error: 'Room is closed.' };
+    if (input.name !== undefined && identity.room.state !== 'LOBBY') return { status: 409, error: 'Names are locked after Start Game.' };
+    const name = input.name === undefined ? identity.player.name : typeof input.name === 'string' ? input.name.trim() : '';
+    if (!name || [...name].length > 20 || !/^(?:\p{L}\p{M}*|[ '\-])+$/u.test(name) || !/\p{L}/u.test(name)) return { status: 400, error: 'Use a name of up to 20 letters, spaces, hyphens or apostrophes.' };
+    const language = input.language === undefined ? identity.player.language : input.language;
+    if (language !== 'ru' && language !== 'en') return { status: 400, error: 'Language must be ru or en.' };
+    const normalized = name.normalize('NFC').toLowerCase().normalize('NFC');
+    if (db.prepare('SELECT 1 FROM session_players WHERE session_id = ? AND normalized_name = ? AND removed_at IS NULL AND id <> ?').get(roomId, normalized, identity.player.id)) return { status: 409, error: 'That name is already taken in this room.' };
+    db.prepare('UPDATE session_players SET display_name = ?, normalized_name = ?, language = ? WHERE session_id = ? AND id = ?')
+      .run(name, normalized, language, roomId, identity.player.id);
+    db.exec('COMMIT'); committed = true;
+    return reconnectPlayer(db, roomId, input.token);
+  } finally { if (!committed) db.exec('ROLLBACK'); }
 }

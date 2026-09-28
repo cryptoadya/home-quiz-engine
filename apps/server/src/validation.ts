@@ -37,6 +37,7 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
     const roundLocation = { roundId: round.id };
     if (!round.titleRu.trim() || round.titleRu.trim().length > 100) add('ROUND_TITLE_RU_INVALID', `Round “${roundName}” needs a Russian title of 1–100 characters`, roundLocation);
     if (!round.titleEn.trim() || round.titleEn.trim().length > 100) add('ROUND_TITLE_EN_INVALID', `Round “${roundName}” needs an English title of 1–100 characters`, roundLocation);
+    if (round.artMediaId && (getMedia(db, quizId, round.artMediaId)?.kind !== 'image' || !mediaAvailable(db, quizId, round.artMediaId))) add('ROUND_ART_MISSING', 'Round art needs an available quiz-owned image', roundLocation);
     if (Boolean(round.descriptionRu.trim()) !== Boolean(round.descriptionEn.trim())) {
       add('ROUND_DESCRIPTION_INCOMPLETE', `Round “${roundName}” needs its description in both languages`, roundLocation);
     }
@@ -53,6 +54,7 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
         if (!value.trim() && (question.textRu.trim() || question.textEn.trim() || (!Array.isArray(question.media) || question.media.length === 0))) add(`QUESTION_TEXT_${language}_MISSING`, `${label} is missing ${language === 'RU' ? 'Russian' : 'English'} text`, location);
         else if (value.length > 5000) add(`QUESTION_TEXT_${language}_TOO_LONG`, `${label} ${language === 'RU' ? 'Russian' : 'English'} text exceeds 5000 characters`, location);
       }
+      if (Boolean(question.explanationRu.trim()) !== Boolean(question.explanationEn.trim()) || question.explanationRu.length > 5000 || question.explanationEn.length > 5000) add('EXPLANATION_INCOMPLETE', `${label} needs explanations in both languages, at most 5000 characters each`, location);
       if (!Number.isSafeInteger(question.points) || question.points < 1) add('QUESTION_POINTS_INVALID', `${label} needs a positive whole-number point value`, location);
       if (question.answerTimeSeconds !== null && (!Number.isInteger(question.answerTimeSeconds) || question.answerTimeSeconds < 1 || question.answerTimeSeconds > 3600)) {
         add('QUESTION_TIMER_INVALID', `${label} answer time must be 1–3600 seconds`, location);

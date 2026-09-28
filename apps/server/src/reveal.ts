@@ -16,7 +16,7 @@ export function completeQuestionInTransaction(db: DatabaseSync, roomId: string, 
   const players = db.prepare(`SELECT p.id, a.answer_json, e.player_id AS excluded FROM session_players p
     LEFT JOIN player_answers a ON a.session_id = p.session_id AND a.player_id = p.id AND a.question_id = ?
     LEFT JOIN question_exclusions e ON e.session_id = p.session_id AND e.player_id = p.id AND e.question_id = ?
-    WHERE p.session_id = ? AND p.in_roster = 1`).all(question.id, question.id, roomId);
+    WHERE p.session_id = ? AND p.in_roster = 1 AND p.removed_at IS NULL`).all(question.id, question.id, roomId);
   const { answered, expected } = getAnswerCounts(db, roomId, question.id);
   if (answered !== expected && (paused || now < Date.parse(String(session.answer_deadline_at)))) return false;
   const correct = question.options.filter(option => option.isCorrect).map(option => option.id);
@@ -45,7 +45,7 @@ export function completeQuestion(db: DatabaseSync, roomId: string, clock: () => 
 }
 
 export function getRevealStats(db: DatabaseSync, roomId: string, questionId: string) {
-  const rows = db.prepare('SELECT result, count(*) AS n FROM question_scores WHERE session_id = ? AND question_id = ? GROUP BY result').all(roomId, questionId);
+  const rows = db.prepare('SELECT result, count(*) AS n FROM question_scores WHERE session_id = ? AND question_id = ? AND player_id IN (SELECT id FROM session_players WHERE session_id = ? AND in_roster = 1 AND removed_at IS NULL) GROUP BY result').all(roomId, questionId, roomId);
   const stats = { correct: 0, wrong: 0, unanswered: 0 };
   for (const row of rows) stats[row.result as keyof typeof stats] = Number(row.n);
   return stats;

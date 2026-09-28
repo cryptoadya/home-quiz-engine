@@ -23,7 +23,7 @@ function PlayerRoom({ code }: { code: string }) {
   const [name, setName] = useState('');
   const [searchParams] = useSearchParams();
   const [language, setLanguage] = useState<'ru' | 'en'>(() => searchParams.get('lang') === 'en' ? 'en' : 'ru');
-  const { state: live, error: subscriptionError } = useLobby(identity?.room.id, 'player', token);
+  const { state: live, error: subscriptionError, removed } = useLobby(identity?.room.id, 'player', token);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(Boolean(code));
   const [retry, setRetry] = useState(0);
@@ -78,7 +78,7 @@ function PlayerRoom({ code }: { code: string }) {
       setIdentity(previous => previous?.game && (live.room.closedAt || previous.game.state !== live.room.state)
         ? { ...previous, game: null } : previous);
     }
-    if (!live || live.room.closedAt || (live.room.state !== 'ANSWERING' && live.room.state !== 'ANSWER_REVEAL') || !token) return;
+    if (!live || live.room.closedAt || !token) return;
     let active = true;
     void fetch(`/api/rooms/${encodeURIComponent(live.room.id)}/reconnect`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
@@ -90,6 +90,26 @@ function PlayerRoom({ code }: { code: string }) {
     }).catch((cause: Error) => { if (active && revision === identityRevision.current) setError(cause.message); });
     return () => { active = false; };
   }, [live, token]);
+
+  useEffect(() => {
+    if (removed) { identityRevision.current++; setIdentity(previous => previous ? { ...previous, active: false, game: null } : previous); }
+  }, [removed]);
+
+  async function updateIdentity(changes: { name?: string; language?: 'ru' | 'en' }) {
+    if (!identity || !token) return;
+    const revision = ++identityRevision.current;
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`/api/rooms/${identity.room.id}/player`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, ...changes }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Could not update player.');
+      // The command response is fresh; a subsequent socket refresh restores gameplay.
+      if (revision === identityRevision.current && !removed) setIdentity(body);
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  }
 
   async function join() {
     if (!room || busy) return;
@@ -112,7 +132,7 @@ function PlayerRoom({ code }: { code: string }) {
 
   const ru = identity?.player.language === 'ru';
   const currentRoom = live?.room ?? identity?.room;
-  const isActive = identity?.active && currentRoom?.closedAt === null;
+  const isActive = !removed && identity?.active && currentRoom?.closedAt === null;
   return <ThemeSurface themeId={(currentRoom ?? room)?.themeId} className="player">
     <h1>Player</h1>
     {error && <p role="alert">{error}</p>}
@@ -121,7 +141,17 @@ function PlayerRoom({ code }: { code: string }) {
       <h2>{currentRoom?.quizTitle}</h2>
       <p>{currentRoom?.code}</p>
       <p>{identity.player.name}</p>
-      {isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
+      {removed && <p role="status">{ru ? 'Ведущий удалил вас из игры.' : 'The host removed you from the game.'}</p>}
+      {isActive && <div className="fields">
+        <label>{ru ? 'Язык' : 'Language'}<select aria-label="Player language" value={identity.player.language} disabled={busy} onChange={event => void updateIdentity({ language: event.target.value as 'ru' | 'en' })}>
+          <option value="ru">RU</option><option value="en">EN</option>
+        </select></label>
+        {currentRoom?.state === 'LOBBY' && <form onSubmit={event => { event.preventDefault(); void updateIdentity({ name: name || identity.player.name }); }}>
+          <label>{ru ? 'Новое имя' : 'New name'}<input aria-label="New player name" value={name || identity.player.name} onChange={event => setName(event.target.value)} maxLength={20} /></label>
+          <button disabled={busy} type="submit">{ru ? 'Изменить имя' : 'Rename'}</button>
+        </form>}
+      </div>}
+      {!removed && (isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
         {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game?.excluded && currentRoom?.state === 'ANSWERING' ? <p role="status">{ru ? 'Этот вопрос продолжен без вас' : 'This question continued without you'}</p> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
           token={token} roomId={identity.room.id} language={identity.player.language} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
         {error && <button onClick={() => setRetry(value => value + 1)}>Retry</button>}
@@ -134,7 +164,7 @@ function PlayerRoom({ code }: { code: string }) {
           : currentRoom?.state === 'FINAL_RESULTS' ? (ru ? 'Финальные результаты' : 'Final results')
           : currentRoom?.state === 'WINNER_SCREEN' ? (ru ? 'Игра завершена' : 'Game finished')
           : (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…'))
-        : (ru ? 'Комната закрыта' : 'Room closed')}</p>}
+        : (ru ? 'Комната закрыта' : 'Room closed')}</p>)}
     </> : <>
       <form className="fields" onSubmit={(event) => {
         event.preventDefault();

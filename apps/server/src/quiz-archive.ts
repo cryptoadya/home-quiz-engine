@@ -38,18 +38,19 @@ function validateManifest(value: unknown): QuizArchiveManifest {
   identity(q.id);
   let questions = 0;
   for (const r of q.rounds) {
-    fields(r, ['id', 'titleRu', 'titleEn', 'descriptionRu', 'descriptionEn', 'showLeaderboardAfter', 'position', 'questions']);
+    fields(r, [...(Object.hasOwn(r, 'artMediaId') ? ['artMediaId'] : []), 'id', 'titleRu', 'titleEn', 'descriptionRu', 'descriptionEn', 'showLeaderboardAfter', 'position', 'questions']);
     identity(r.id);
-    checked(validateRoundChanges({ titleRu: r.titleRu, titleEn: r.titleEn, descriptionRu: r.descriptionRu, descriptionEn: r.descriptionEn, showLeaderboardAfter: r.showLeaderboardAfter }));
+    checked(validateRoundChanges({ titleRu: r.titleRu, titleEn: r.titleEn, descriptionRu: r.descriptionRu, descriptionEn: r.descriptionEn, showLeaderboardAfter: r.showLeaderboardAfter, artMediaId: r.artMediaId }));
     if (String(r.descriptionRu).length > 5000 || String(r.descriptionEn).length > 5000 || !Array.isArray(r.questions)) invalid('Invalid round content.');
     questions += r.questions.length;
     if (questions > archiveLimits.questions) invalid('Too many questions.');
     for (const question of r.questions) {
       const keys = ['id', 'type', 'textRu', 'textEn', 'points', 'answerTimeSeconds', 'showOptionsOnScreen', 'showCorrectCount', 'position', 'media', 'options'];
+      if (Object.hasOwn(question, 'explanationRu') || Object.hasOwn(question, 'explanationEn')) keys.push('explanationRu', 'explanationEn');
       fields(question, question.type === 'matching' ? [...keys, 'pairs'] : keys);
       identity(question.id);
       checked(validateQuestionChanges({ type: question.type, textRu: question.textRu, textEn: question.textEn, points: question.points,
-        answerTimeSeconds: question.answerTimeSeconds, showOptionsOnScreen: question.showOptionsOnScreen, showCorrectCount: question.showCorrectCount, media: question.media }));
+        answerTimeSeconds: question.answerTimeSeconds, showOptionsOnScreen: question.showOptionsOnScreen, ...(Object.hasOwn(question, 'explanationRu') ? { explanationRu: question.explanationRu, explanationEn: question.explanationEn } : {}), showCorrectCount: question.showCorrectCount, media: question.media }));
       if (!Array.isArray(question.options) || question.options.length > 10) invalid('Invalid answer options.');
       if (Boolean(String(question.textRu).trim()) !== Boolean(String(question.textEn).trim())
         || (!String(question.textRu).trim() && (question.media as unknown[]).length === 0)) invalid('Question needs bilingual text or media.');
@@ -78,6 +79,7 @@ function validateManifest(value: unknown): QuizArchiveManifest {
   };
   ordered(manifest.quiz.rounds);
   for (const round of manifest.quiz.rounds) {
+    if (round.artMediaId != null && !manifest.media.some(media => media.id === round.artMediaId && media.kind === 'image')) invalid('Missing round art.');
     ordered(round.questions);
     for (const question of round.questions) { ordered(question.options); ordered(question.pairs ?? []); }
     // Reuse the independent V1 parser: type/count/correctness/media rules. Empty rounds are editable drafts.
@@ -224,11 +226,13 @@ export async function importQuizArchive(db: DatabaseSync, path: string) {
       const roundId = remap(r.id);
       db.prepare('INSERT INTO rounds (id, quiz_id, title_ru, title_en, description_ru, description_en, show_leaderboard_after, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(roundId, id, r.titleRu, r.titleEn, r.descriptionRu, r.descriptionEn, Number(r.showLeaderboardAfter), r.position, now, now);
+      db.prepare('UPDATE rounds SET art_media_id = ? WHERE id = ?').run(r.artMediaId ? remap(r.artMediaId) : null, roundId);
       for (const question of r.questions) {
         const questionId = remap(question.id);
         db.prepare('INSERT INTO questions (id, round_id, type, text_ru, text_en, points, answer_time_seconds, show_options_on_screen, show_correct_count, media_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           .run(questionId, roundId, question.type, question.textRu, question.textEn, question.points, question.answerTimeSeconds,
             Number(question.showOptionsOnScreen), Number(question.showCorrectCount), JSON.stringify((question.media ?? []).map(ref => ({ ...ref, mediaId: remap(ref.mediaId) }))), question.position, now, now);
+        db.prepare('UPDATE questions SET explanation_ru = ?, explanation_en = ? WHERE id = ?').run(question.explanationRu ?? '', question.explanationEn ?? '', questionId);
         for (const option of question.options) db.prepare('INSERT INTO answer_options (id, question_id, text_ru, text_en, is_correct, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
           .run(remap(option.id), questionId, option.textRu, option.textEn, Number(option.isCorrect), option.position, now, now);
         for (const pair of question.pairs ?? []) db.prepare('INSERT INTO matching_pairs (id, question_id, left_json, right_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')

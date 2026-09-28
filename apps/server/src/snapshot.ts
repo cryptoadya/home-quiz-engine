@@ -6,8 +6,8 @@ import { listRounds, type Round } from './rounds.js';
 import { listQuestions, listOptions, type Question, type AnswerOption } from './questions.js';
 
 type SnapshotOption = Pick<AnswerOption, 'id' | 'textRu' | 'textEn' | 'isCorrect' | 'position'>;
-type SnapshotQuestion = Pick<Question, 'id' | 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'position'> & { media?: MediaReference[]; showCorrectCount?: boolean; options: SnapshotOption[]; pairs?: Pick<MatchingPair, 'id' | 'left' | 'right' | 'position'>[] };
-type SnapshotRound = Pick<Round, 'id' | 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'position'> & { questions: SnapshotQuestion[] };
+type SnapshotQuestion = Pick<Question, 'id' | 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'position'> & { explanationRu?: string; explanationEn?: string; media?: MediaReference[]; showCorrectCount?: boolean; options: SnapshotOption[]; pairs?: Pick<MatchingPair, 'id' | 'left' | 'right' | 'position'>[] };
+type SnapshotRound = Pick<Round, 'id' | 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'position'> & { artMediaId?: string | null; questions: SnapshotQuestion[] };
 export type GameSnapshot = Pick<Quiz, 'title' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'> & { themeId: string; schemaVersion: 1; media?: Omit<Media, 'quizId'>[]; rounds: SnapshotRound[] };
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -24,6 +24,9 @@ function validQuestion(value: unknown): boolean {
     || !integer(value.points, 1) || !(value.answerTimeSeconds === null || integer(value.answerTimeSeconds, 1, 3600))
     || (value.media !== undefined && !validMediaReferences(value.media))
     || typeof value.showOptionsOnScreen !== 'boolean' || (value.showCorrectCount !== undefined && typeof value.showCorrectCount !== 'boolean')) return false;
+  if (value.explanationRu !== undefined || value.explanationEn !== undefined) {
+    if (!strings(value, ['explanationRu', 'explanationEn']) || String(value.explanationRu).length > 5000 || String(value.explanationEn).length > 5000 || Boolean(String(value.explanationRu).trim()) !== Boolean(String(value.explanationEn).trim())) return false;
+  }
   if (value.type === 'matching') {
     return Array.isArray(value.options) && value.options.length === 0
       && ordered(value.pairs, pair => record(pair) && typeof pair.id === 'string' && pair.id.trim().length > 0
@@ -50,6 +53,7 @@ export function parseGameSnapshot(json: string): GameSnapshot {
   const snapshot = { ...value, themeId: value.themeId ?? 'default' } as GameSnapshot;
   if (snapshot.media !== undefined && (!Array.isArray(snapshot.media) || snapshot.media.some(media => !validMediaMetadata(media))
     || new Set(snapshot.media.map(media => media.id)).size !== snapshot.media.length)) throw new Error('Invalid snapshot media.');
+  for (const round of snapshot.rounds) if (round.artMediaId != null && !snapshot.media?.some(media => media.id === round.artMediaId && media.kind === 'image')) throw new Error('Invalid round art.');
   for (const round of snapshot.rounds) for (const question of round.questions) {
     for (const ref of question.media ?? []) {
       const media = snapshot.media?.find(media => media.id === ref.mediaId);
@@ -71,11 +75,11 @@ export function readEditableQuizTree(db: DatabaseSync, quizId: string): GameSnap
     defaultAnswerTimeSeconds: quiz.defaultAnswerTimeSeconds, shuffleAnswers: quiz.shuffleAnswers,
     media: listMedia(db, quizId).map(({ quizId: _owner, ...media }) => media),
     rounds: listRounds(db, quizId).map(round => ({
-      id: round.id, titleRu: round.titleRu, titleEn: round.titleEn,
+      artMediaId: round.artMediaId ?? null, id: round.id, titleRu: round.titleRu, titleEn: round.titleEn,
       descriptionRu: round.descriptionRu, descriptionEn: round.descriptionEn,
       showLeaderboardAfter: round.showLeaderboardAfter, position: round.position,
       questions: listQuestions(db, round.id).map(question => ({
-        media: question.media, id: question.id, type: question.type, textRu: question.textRu, textEn: question.textEn,
+        explanationRu: question.explanationRu, explanationEn: question.explanationEn, media: question.media, id: question.id, type: question.type, textRu: question.textRu, textEn: question.textEn,
         points: question.points, answerTimeSeconds: question.answerTimeSeconds,
         showOptionsOnScreen: question.showOptionsOnScreen, showCorrectCount: question.showCorrectCount, position: question.position,
         ...(question.type === 'matching' ? { pairs: listPairs(db, question.id).map(pair => ({

@@ -1,3 +1,5 @@
+import { kickPlayer } from './kick.js';
+import { updatePlayer } from './players.js';
 import { archiveUpload, exportQuizArchive, importQuizArchive, ArchiveValidationError } from './quiz-archive.js';
 import { listHistory } from './history.js';
 import { rmSync } from 'node:fs';
@@ -217,6 +219,18 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
     lobbyChanged(result.room.id);
     return response.status(201).json(result);
   });
+  app.post('/api/rooms/:roomId/players/:playerId/kick', (request, response) => {
+    const result = kickPlayer(db, request.params.roomId, request.params.playerId, request.body?.confirmed);
+    if ('status' in result) return response.status(result.status).json({ error: result.error });
+    lobbyChanged(result.room.id);
+    return response.json(result.room);
+  });
+  app.patch('/api/rooms/:roomId/player', (request, response) => {
+    const result = updatePlayer(db, request.params.roomId, request.body);
+    if ('status' in result) return response.status(result.status).json({ error: result.error });
+    lobbyChanged(result.room.id);
+    return response.json({ ...result, game: getPlayerGame(db, result.room.id, result.player.language, result.player.id) });
+  });
   app.post('/api/rooms/:roomId/answers', (request, response) => {
     const result = submitAnswer(db, request.params.roomId, request.body);
     response.set('Cache-Control', 'no-store');
@@ -297,6 +311,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.put('/api/quizzes/:quizId/rounds/:roundId', (request, response) => {
     const result = validateRoundChanges(request.body);
     if ('error' in result) return response.status(400).json(result);
+    if (result.changes.artMediaId && getMedia(db, request.params.quizId, result.changes.artMediaId)?.kind !== 'image') return response.status(400).json({ error: 'Round art must be a quiz-owned image.' });
     const round = updateRound(db, request.params.quizId, request.params.roundId, result.changes);
     if (!round) return response.status(404).json({ error: 'Round not found in quiz.' });
     return response.json(round);

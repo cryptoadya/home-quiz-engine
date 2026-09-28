@@ -56,7 +56,7 @@ test('shared HTTP/socket server validates subscriptions, broadcasts safe state a
       assert.equal(joined.status, 201);
       const payload = await state;
       assert.equal(payload.players.length, count);
-      assert.deepEqual(Object.keys(payload.players[0]).sort(), ['id', 'joinedAt', 'language', 'name']);
+      assert.deepEqual(Object.keys(payload.players[0]).sort(), ['id', 'joinedAt', 'language', 'name', 'present']);
       assert.ok(!JSON.stringify(payload).includes(joined.body.token));
       assert.equal((await playerState).players, undefined);
     }
@@ -266,4 +266,29 @@ test('persisted deadline automatically broadcasts Reveal without further HTTP mu
     sockets.forEach(socket => socket.disconnect());
     await new Promise<void>(resolve => io.close(() => resolve())); db.close();
   }
+});
+
+test('Kick revokes every authenticated tab and broadcasts remaining roster to Host/Screen', async () => {
+  const db = initializeDatabase(':memory:'); const quiz = createQuiz(db);
+  db.prepare("INSERT INTO game_sessions (id, code, quiz_id, state, created_at) VALUES ('kick-room', 'ABCDE', ?, 'LOBBY', 'now')").run(quiz.id);
+  const { server, io } = createQuizServer(db);
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const sockets: Socket[] = [];
+  try {
+    const identity = (await request(server).post('/api/rooms/code/ABCDE/players').send({ name: 'Alice', language: 'en' })).body;
+    for (const audience of ['host', 'screen', 'player', 'player']) {
+      const socket = connect(url, { transports: ['websocket'], forceNew: true }); sockets.push(socket);
+      await once(socket, 'connect'); const snapshot = nextState(socket);
+      socket.emit('lobby:subscribe', { roomId: 'kick-room', audience, token: identity.token }); await snapshot;
+    }
+    const states = sockets.slice(0, 2).map(nextState), removals = sockets.slice(2).map(socket => once(socket, 'player:removed'));
+    await request(server).post(`/api/rooms/kick-room/players/${identity.player.id}/kick`).send({ confirmed: true }).expect(200);
+    for (const state of await Promise.all(states)) assert.deepEqual(state.players, []);
+    for (const [removed] of await Promise.all(removals)) assert.deepEqual(removed, { roomId: 'kick-room' });
+    await request(server).post('/api/rooms/kick-room/reconnect').send({ token: identity.token }).expect(401);
+    const rejected = once(sockets[0], 'lobby:error');
+    sockets[0].emit('lobby:subscribe', { roomId: 'kick-room', audience: 'player', token: identity.token }); await rejected;
+    assert.equal(io.sockets.sockets.get(sockets[0].id!)!.rooms.size, 1);
+  } finally { sockets.forEach(socket => socket.disconnect()); await new Promise<void>(resolve => io.close(() => resolve())); db.close(); }
 });

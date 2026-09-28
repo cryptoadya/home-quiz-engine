@@ -26,7 +26,7 @@ export function isQuestionExcluded(db: DatabaseSync, roomId: string, questionId:
 export function getAnswerCounts(db: DatabaseSync, roomId: string, questionId: string) {
   const counts = db.prepare(`SELECT count(*) AS expected, count(a.player_id) AS answered FROM session_players p
     LEFT JOIN player_answers a ON a.session_id = p.session_id AND a.question_id = ? AND a.player_id = p.id
-    WHERE p.session_id = ? AND p.in_roster = 1
+    WHERE p.session_id = ? AND p.in_roster = 1 AND p.removed_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM question_exclusions e WHERE e.session_id = p.session_id AND e.question_id = ? AND e.player_id = p.id)`)
     .get(questionId, roomId, questionId)!;
   return { answered: Number(counts.answered), expected: Number(counts.expected) };

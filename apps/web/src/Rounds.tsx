@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Quiz } from './Admin';
+import { MediaImage } from './MediaImage';
 import { Questions } from './Questions';
 
 export type Round = {
@@ -9,13 +10,13 @@ export type Round = {
   titleEn: string;
   descriptionRu: string;
   descriptionEn: string;
-  showLeaderboardAfter: boolean;
+  artMediaId?: string | null; showLeaderboardAfter: boolean;
   position: number;
   createdAt: string;
   updatedAt: string;
 };
 
-type RoundChanges = Pick<Round, 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter'>;
+type RoundChanges = Pick<Round, 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'artMediaId'>;
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -28,6 +29,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?: Quiz; quizId: string; targetRound?: { id: string } | null; onPersistedChange?: () => void }) {
   const base = `/api/quizzes/${quizId}/rounds`;
+  const [artMedia, setArtMedia] = useState<{ id: string; name: string; kind: string }[]>([]);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -156,7 +158,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
 
   const selected = rounds.find((round) => round.id === selectedId);
   const fields: RoundChanges | null = selected ? {
-    titleRu: selected.titleRu, titleEn: selected.titleEn,
+    artMediaId: selected.artMediaId ?? null, titleRu: selected.titleRu, titleEn: selected.titleEn,
     descriptionRu: selected.descriptionRu, descriptionEn: selected.descriptionEn,
     showLeaderboardAfter: selected.showLeaderboardAfter,
   } : null;
@@ -180,6 +182,13 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
         <label>Round title EN<input value={selected.titleEn} maxLength={100} disabled={busy} onChange={(event) => change(selected, { ...fields, titleEn: event.target.value })} /></label>
         <label>Round description RU<textarea value={selected.descriptionRu} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionRu: event.target.value })} /></label>
         <label>Round description EN<textarea value={selected.descriptionEn} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionEn: event.target.value })} /></label>
+        <button disabled={busy} onClick={() => void api<{ id: string; name: string; kind: string }[]>(`/api/quizzes/${quizId}/media`).then(setArtMedia).catch(cause => setError(cause.message))}>Load / refresh round art</button>
+        <label>Round art<select disabled={busy} value={selected.artMediaId ?? ''} onChange={event => change(selected, { ...fields, artMediaId: event.target.value || null })}>
+          <option value="">None</option>
+          {selected.artMediaId && !artMedia.some(item => item.id === selected.artMediaId) && <option value={selected.artMediaId}>Current art (refresh to check)</option>}
+          {artMedia.filter(item => item.kind === 'image').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select></label>
+        {selected.artMediaId && <MediaImage src={`/api/quizzes/${quizId}/media/${selected.artMediaId}/content`} alt="Round art" className="editor-media-preview" />}
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
         <button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button>
       </div>}

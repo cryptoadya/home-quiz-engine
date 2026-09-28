@@ -47,7 +47,7 @@ export function previewContent({ quizId, quiz, question, options, pairs, media, 
   const content: CurrentQuestion = {
     state: reveal ? 'ANSWER_REVEAL' : 'ANSWERING', questionId: question.id, roundNumber, questionNumber, questionCount,
     textRu: question.textRu, textEn: question.textEn, points: question.points, answerTimeSeconds: duration,
-    showOptionsOnScreen: question.showOptionsOnScreen,
+    ...((reveal || mode === 'Host') ? { explanationRu: question.explanationRu, explanationEn: question.explanationEn } : {}), showOptionsOnScreen: question.showOptionsOnScreen,
     options: matching ? [] : options.map(option => ({ textRu: option.textRu, textEn: option.textEn, ...((reveal || mode === 'Host') ? { isCorrect: option.isCorrect } : {}) })),
     ...(matching ? { leftItems: leftItems as MatchingItem[], rightItems: rightItems as MatchingItem[], ...((reveal || mode === 'Host') ? { correctMapping } : {}) } : {}),
     media: (question.media ?? []).map(ref => {

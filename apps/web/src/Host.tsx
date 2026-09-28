@@ -44,6 +44,20 @@ export function Host() {
     finally { setBusy(false); }
   }
 
+  async function kick(player: { id: string; name: string }) {
+    if (!window.confirm(`Kick ${player.name}? They will be removed from the roster and leaderboard and cannot reconnect as this player.`)) return;
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/players/${player.id}/kick`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Could not kick player.');
+      await refresh();
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  }
+
   async function close() {
     if (!window.confirm('Close this room and release its code?')) return;
     setBusy(true);
@@ -68,7 +82,12 @@ export function Host() {
       <Link to={`/screen/${room.id}`}>Open Screen</Link>
       <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
       <p>Players: {state?.players?.length ?? 0} / 30</p>
-      <ul>{state?.players?.map(player => <li key={player.id}>{player.name} — {player.language.toUpperCase()}</li>)}</ul>
+      {!state?.players?.length && <p role="status">No players. Ask guests to scan the Screen QR code or enter the room code.</p>}
+      <ul className="host-roster">{state?.players?.map(player => <li key={player.id}>
+        <span>{player.name} — {player.language.toUpperCase()}{player.present !== undefined && ` — ${player.present ? 'Online' : 'Disconnected'}`}</span>
+        {!room.closedAt && !['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) && !(state?.game?.state === 'PAUSED' && state.game.pausedFromState === 'FINAL_RESULTS') &&
+          <button className="subtle danger" aria-label={`Kick ${player.name}`} disabled={busy} onClick={() => void kick(player)}>Kick</button>}
+      </li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
       <p>State: <span>{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>
       {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&

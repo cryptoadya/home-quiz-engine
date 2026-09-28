@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
 export type Room = { isTest?: boolean; id: string; code: string; quizTitle: string; themeId?: string | null; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN' | 'PAUSED'; closedAt: string | null };
-export type RoundIntro = { state: 'ROUND_INTRO'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string };
+export type RoundIntro = { artUrl?: string; state: 'ROUND_INTRO'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string };
 export type AnswerTimer = { serverNow: string; deadlineAt: string; durationSeconds: number; remainingMs: number; expired: boolean };
 export type Mapping = { leftId: string; rightId: string }[];
 export type MatchingItem = { id: string } & ({ kind: 'text'; textRu: string; textEn: string } | { kind: 'image'; mediaId: string; mediaUrl?: string });
@@ -15,15 +15,16 @@ export type NavigationAction = 'next' | 'show-leaderboard' | 'next-round' | 'fin
 export type GameBoundary = { state: 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; nextAction?: NavigationAction | null; leaderboard?: { playerId: string; displayName: string; totalPoints: number; rank: number }[] };
 export type MediaAction = 'play' | 'pause' | 'restart';
 export type QuestionMedia = { mediaId: string; name: string; mediaUrl: string; kind?: 'image' | 'audio' | 'video'; playBeforeTimer?: boolean; playback?: { playing: boolean; positionSeconds: number; serverNow: number; revision: number } };
-export type CurrentQuestion = MatchingContent & { preTimer?: { mediaId: string; number: number; total: number }; questionId?: string; media?: QuestionMedia[]; nextAction?: NavigationAction | null; state: 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL'; timer?: AnswerTimer; statistics?: { correct: number; wrong: number; unanswered: number }; answers?: { answered: number; expected: number }; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
+export type CurrentQuestion = MatchingContent & { explanationRu?: string; explanationEn?: string; preTimer?: { mediaId: string; number: number; total: number }; questionId?: string; media?: QuestionMedia[]; nextAction?: NavigationAction | null; state: 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL'; timer?: AnswerTimer; statistics?: { correct: number; wrong: number; unanswered: number }; answers?: { answered: number; expected: number }; roundNumber: number; questionNumber: number; questionCount: number; textRu: string; textEn: string; showOptionsOnScreen?: boolean; points?: number; answerTimeSeconds?: number; options?: { textRu: string; textEn: string; isCorrect?: boolean }[] };
 export type PausedGame = { content?: RoundIntro | CurrentQuestion | GameBoundary | null; state: 'PAUSED'; pausedFromState: Exclude<Room['state'], 'LOBBY' | 'WINNER_SCREEN' | 'PAUSED'>; remainingMs: number | null; reason?: 'manual' | 'player_disconnect'; disconnectedPlayer?: { id: string; name: string; present: boolean } | null };
-export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | GameBoundary | PausedGame | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }[] };
+export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | GameBoundary | PausedGame | null; players?: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string; present?: boolean }[] };
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };
 
 export function useLobby(roomId: string | undefined, audience: Audience, token?: string | null) {
   const [state, setState] = useState<LobbyState | null>(null);
   const [error, setError] = useState('');
+  const [removed, setRemoved] = useState(false);
   const [connected, setConnected] = useState(false);
   const revision = useRef(0);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
@@ -39,7 +40,7 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
     setState(body);
   }, [roomId, audience]);
   useEffect(() => {
-    setState(null); setError(''); setConnected(false);
+    setState(null); setError(''); setConnected(false); setRemoved(false);
     if (!roomId || (audience === 'player' && !token)) return;
     const initialRevision = ++revision.current;
     let active = true;
@@ -67,11 +68,12 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
       receivedSnapshot = true;
       setState(snapshot); setError(''); setConnected(true);
     });
+    socket.on('player:removed', (body: { roomId: string }) => { if (body.roomId === roomId) { revision.current++; setRemoved(true); setState(null); } });
     socket.on('lobby:error', (body: { error: string }) => { setError(body.error); setConnected(false); });
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', () => setConnected(false));
     socket.connect();
     return () => { revision.current++; active = false; socket.removeAllListeners(); socket.disconnect(); };
   }, [roomId, audience, token]);
-  return { state, refresh, error, connected, reportMediaEnded };
+  return { state, refresh, error, connected, removed, reportMediaEnded };
 }

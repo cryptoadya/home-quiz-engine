@@ -8,7 +8,7 @@ export type QuestionType = 'single_choice' | 'yes_no' | 'multiple_choice' | 'mat
 export type Question = {
   id: string; roundId: string; type: QuestionType; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean; showCorrectCount: boolean;
-  media: MediaReference[]; position: number; createdAt: string; updatedAt: string;
+  explanationRu: string; explanationEn: string; media: MediaReference[]; position: number; createdAt: string; updatedAt: string;
 };
 export type AnswerOption = {
   id: string; questionId: string; textRu: string; textEn: string; isCorrect: boolean;
@@ -17,14 +17,14 @@ export type AnswerOption = {
 type QuestionRow = {
   id: string; round_id: string; type: QuestionType; text_ru: string; text_en: string;
   points: number; answer_time_seconds: number | null; show_options_on_screen: number; show_correct_count: number;
-  media_json: string; position: number; created_at: string; updated_at: string;
+  explanation_ru: string; explanation_en: string; media_json: string; position: number; created_at: string; updated_at: string;
 };
 type OptionRow = {
   id: string; question_id: string; text_ru: string; text_en: string; is_correct: number;
   position: number; created_at: string; updated_at: string;
 };
 const toQuestion = (row: QuestionRow): Question => ({
-  media: JSON.parse(row.media_json), id: row.id, roundId: row.round_id, type: row.type, textRu: row.text_ru, textEn: row.text_en,
+  explanationRu: row.explanation_ru, explanationEn: row.explanation_en, media: JSON.parse(row.media_json), id: row.id, roundId: row.round_id, type: row.type, textRu: row.text_ru, textEn: row.text_en,
   points: row.points, answerTimeSeconds: row.answer_time_seconds,
   showOptionsOnScreen: Boolean(row.show_options_on_screen), showCorrectCount: Boolean(row.show_correct_count), position: row.position,
   createdAt: row.created_at, updatedAt: row.updated_at,
@@ -57,18 +57,19 @@ export function createQuestion(db: DatabaseSync, roundId: string, type: Question
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return toQuestion(db.prepare('SELECT * FROM questions WHERE id = ?').get(id) as QuestionRow);
 }
-export type QuestionChanges = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen'> & { showCorrectCount?: boolean; media?: MediaReference[] };
+export type QuestionChanges = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen'> & { explanationRu?: string; explanationEn?: string; showCorrectCount?: boolean; media?: MediaReference[] };
 export function validateQuestionChanges(value: unknown): { changes: QuestionChanges } | { error: string } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'Question fields must be an object.' };
   const input = value as Record<string, unknown>;
   const keys = ['type', 'textRu', 'textEn', 'points', 'answerTimeSeconds', 'showOptionsOnScreen'];
-  if (keys.some(key => !(key in input)) || Object.keys(input).some(key => ![...keys, 'showCorrectCount', 'media'].includes(key))) return { error: 'Provide all question fields.' };
+  if (keys.some(key => !(key in input)) || Object.keys(input).some(key => ![...keys, 'showCorrectCount', 'media', 'explanationRu', 'explanationEn'].includes(key))) return { error: 'Provide all question fields.' };
   if (input.type !== 'single_choice' && input.type !== 'yes_no' && input.type !== 'multiple_choice' && input.type !== 'matching') return { error: 'Choose single_choice, yes_no, multiple_choice or matching.' };
   if (typeof input.textRu !== 'string' || typeof input.textEn !== 'string' || input.textRu.length > 5000 || input.textEn.length > 5000) return { error: 'Question text must be strings of at most 5000 characters.' };
   if (!Number.isSafeInteger(input.points) || (input.points as number) < 1) return { error: 'Points must be a positive integer.' };
   if (input.answerTimeSeconds !== null && (!Number.isInteger(input.answerTimeSeconds) || (input.answerTimeSeconds as number) < 1 || (input.answerTimeSeconds as number) > 3600)) return { error: 'Answer time must be null or 1–3600 seconds.' };
   if (typeof input.showOptionsOnScreen !== 'boolean') return { error: 'showOptionsOnScreen must be a boolean.' };
   if ('showCorrectCount' in input && typeof input.showCorrectCount !== 'boolean') return { error: 'showCorrectCount must be a boolean.' };
+  if (('explanationRu' in input || 'explanationEn' in input) && (typeof input.explanationRu !== 'string' || typeof input.explanationEn !== 'string' || input.explanationRu.length > 5000 || input.explanationEn.length > 5000)) return { error: 'Provide both explanations, at most 5000 characters each.' };
   if ('media' in input && !validMediaReferences(input.media)) return { error: 'Invalid ordered media references.' };
   return { changes: input as QuestionChanges };
 }
@@ -77,9 +78,9 @@ export function updateQuestion(db: DatabaseSync, roundId: string, id: string, ch
   db.exec('BEGIN');
   try {
     db.prepare(`UPDATE questions SET type = ?, text_ru = ?, text_en = ?, points = ?, answer_time_seconds = ?,
-      show_options_on_screen = ?, show_correct_count = COALESCE(?, show_correct_count), media_json = COALESCE(?, media_json), updated_at = ? WHERE round_id = ? AND id = ?`).run(
+      explanation_ru = COALESCE(?, explanation_ru), explanation_en = COALESCE(?, explanation_en), show_options_on_screen = ?, show_correct_count = COALESCE(?, show_correct_count), media_json = COALESCE(?, media_json), updated_at = ? WHERE round_id = ? AND id = ?`).run(
       changes.type, changes.textRu, changes.textEn, changes.points, changes.answerTimeSeconds,
-      Number(changes.showOptionsOnScreen), changes.showCorrectCount === undefined ? null : Number(changes.showCorrectCount), changes.media === undefined ? null : JSON.stringify(changes.media), new Date().toISOString(), roundId, id,
+      changes.explanationRu ?? null, changes.explanationEn ?? null, Number(changes.showOptionsOnScreen), changes.showCorrectCount === undefined ? null : Number(changes.showCorrectCount), changes.media === undefined ? null : JSON.stringify(changes.media), new Date().toISOString(), roundId, id,
     );
     if (previous?.type !== changes.type && (previous?.type === 'matching' || changes.type === 'matching')) {
       db.prepare('DELETE FROM answer_options WHERE question_id = ?').run(id);

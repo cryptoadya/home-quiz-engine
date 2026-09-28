@@ -106,3 +106,14 @@ button.danger { color: var(--theme-danger, #a12424); border-color: var(--theme-d
 .quiz-preview .player, .preview-host { margin: 1rem auto; max-width: 28rem; }
 .quiz-preview .screen-lobby { margin: 1rem auto; }
 .quiz-preview [data-theme] { padding: 1.5rem; }
+
+.host-roster { list-style: none; padding: 0; }
+.host-roster li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0.5rem 0; }
+.host-roster span { overflow-wrap: anywhere; min-width: 0; }
+.countdown progress { width: 100%; accent-color: var(--theme-primary, #254f9a); }
+button:disabled { cursor: not-allowed; }
+@media (max-width: 38rem) {
+  .quiz-list li, .admin-header { flex-wrap: wrap; }
+  .quiz-actions { flex-wrap: wrap; }
+  .fields input, .fields textarea, .fields select { min-width: 0; max-width: 100%; box-sizing: border-box; }
+}

@@ -16,13 +16,14 @@ export function useRemainingSeconds(timer: AnswerTimer) {
 }
 
 export function Countdown({ timer, language }: { timer: AnswerTimer; language?: 'ru' | 'en' }) {
-  return <CountdownDisplay seconds={useRemainingSeconds(timer)} language={language} />;
+  return <CountdownDisplay seconds={useRemainingSeconds(timer)} durationSeconds={timer.durationSeconds} language={language} />;
 }
 
-export function CountdownDisplay({ seconds, language }: { seconds: number; language?: 'ru' | 'en' }) {
+export function CountdownDisplay({ seconds, language, durationSeconds }: { seconds: number; durationSeconds?: number; language?: 'ru' | 'en' }) {
   return <div className="countdown">
     <span>{language === 'ru' ? 'Осталось секунд' : language === 'en' ? 'Seconds remaining' : 'Осталось секунд / Seconds remaining'}</span>
     <strong role="timer" aria-label={language === 'ru' ? 'Осталось секунд' : 'Seconds remaining'}>{seconds}</strong>
+    {durationSeconds !== undefined && <progress aria-label="Time remaining" max={durationSeconds} value={Math.min(seconds, durationSeconds)} />}
     {seconds === 0 && <p role="status">{language === 'ru' ? 'Время вышло' : language === 'en' ? 'Time is up' : 'Время вышло / Time is up'}</p>}
   </div>;
 }

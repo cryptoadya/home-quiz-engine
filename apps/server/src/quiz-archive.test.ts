@@ -34,11 +34,11 @@ async function seed(f: ReturnType<typeof fixture>, themeId = 'halloween') {
   ] as const) media.push((await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', bytes, { filename: name, contentType: type }).expect(201)).body);
   for (let i = 0; i < 2; i++) {
     const r = createRound(f.db, quiz.id);
-    updateRound(f.db, quiz.id, r.id, { titleRu: `Раунд ${i}`, titleEn: `Round ${i}`, descriptionRu: 'Описание', descriptionEn: 'Description', showLeaderboardAfter: i === 0 });
+    updateRound(f.db, quiz.id, r.id, { titleRu: `Раунд ${i}`, titleEn: `Round ${i}`, descriptionRu: 'Описание', descriptionEn: 'Description', artMediaId: media[0].id, showLeaderboardAfter: i === 0 });
     for (const type of ['single_choice', 'multiple_choice', 'yes_no', 'matching'] as const) {
       const q = createQuestion(f.db, r.id, type);
       updateQuestion(f.db, r.id, q.id, { type, textRu: 'Вопрос?', textEn: 'Question?', points: 3, answerTimeSeconds: 17,
-        showOptionsOnScreen: true, showCorrectCount: false,
+        explanationRu: 'Объяснение', explanationEn: 'Explanation', showOptionsOnScreen: true, showCorrectCount: false,
         media: [...media].reverse().map((m, index) => ({ mediaId: m.id, playBeforeTimer: index < 2 })) });
       if (type === 'matching') {
         const pairs = listPairs(f.db, q.id);
@@ -77,7 +77,7 @@ async function archiveEntries(f: ReturnType<typeof fixture>) {
 }
 function normalize(tree: ReturnType<typeof readEditableQuizTree>, idMap: Map<string, string>) {
   return JSON.parse(JSON.stringify({ ...tree, media: [...tree.media ?? []].sort((a, b) => a.name.localeCompare(b.name)) }, (key, value) => key === 'createdAt' ? undefined :
-    (key === 'id' || key === 'mediaId') ? idMap.get(value) : value));
+    (key === 'id' || key === 'mediaId' || key === 'artMediaId') ? idMap.get(value) : value));
 }
 function identities(tree: ReturnType<typeof readEditableQuizTree>) {
   return [...[...(tree.media ?? [])].sort((a, b) => a.name.localeCompare(b.name)).map(m => m.id), ...tree.rounds.flatMap(r => [r.id, ...r.questions.flatMap(q => [q.id, ...q.options.map(o => o.id), ...(q.pairs ?? []).map(p => p.id)])])];
@@ -230,5 +230,23 @@ test('export rejects missing/corrupt owned media and cleans temporary archive fi
     await assert.rejects(exportQuizArchive(f.db, id)); assert.deepEqual(readdirSync(join(f.dir, 'uploads')), []);
     rmSync(mediaFile(f.db, id, m.id));
     await assert.rejects(exportQuizArchive(f.db, id)); assert.deepEqual(readdirSync(join(f.dir, 'uploads')), []);
+  } finally { f.close(); }
+});
+
+test('pre-8E version-1 archives without round art or explanations remain importable', async () => {
+  const f = fixture();
+  try {
+    const { entries } = await archiveEntries(f);
+    const manifest = JSON.parse(entries.get('manifest.json')!.toString());
+    for (const round of manifest.quiz.rounds) {
+      delete round.artMediaId;
+      for (const question of round.questions) { delete question.explanationRu; delete question.explanationEn; }
+    }
+    entries.set('manifest.json', Buffer.from(JSON.stringify(manifest)));
+    const imported = (await f.app.post('/api/quizzes/import').attach('file', await zipBytes([...entries]), 'legacy.zip').expect(201)).body;
+    const tree = readEditableQuizTree(f.db, imported.id);
+    assert.equal(tree.rounds[0].artMediaId, null);
+    assert.equal(tree.rounds[0].questions[0].explanationEn, '');
+    assert.equal((await f.app.get(`/api/quizzes/${imported.id}/validation`)).body.ready, true);
   } finally { f.close(); }
 });

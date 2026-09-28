@@ -8,6 +8,7 @@ export function RoundIntroContent({ round }: { round: RoundIntro }) {
     <h2>Раунд {round.roundNumber} / Round {round.roundNumber}</h2>
     <h3 lang="ru">{round.titleRu}</h3>
     <h3 lang="en">{round.titleEn}</h3>
+    {round.artUrl && <MediaImage src={round.artUrl} alt="Round art" className="question-image" />}
     {round.descriptionRu && <p lang="ru">{round.descriptionRu}</p>}
     {round.descriptionEn && <p lang="en">{round.descriptionEn}</p>}
   </>;
@@ -25,6 +26,7 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
       ? host ? <div key={media.mediaId}><p>{media.name} — {media.playback?.playing ? 'Playing' : 'Paused'}</p>{(['play', 'pause', 'restart'] as const).map(action => <button key={action} aria-label={`${action[0].toUpperCase() + action.slice(1)} ${media.name}`} disabled={mediaBusy || Boolean(question.preTimer && question.preTimer.mediaId !== media.mediaId)} onClick={() => onMediaControl?.(media.mediaId, action)}>{action[0].toUpperCase() + action.slice(1)}</button>)}</div>
         : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} media={media} onEnded={onMediaEnded} localControls={localMediaControls} />
       : <MediaImage key={media.mediaId} src={media.mediaUrl} alt={media.name} className="question-image" />)}</div>
+    {(host || question.state === 'ANSWER_REVEAL') && (question.explanationRu || question.explanationEn) && <section><h3>Объяснение / Explanation</h3><p lang="ru">{question.explanationRu}</p><p lang="en">{question.explanationEn}</p></section>}
     {question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul>{question.correctMapping.map(pair => {
       const left = question.leftItems!.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);
       return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>;
@@ -40,6 +42,7 @@ export function BoundaryContent({ game }: { game: import('./lobby').GameBoundary
   return <>
     <h2>{game.state === 'ROUND_END' ? 'Раунд завершён / Round complete' : game.state === 'LEADERBOARD' ? 'Таблица лидеров / Leaderboard' : game.state === 'FINAL_RESULTS' ? 'Финальные результаты / Final results' : 'Победители / Winners'}</h2>
     {game.state === 'ROUND_END' && <><h3 lang="ru">{game.titleRu}</h3><h3 lang="en">{game.titleEn}</h3></>}
+    {game.leaderboard?.length === 0 && <p role="status">Нет участников / No remaining players</p>}
     {game.leaderboard && (game.state === 'WINNER_SCREEN'
       ? <div className="winners">{game.leaderboard.map(player => <p key={player.playerId}><strong>{player.displayName}</strong> — {player.totalPoints} <span>очков / points</span></p>)}</div>
       : <table className="leaderboard"><thead><tr><th>Место / Rank</th><th>Игрок / Player</th><th>Очки / Points</th></tr></thead>

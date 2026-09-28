@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { Server } from 'socket.io';
 import { createApp } from './app.js';
-import { reconnectPlayer } from './players.js';
+import { listPlayers, reconnectPlayer } from './players.js';
 import { autoPauseForDisconnectedPlayer } from './pause.js';
 import { getRoom } from './rooms.js';
 import { getSurfaceState, type Audience } from './game.js';
@@ -19,11 +19,19 @@ export function createQuizServer(db: DatabaseSync) {
   const isPlayerPresent = (roomId: string, playerId: string) => (presence.get(`${roomId}:${playerId}`)?.size ?? 0) > 0;
   function broadcastPresence(roomId: string) {
     const state = getSurfaceState(db, roomId, 'host', Date.now(), isPlayerPresent);
-    if (state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect') {
+    if (state) {
       io.to(channel(roomId, 'host')).emit('lobby:state', state);
     }
   }
   function broadcast(roomId: string) {
+    const active = new Set(listPlayers(db, roomId).map(player => player.id));
+    for (const socket of io.sockets.sockets.values()) {
+      const identity = socket.data.playerIdentity as { roomId: string; playerId: string } | undefined;
+      if (identity?.roomId === roomId && !active.has(identity.playerId)) {
+        socket.emit('player:removed', { roomId });
+        socket.disconnect(true);
+      }
+    }
     for (const audience of ['host', 'screen', 'player'] as const) {
       const state = getSurfaceState(db, roomId, audience, Date.now(), isPlayerPresent);
       if (state) io.to(channel(roomId, audience)).emit('lobby:state', state);
@@ -51,6 +59,7 @@ export function createQuizServer(db: DatabaseSync) {
       if (identity?.roomId === next?.roomId && identity?.playerId === next?.playerId) return;
       const previous = identity;
       identity = next;
+      socket.data.playerIdentity = next;
       if (previous) {
         const key = `${previous.roomId}:${previous.playerId}`;
         const sockets = presence.get(key)!;

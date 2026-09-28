@@ -66,7 +66,7 @@ test('Player stale authenticated HTTP cannot restore an old answer after Pause a
   await act(async () => { live.emit('lobby:state', { room }); });
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'PAUSED' } }); });
   await act(async () => { live.emit('lobby:state', { room }); });
-  await act(async () => { pending[1](Response.json({ ...identity, game: { ...question, text: 'Restored question', timer: { ...timer, remainingMs: 12000 } } })); });
+  await act(async () => { pending[2](Response.json({ ...identity, game: { ...question, text: 'Restored question', timer: { ...timer, remainingMs: 12000 } } })); });
   await act(async () => { pending[0](Response.json(identity)); });
   assert.ok(view.getByText('Restored question'));
   assert.ok(!view.queryByText('First question'), 'previous question must disappear');
@@ -114,7 +114,7 @@ for (const [index, scenario] of hostCases.entries()) test(`Host HTTP reload rest
   globalThis.fetch = async () => Response.json({ room: { ...room, state: scenario.state, closedAt: 'closedAt' in scenario ? scenario.closedAt : null }, game: scenario.game, players: [{ id: 'p', name: 'Alice', language: 'en', joinedAt: 'now' }] });
   const view = show('/host/room');
   await waitFor(() => assert.ok(view.getByText('Party')));
-  assert.deepEqual(view.queryAllByRole('button').map(button => button.textContent), scenario.buttons);
+  assert.deepEqual(view.queryAllByRole('button').map(button => button.textContent), (['FINAL_RESULTS', 'WINNER_SCREEN'].includes(scenario.state) || ('closedAt' in scenario && scenario.closedAt) ? scenario.buttons : ['Kick', ...scenario.buttons]));
   if (scenario.game && 'reason' in scenario.game && scenario.game.reason === 'player_disconnect') {
     assert.ok(view.getByText(/Alice is back/));
     assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, false);
@@ -195,4 +195,44 @@ for (const [scenarioIndex, label] of [[1, 'Start Round'], [4, 'Resume']] as cons
   await act(async () => { fireEvent.click(view.getByRole('button', { name: label })); });
   assert.deepEqual(commands, [label === 'Resume' ? 'resume' : 'start-round']);
   assert.equal(view.queryByRole('alert'), null);
+});
+
+test('Host Kick requires confirmation, sends permanent removal intent, and updates roster', async () => {
+  const live = socket(); let confirmed = false, posts = 0;
+  mock.method(dom.window, 'confirm', () => confirmed);
+  let snapshot: unknown = { room: { ...room, state: 'LOBBY' }, players: [{ id: 'p', name: 'Alice', language: 'en', joinedAt: 'now', present: true }] };
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === 'POST') {
+      assert.equal(String(url), '/api/rooms/room/players/p/kick');
+      assert.deepEqual(JSON.parse(String(init.body)), { confirmed: true }); posts++;
+      snapshot = { room: { ...room, state: 'LOBBY' }, players: [] };
+    }
+    return Response.json(snapshot);
+  };
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByText(/Alice — EN — Online/)));
+  await act(async () => fireEvent.click(view.getByRole('button', { name: 'Kick Alice' })));
+  assert.equal(posts, 0);
+  confirmed = true;
+  await act(async () => fireEvent.click(view.getByRole('button', { name: 'Kick Alice' })));
+  assert.equal(posts, 1);
+  assert.ok(view.getByText(/No players/));
+  assert.equal(view.queryByRole('button', { name: 'Kick Alice' }), null);
+  await act(async () => live.emit('lobby:state', snapshot));
+});
+
+test('Kicked Player loses active answer controls and stale reconnect cannot restore them', async () => {
+  const live = socket(); save();
+  globalThis.fetch = async () => Response.json(identity);
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Answer submitted')));
+  let resolve: (response: Response) => void = () => {};
+  globalThis.fetch = () => new Promise(done => { resolve = done; });
+  await act(async () => live.emit('lobby:state', { room }));
+  await act(async () => live.emit('player:removed', { roomId: room.id }));
+  await act(async () => resolve(Response.json(identity)));
+  assert.ok(view.getByText('The host removed you from the game.'));
+  assert.equal(view.queryByRole('radio'), null);
+  assert.equal(view.queryByRole('button', { name: 'Submit' }), null);
+  assert.equal(view.queryByLabelText('Player language'), null);
 });

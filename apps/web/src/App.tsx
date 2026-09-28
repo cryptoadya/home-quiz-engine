@@ -25,7 +25,7 @@ export function App() {
         <Route
           key={path}
           path={path}
-          element={<main><h1>{title}</h1><p>{description} interface coming in a later phase.</p></main>}
+          element={<main><h1>{title}</h1><p>{description}: open a room from Admin, then use its Host or Screen link.</p><a href="/admin">Open Admin</a></main>}
         />
       ))}
       <Route path="*" element={<main><h1>Page not found</h1></main>} />

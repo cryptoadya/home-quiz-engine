@@ -87,10 +87,12 @@ export function duplicateQuiz(db: DatabaseSync, sourceId: string): Quiz | null {
       const roundId = randomUUID();
       insertRound.run(roundId, id, round.titleRu, round.titleEn, round.descriptionRu, round.descriptionEn,
         Number(round.showLeaderboardAfter), round.position, now, now);
+      db.prepare('UPDATE rounds SET art_media_id = ? WHERE id = ?').run(round.artMediaId ? mediaIds.get(round.artMediaId) ?? round.artMediaId : null, roundId);
       for (const question of listQuestions(db, round.id)) {
         const questionId = randomUUID();
         insertQuestion.run(questionId, roundId, question.type, question.textRu, question.textEn, question.points,
           question.answerTimeSeconds, Number(question.showOptionsOnScreen), Number(question.showCorrectCount), question.position, now, now);
+        db.prepare('UPDATE questions SET explanation_ru = ?, explanation_en = ? WHERE id = ?').run(question.explanationRu, question.explanationEn, questionId);
         db.prepare('UPDATE questions SET media_json = ? WHERE id = ?').run(JSON.stringify(question.media.map(ref => ({ ...ref, mediaId: mediaIds.get(ref.mediaId) ?? ref.mediaId }))), questionId);
         for (const pair of listPairs(db, question.id)) {
           db.prepare('INSERT INTO matching_pairs (id, question_id, left_json, right_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')

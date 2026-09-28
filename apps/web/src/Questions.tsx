@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 export type Question = {
   id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean; showCorrectCount?: boolean;
-  media?: MediaRef[]; position: number; createdAt: string; updatedAt: string;
+  explanationRu?: string; explanationEn?: string; media?: MediaRef[]; position: number; createdAt: string; updatedAt: string;
 };
 export type Option = {
   id: string; questionId: string; textRu: string; textEn: string; isCorrect: boolean;
@@ -18,7 +18,7 @@ type TextSide = { kind: 'text'; textRu: string; textEn: string };
 export type Side = TextSide | { kind: 'image'; mediaId: string };
 export type Pair = { id: string; questionId: string; left: Side; right: Side; position: number };
 type PairFields = Pick<Pair, 'left' | 'right'>;
-type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'showCorrectCount' | 'media'>;
+type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'showCorrectCount' | 'media' | 'explanationRu' | 'explanationEn'>;
 type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -153,7 +153,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     });
   }
   const fields: QuestionFields | null = selected ? {
-    type: selected.type, textRu: selected.textRu, textEn: selected.textEn, points: selected.points,
+    explanationRu: selected.explanationRu ?? '', explanationEn: selected.explanationEn ?? '', type: selected.type, textRu: selected.textRu, textEn: selected.textEn, points: selected.points,
     answerTimeSeconds: selected.answerTimeSeconds, showOptionsOnScreen: selected.showOptionsOnScreen, showCorrectCount: selected.showCorrectCount ?? true, media: selected.media ?? [],
   } : null;
 
@@ -204,6 +204,9 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         }}><option value="single_choice">Single Choice</option><option value="yes_no">Yes / No</option><option value="multiple_choice">Multiple Choice</option><option value="matching">Matching</option></select></label>
         <label>Question text RU<textarea maxLength={5000} value={selected.textRu} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textRu: event.target.value })} /></label>
         <label>Question text EN<textarea maxLength={5000} value={selected.textEn} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textEn: event.target.value })} /></label>
+        <label>Explanation RU (after Reveal)<textarea maxLength={5000} value={selected.explanationRu ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationRu: event.target.value })} /></label>
+        <label>Explanation EN (after Reveal)<textarea maxLength={5000} value={selected.explanationEn ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationEn: event.target.value })} /></label>
+        {(selected.textRu.length > 1000 || selected.textEn.length > 1000 || options.some(option => option.textRu.length > 200 || option.textEn.length > 200)) && <p role="status">Long text may be hard to read on phones or TV. Check Preview; text is not truncated.</p>}
         <label>Points<input type="number" min="1" step="1" value={selected.points} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, points: Number(event.target.value) })} /></label>
         <label>Answer time<select value={selected.answerTimeSeconds === null ? 'default' : 'custom'} disabled={busy}
           onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: event.target.value === 'default' ? null : 30 })}>

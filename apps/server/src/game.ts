@@ -20,7 +20,7 @@ function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience,
   const { snapshot, round, roundIndex, questionIndex } = currentContent(db, roomId);
   const numbering = { roundNumber: roundIndex + 1, questionCount: round.questions.length };
   if (room.state === 'ROUND_INTRO') return {
-    state: 'ROUND_INTRO' as const, ...numbering,
+    ...(round.artMediaId ? { artUrl: `/api/rooms/${roomId}/media/${round.artMediaId}/content` } : {}), state: 'ROUND_INTRO' as const, ...numbering,
     titleRu: round.titleRu, titleEn: round.titleEn,
     descriptionRu: round.descriptionRu, descriptionEn: round.descriptionEn,
   };
@@ -39,6 +39,7 @@ function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience,
   const ordered = question.media?.filter(ref => ref.playBeforeTimer) ?? [];
   const common = { ...(preTimer ? { preTimer: { mediaId: preTimer, number: ordered.findIndex(ref => ref.mediaId === preTimer) + 1, total: ordered.length } } : {}), ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
     questionId: question.id, textRu: question.textRu, textEn: question.textEn,
+    ...(audience === 'host' || reveal ? { explanationRu: question.explanationRu ?? '', explanationEn: question.explanationEn ?? '' } : {}),
     media: (question.media ?? []).flatMap(ref => {
       const media = snapshot.media?.find(item => item.id === ref.mediaId);
       return media ? [{ mediaId: media.id, name: media.name, mediaUrl: `/api/rooms/${roomId}/media/${media.id}/content`, ...(media.kind === 'image' ? {} : { kind: media.kind, playBeforeTimer: ref.playBeforeTimer, playback: projectMediaPlayback(db, roomId, question.id, media.id, now) }) }] : [];
@@ -80,7 +81,7 @@ export function getSurfaceState(db: DatabaseSync, roomId: string, audience: Audi
   if (!room) return null;
   // Player receives only safe metadata, even when the stored content is invalid.
   if (audience === 'player') return { room };
-  return { room, players: listPlayers(db, roomId), game: projectGame(db, roomId, audience, now, presence) };
+  return { room, players: listPlayers(db, roomId).map(player => ({ ...player, ...(audience === 'host' ? { present: !room.closedAt && presence(roomId, player.id) } : {}) })), game: projectGame(db, roomId, audience, now, presence) };
 }
 
 export function startRound(db: DatabaseSync, roomId: string) {

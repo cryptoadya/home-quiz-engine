@@ -1,20 +1,22 @@
+import { QuizPreview } from './QuizPreview';
+import type { Quiz } from './Admin';
 import { MediaImage } from './MediaImage';
 import { useEffect, useRef, useState } from 'react';
 
-type Question = {
+export type Question = {
   id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean; showCorrectCount?: boolean;
   media?: MediaRef[]; position: number; createdAt: string; updatedAt: string;
 };
-type Option = {
+export type Option = {
   id: string; questionId: string; textRu: string; textEn: string; isCorrect: boolean;
   position: number; createdAt: string; updatedAt: string;
 };
 type MediaRef = { mediaId: string; playBeforeTimer: boolean };
-type Media = { id: string; name: string; kind: 'image' | 'audio' | 'video' };
+export type Media = { id: string; name: string; kind: 'image' | 'audio' | 'video' };
 type TextSide = { kind: 'text'; textRu: string; textEn: string };
-type Side = TextSide | { kind: 'image'; mediaId: string };
-type Pair = { id: string; questionId: string; left: Side; right: Side; position: number };
+export type Side = TextSide | { kind: 'image'; mediaId: string };
+export type Pair = { id: string; questionId: string; left: Side; right: Side; position: number };
 type PairFields = Pick<Pair, 'left' | 'right'>;
 type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'showCorrectCount' | 'media'>;
 type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
@@ -29,10 +31,11 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 const json = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-export function Questions({ quizId, roundId, onPersistedChange }: { quizId: string; roundId: string; onPersistedChange?: () => void }) {
+export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumber = 1 }: { quiz?: Quiz; roundNumber?: number; quizId: string; roundId: string; onPersistedChange?: () => void }) {
   const base = `/api/quizzes/${quizId}/rounds/${roundId}/questions`;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [media, setMedia] = useState<Media[]>([]);
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [options, setOptions] = useState<Option[]>([]);
@@ -67,6 +70,14 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
       .catch((cause: Error) => { if (active) setError(cause.message); });
     return () => { active = false; };
   }, [base, selectedId]);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    let active = true;
+    api<Media[]>(`/api/quizzes/${quizId}/media`).then(items => { if (active) setMedia(items); })
+      .catch((cause: Error) => { if (active) setError(cause.message); });
+    return () => { active = false; };
+  }, [previewOpen, quizId]);
 
   function flush() {
     if (timer.current) clearTimeout(timer.current);
@@ -176,6 +187,9 @@ export function Questions({ quizId, roundId, onPersistedChange }: { quizId: stri
           <button className="subtle" aria-label={`Move question ${index + 1} down`} disabled={busy || index === questions.length - 1} onClick={() => moveQuestion(index, 1)}>↓</button>
         </div>
       </li>)}</ol>}
+      {selected && <button onClick={() => setPreviewOpen(open => !open)} aria-expanded={previewOpen}>Preview question</button>}
+      {selected && previewOpen && <QuizPreview key={selected.id} quizId={quizId} quiz={quiz} question={selected} options={options} pairs={pairs} media={media}
+        roundNumber={roundNumber} questionNumber={questions.indexOf(selected) + 1} questionCount={questions.length} onClose={() => setPreviewOpen(false)} />}
       {selected && fields && <div className="question-editor fields">
         <h4>{selected.type === 'matching' ? 'Matching' : selected.type === 'yes_no' ? 'Yes / No' : selected.type === 'multiple_choice' ? 'Multiple Choice' : 'Single Choice'} question</h4>
         <label>Question type<select value={selected.type} disabled={busy} onChange={event => {

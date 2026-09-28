@@ -211,7 +211,7 @@ The two correct submissions scored 3 + 2 points. No horizontal overflow was foun
 images retained contain fitting. Source selection changed to Default after Start,
 while all three room surfaces retained Halloween after Player reload. The existing
 missing favicon produced a 404; physical phone/TV/Wi-Fi acceptance remains pending.
-Dedicated Preview modes and all other Phase 8 scope remain pending.
+Dedicated Preview modes are implemented in Phase 8A below; later Phase 8 scope remains pending.
 
 Scope:
 - Default theme
@@ -223,6 +223,24 @@ Scope:
 Acceptance: same quiz can switch Default <-> Halloween without behavior changes.
 
 ## Phase 8 — Preview, Test Game, import/export and polish
+
+Phase 8A adds Admin visual previews for the selected editable question: RU Player,
+EN Player, bilingual Screen and Host, each with Answering and separate Reveal.
+Shared question, Player answer/Reveal, media, countdown display and theme components
+render live editor state, including unsaved edits, option text, Matching text/images
+and ordered question media. Default/Halloween and normal unavailable-theme/media
+fallbacks apply. Player answering projections omit correctness and normal question
+media; Reveal shows current correct options/pairs with a labeled unanswered sample
+result. Timers stay frozen, Submit remains local, Screen audio/video has local browser
+controls and Host media commands are disabled. Preview creates no room, session,
+player, submission, score or history and requires no realtime connection.
+Focused regressions cover all modes/states, both languages/themes, fallback,
+Matching/media, projection boundaries, timer/transport isolation and immediate edits.
+A local Chrome smoke exercised RU/EN answering, local Submit, Screen/Host correctness,
+Matching text/image content, bilingual Reveal, Default/Halloween switching and live
+source edits. PNG, MP4 and MP3 decoded through editable-media URLs. The isolated
+smoke database retained zero gameplay records. Physical phone/TV/Wi-Fi acceptance
+remains pending. Phase 8B, Test Game, import/export and history are not implemented.
 
 Scope:
 - Preview modes

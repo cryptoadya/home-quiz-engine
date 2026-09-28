@@ -6,6 +6,26 @@ import type { PlayerQuestion, Submission, Mapping } from './lobby';
 export function PlayerAnswer({ question, roomId, token, language }: {
   question: PlayerQuestion; roomId: string; token: string; language: 'ru' | 'en';
 }) {
+  const seconds = useRemainingSeconds(question.timer);
+  async function submitAnswer(answer: AnswerDraft): Promise<Submission> {
+    const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/answers`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, questionId: question.questionId, ...answer }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.code === 'DEADLINE_REACHED' ? 'DEADLINE_REACHED' : 'Submission failed');
+    return body;
+  }
+  return <PlayerAnswerContent question={question} language={language} seconds={seconds} onSubmit={submitAnswer} />;
+}
+
+export type AnswerDraft = { optionId: string } | { optionIds: string[] } | { mapping: Mapping };
+
+// Presentation and draft interaction are independent of transport and clock ownership.
+export function PlayerAnswerContent({ question, language, seconds, onSubmit }: {
+  question: Omit<PlayerQuestion, 'timer'>; language: 'ru' | 'en'; seconds: number;
+  onSubmit: (answer: AnswerDraft) => Promise<Submission>;
+}) {
   const [mapping, setMapping] = useState<Mapping>([]);
   const [activeLeft, setActiveLeft] = useState<string | null>(null);
   const [selection, setSelection] = useState<string[]>([]);
@@ -17,7 +37,6 @@ export function PlayerAnswer({ question, roomId, token, language }: {
   // reconnect response arrives after the submission acknowledgement.
   if (question.submission?.submitted && !accepted.submitted) setAccepted(question.submission);
   const submission = accepted.submitted ? accepted : question.submission;
-  const seconds = useRemainingSeconds(question.timer);
   const locked = Boolean(submission?.submitted) || timedOut || seconds === 0 || busy;
   const multiple = question.type === 'multiple_choice';
   const matching = question.type === 'matching';
@@ -30,17 +49,11 @@ export function PlayerAnswer({ question, roomId, token, language }: {
     if (locked || !complete) return;
     setBusy(true); setError(false);
     try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/answers`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, questionId: question.questionId, ...(matching ? { mapping: pairs } : multiple ? { optionIds: selected } : { optionId: selected[0] }) }),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        if (body.code === 'DEADLINE_REACHED') { setTimedOut(true); return; }
-        throw new Error('Submission failed');
-      }
-      setAccepted(body);
-    } catch { setError(true); }
+      setAccepted(await onSubmit(matching ? { mapping: pairs } : multiple ? { optionIds: selected } : { optionId: selected[0] }));
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === 'DEADLINE_REACHED') setTimedOut(true);
+      else setError(true);
+    }
     finally { setBusy(false); }
   }
 

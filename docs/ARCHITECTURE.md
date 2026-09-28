@@ -146,7 +146,7 @@ Quiz-list names also use the resolver. The selector offers Default and Halloween
 with no per-surface selection. Both palettes use the same spacing, sizing, phone/TV
 breakpoints, focus/selection states, media fit rules and Matching layouts. There
 are no theme conditions in game, answer, timer or media components or server logic.
-Dedicated Preview modes remain Phase 8.
+Dedicated Preview modes are described in Phase 8A below.
 
 Quiz settings accept bounded nonempty string IDs independently of installed
 presentation code, so unavailable IDs remain editable and durable. Room metadata
@@ -773,3 +773,40 @@ completion report is required. Playback failures/autoplay blocks remain visible;
 Host can retry/restart the current item. Only Screen plays audio/video, and starting
 another item pauses its peers. Host Play/Pause/Restart in ANSWERING never changes
 the deadline; game Pause/Resume is the only operation that freezes/restores it.
+
+
+## Admin visual previews (Phase 8A)
+
+The selected question editor opens an inline Preview panel with RU Player,
+EN Player, Screen and Host modes and separate Answering/Reveal states. Quiz title,
+theme, effective answer duration, question text, options, Matching sides and ordered
+media come directly from current React editor state, including unsaved edits.
+Drafts need not pass readiness validation to preview. Selecting another question
+resets preview interaction; preview state never changes persisted question fields.
+
+`QuizPreview` builds small editor-only projections for existing presentation
+components. `QuestionContent` supplies bilingual Screen and Host content;
+`PlayerAnswerContent` supplies localized option selection and tap-to-pair UX;
+`PlayerRevealContent` supplies localized correct-answer/pair presentation. The live
+`PlayerAnswer` wrapper retains HTTP submission and its server-anchored countdown;
+the extracted content receives seconds and a submission callback. Preview uses a
+frozen `CountdownDisplay` and a local callback only. Shared `ThemeSurface`,
+`MediaImage`, `MatchingItemContent` and `PlayableMedia` retain normal themes,
+aspect fitting and unavailable-media fallbacks. Screen preview offers local browser
+audio/video controls, pausing audible peers on Play; Host playback commands remain
+disabled. Playback has no server state, pre-timer execution or completion reports.
+Media URLs use editable quiz storage, never session copies.
+
+The organizer editor necessarily owns answer keys, but the answering Player
+component receives only localized question/options/sides and the explicitly enabled
+Multiple Choice count hint: no correctness flags, correct option IDs, pair mapping,
+normal question media or score data. Matching side IDs are independent random
+identities with no editor pair IDs; authored ordering is retained. Reveal adds keys
+only to the separate Reveal projection and uses an explicitly labeled unanswered
+sample personal result (zero points), without evaluating or persisting a score.
+
+Preview has no room/session hook, realtime subscription, authoritative timer,
+identity storage, session snapshot or gameplay mutation endpoint. Opening, changing
+mode/state, selecting answers, local Submit, playing media and closing cannot create
+rooms, players, submissions, scores or history. Existing editor autosave remains the
+only content mutation path. Test Game, import/export and history remain later slices.

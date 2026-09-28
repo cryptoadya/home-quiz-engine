@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Quiz } from './Admin';
 import { Questions } from './Questions';
 
 export type Round = {
@@ -25,7 +26,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
 
-export function Rounds({ quizId, targetRound, onPersistedChange }: { quizId: string; targetRound?: { id: string } | null; onPersistedChange?: () => void }) {
+export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?: Quiz; quizId: string; targetRound?: { id: string } | null; onPersistedChange?: () => void }) {
   const base = `/api/quizzes/${quizId}/rounds`;
   const [rounds, setRounds] = useState<Round[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -182,7 +183,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange }: { quizId: str
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
         <button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button>
       </div>}
-      {selected && <Questions key={selected.id} quizId={quizId} roundId={selected.id} onPersistedChange={onPersistedChange} />}
+      {selected && <Questions quiz={quiz} roundNumber={rounds.indexOf(selected) + 1} key={selected.id} quizId={quizId} roundId={selected.id} onPersistedChange={onPersistedChange} />}
     </>}
   </section>;
 }

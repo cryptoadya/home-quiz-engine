@@ -13,7 +13,7 @@ export function RoundIntroContent({ round }: { round: RoundIntro }) {
   </>;
 }
 
-export function QuestionContent({ question, host = false, onMediaControl, onMediaEnded, mediaBusy = false }: { question: CurrentQuestion; host?: boolean; onMediaControl?: (mediaId: string, action: MediaAction) => void; mediaBusy?: boolean; onMediaEnded?: (mediaId: string, revision: number, duration: number) => void }) {
+export function QuestionContent({ question, host = false, onMediaControl, onMediaEnded, mediaBusy = false, localMediaControls = false }: { localMediaControls?: boolean; question: CurrentQuestion; host?: boolean; onMediaControl?: (mediaId: string, action: MediaAction) => void; mediaBusy?: boolean; onMediaEnded?: (mediaId: string, revision: number, duration: number) => void }) {
   return <>
     {question.preTimer && <p role="status">До таймера / Before timer: {question.preTimer.number} / {question.preTimer.total} — {question.media?.find(media => media.mediaId === question.preTimer!.mediaId)?.name}</p>}
     {question.answers && <p>Ответили / Answered: {question.answers.answered} / {question.answers.expected}</p>}
@@ -23,7 +23,7 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
     <h2 lang="en">{question.textEn}</h2>
     <div className={host ? 'host-media' : 'question-media'}>{question.media?.map(media => media.kind === 'audio' || media.kind === 'video'
       ? host ? <div key={media.mediaId}><p>{media.name} — {media.playback?.playing ? 'Playing' : 'Paused'}</p>{(['play', 'pause', 'restart'] as const).map(action => <button key={action} aria-label={`${action[0].toUpperCase() + action.slice(1)} ${media.name}`} disabled={mediaBusy || Boolean(question.preTimer && question.preTimer.mediaId !== media.mediaId)} onClick={() => onMediaControl?.(media.mediaId, action)}>{action[0].toUpperCase() + action.slice(1)}</button>)}</div>
-        : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} media={media} onEnded={onMediaEnded} />
+        : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} media={media} onEnded={onMediaEnded} localControls={localMediaControls} />
       : <MediaImage key={media.mediaId} src={media.mediaUrl} alt={media.name} className="question-image" />)}</div>
     {question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul>{question.correctMapping.map(pair => {
       const left = question.leftItems!.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);

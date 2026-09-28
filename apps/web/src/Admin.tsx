@@ -239,6 +239,6 @@ export function QuizEditor() {
       <label className="checkbox"><input type="checkbox" checked={quiz.shuffleAnswers} onChange={(event) => change({ ...settings, shuffleAnswers: event.target.checked })} /> Shuffle answers</label>
     </div>
     <MediaManager key={quiz.id} quizId={quiz.id} onPersistedChange={refreshValidation} />
-    <Rounds quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
+    <Rounds quiz={quiz} quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
   </ThemeSurface>;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
 import type { QuestionMedia } from './lobby';
 
-export function PlayableMedia({ media, onEnded }: { media: QuestionMedia; onEnded?: (mediaId: string, revision: number, duration: number) => void }) {
+export function PlayableMedia({ media, onEnded, localControls = false }: { localControls?: boolean; media: QuestionMedia; onEnded?: (mediaId: string, revision: number, duration: number) => void }) {
   const ref = useRef<HTMLMediaElement>(null);
   const endedCallback = useRef(onEnded);
   endedCallback.current = onEnded;
@@ -36,7 +36,7 @@ export function PlayableMedia({ media, onEnded }: { media: QuestionMedia; onEnde
     element.addEventListener('ended', completed);
     return () => { active = false; element.removeEventListener('ended', completed); element.removeEventListener('loadedmetadata', synchronize); element.pause(); };
   }, [media.mediaUrl, media.playback]);
-  const props = { src: media.mediaUrl, preload: 'metadata', 'aria-label': media.name, onError: () => setError('Медиа недоступно / Media unavailable') };
+  const props = { src: media.mediaUrl, preload: 'metadata', 'aria-label': media.name, controls: localControls, onPlay: () => { if (localControls) ref.current?.parentElement?.querySelectorAll<HTMLMediaElement>('audio, video').forEach(peer => { if (peer !== ref.current) peer.pause(); }); }, onError: () => setError('Медиа недоступно / Media unavailable') };
   return <>{media.kind === 'video'
     ? <video {...props} ref={ref as Ref<HTMLVideoElement>} playsInline className="question-video" />
     : <audio {...props} ref={ref as Ref<HTMLAudioElement>} />}{error && <p role="alert">{error}</p>}</>;

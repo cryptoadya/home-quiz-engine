@@ -248,7 +248,7 @@ projected as `isTest`); existing and normal rooms default to false. Host and Scr
 clearly label tests. Readiness, Start-time frozen content/media/roster, phones,
 timers, media, reconnect, disconnect handling and scoring reuse the real engine.
 Phase 8D's default completed-game history query must require `is_test = 0`; no
-history UI/query or import/export is implemented here. Startup opportunistically
+history UI/query is implemented in 8B; import/export follows in 8C. Startup opportunistically
 cleans only tests closed for at least seven days (inclusive, measured from UTC
 closure), including frozen media and dependent gameplay rows. Open tests and all
 real sessions are retained. Focused regressions cover creation/readiness, durable
@@ -261,6 +261,25 @@ Winner and confirmed closure. Frozen JPG decoded after source quiz deletion;
 Host/Screen retained the Test Game label. No Player horizontal overflow was found.
 The existing missing favicon produced a 404. Physical phone/TV/Wi-Fi acceptance
 remains pending.
+
+Phase 8C implements portable editable quiz export/import. Version-1 ZIP archives
+contain a strict JSON manifest and all quiz-owned image/GIF/audio/video files,
+with checksums and no gameplay/history or frozen session data. Import validates
+bounded ZIP structure, paths, duplicate/conflicting entries, manifest/V1 content,
+media signatures/sizes/hashes and every reference before publishing a new Draft.
+Fresh UUIDs remap all content and media relationships; ordinary failures roll back
+SQL and remove new media/staging trees. Unknown theme IDs survive and use the
+existing Default fallback with an Admin warning. Admin list/editor Export and list
+Import provide feedback and a direct edit link. Focused tests cover all four types,
+bilingual settings, ordering, Matching images, media flags, IDs, malicious archives,
+rollback, theme fallback and gameplay isolation. Source-independent HTTP smoke
+exports after source edits, deletes the source, imports, edits and starts a fresh
+game. All 369 tests, typecheck, build and diff checks passed. An isolated Chrome
+Admin smoke downloaded ZIP, deleted the source quiz/media, imported with a missing
+theme warning, opened the new Draft, saved edits and opened its Host lobby. The
+existing favicon 404 was the only browser console error. Physical phone/TV/Wi-Fi
+acceptance remains pending. Completed-game history/UI remains Phase 8D and is not
+started here.
 
 Scope:
 - Preview modes

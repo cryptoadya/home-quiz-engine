@@ -62,8 +62,8 @@ export function parseGameSnapshot(json: string): GameSnapshot {
   return snapshot;
 }
 
-// Only Start reads the editor tree. Explicit field selection excludes editor metadata/FKs.
-export function createGameSnapshot(db: DatabaseSync, quizId: string): GameSnapshot {
+// Start and portable export read the editor tree. Explicit fields exclude editor metadata/FKs.
+export function readEditableQuizTree(db: DatabaseSync, quizId: string): GameSnapshot {
   const quiz = getQuiz(db, quizId);
   if (!quiz) throw new Error('Quiz not found.');
   const snapshot: GameSnapshot = {
@@ -87,7 +87,11 @@ export function createGameSnapshot(db: DatabaseSync, quizId: string): GameSnapsh
       })),
     })),
   };
-  return parseGameSnapshot(JSON.stringify(snapshot));
+  return snapshot;
+}
+
+export function createGameSnapshot(db: DatabaseSync, quizId: string): GameSnapshot {
+  return parseGameSnapshot(JSON.stringify(readEditableQuizTree(db, quizId)));
 }
 
 // Internal gameplay boundary: reads only the durable snapshot, including after source deletion.

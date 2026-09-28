@@ -809,8 +809,8 @@ Preview has no room/session hook, realtime subscription, authoritative timer,
 identity storage, session snapshot or gameplay mutation endpoint. Opening, changing
 mode/state, selecting answers, local Submit, playing media and closing cannot create
 rooms, players, submissions, scores or history. Existing editor autosave remains the
-only content mutation path. Test Game is implemented in Phase 8B below; import/export
-and history UI remain later slices.
+only content mutation path. Test Game is implemented in Phase 8B below; portable quiz archives are implemented
+in Phase 8C. History UI remains a later slice.
 
 
 ## Real Test Game sessions (Phase 8B)
@@ -856,3 +856,60 @@ and leave closed rows eligible for retry on a later startup; startup logs a fail
 and continues serving. Filesystem and SQLite are not crash-atomic: interrupted
 cleanup can leave a closed test with partially removed media until retry. Cleanup
 never affects an open Test Game or a real game.
+
+
+## Portable quiz ZIP archives (Phase 8C)
+
+`GET /api/quizzes/:quizId/export` downloads `quiz.zip` from the current persisted
+editable tree. `readEditableQuizTree` explicitly selects content fields; Start
+continues independently validating that tree through `createGameSnapshot`. Export
+never reads played snapshots, rooms, players, submissions, scores, history, Test
+Game metadata or frozen session media. All quiz-owned media, including unused
+library items, are copied into private staging before asynchronous validation and
+hashing, so later source changes cannot mix revisions in the archive.
+
+The version-1 ZIP has exactly `manifest.json` and `media/<originalMediaId>` files,
+without directory entries. The manifest is `{ schemaVersion: 1, quiz, media }`.
+Quiz contains its portable ID, title, theme ID, default timer, shuffle setting and
+ordered rounds/questions/options/Matching pairs. Questions include count hint,
+Screen options, points, timer override and ordered media references with
+`playBeforeTimer`. Media metadata includes portable ID, display name, kind,
+canonical MIME, size, creation timestamp and SHA-256. Display names are metadata,
+never filesystem paths. Media files are extensionless; extensions in display names
+are checked by the existing upload validation boundary. This is an editor archive,
+not a gameplay snapshot or backup of the database.
+
+`POST /api/quizzes/import` accepts one multipart `file`. Only schema version 1 and
+exact known manifest fields are supported. V1 question type/count/correctness,
+bilingual content, settings, strict authored ordering, globally unique UUIDs,
+Matching sides, media ownership/references and playable flags are validated before
+SQL writes. Empty quizzes/rounds remain editable drafts; populated questions must
+meet V1 content rules. Export reports invalid content/missing media instead of
+producing an archive that cannot be imported.
+
+ZIP decoding uses lazy entries and disk staging. The allowlist rejects absolute,
+traversal/backslash, unexpected, directory, duplicate/conflicting, encrypted and
+non-regular entries; conflicting local/central filenames, flags or compression
+and overlapping entry ranges are rejected. Archive-controlled
+paths are never extracted: each file receives a generated staging filename.
+CRC, actual decompressed size, declared size, SHA-256 and the existing extension/
+MIME/binary-signature validator check files, including unused media. This checks
+format signatures, not complete codec decoding. Limits: 1 GiB uploaded/expanded
+archive, 8 MiB manifest, 500 media files, 100 rounds, 2,000 questions, 100 pairs per
+question, 10 options, and the existing 20/100/500 MiB image/audio/video limits.
+Missing referenced media is always an error.
+
+After full validation, one synchronous `BEGIN IMMEDIATE` transaction generates
+fresh quiz/round/question/option/pair/media UUIDs and remaps every parent and media
+relationship. Imported media moves to its new quiz-owned UUID directory. Only
+editor tables are written; readiness stays derived, with no gameplay/history
+records or status copied. Any ordinary failure rolls SQL back and removes the
+entire new quiz directory and private staging. As with existing media operations,
+process/power loss across filesystem and SQLite is not a single crash-atomic
+transaction and can leave unreferenced files, but never a committed partial quiz.
+
+Admin offers Export on the list and saved quiz settings, and Import Quiz on the
+list. Success exposes an immediate **Open imported quiz** link; failures remain
+visible and can be retried. Missing bundled themes preserve the authored ID and
+show a clear warning; the existing resolver uses Default until that theme exists.
+No theme package, history query or history UI is introduced.

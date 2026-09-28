@@ -1,3 +1,5 @@
+import { archiveUpload, exportQuizArchive, importQuizArchive, ArchiveValidationError } from './quiz-archive.js';
+import { rmSync } from 'node:fs';
 import { controlMedia } from './media-playback.js';
 import { constants, openSync, closeSync, fstatSync, createReadStream, realpathSync } from 'node:fs';
 import { getGameSnapshot } from './snapshot.js';
@@ -21,6 +23,29 @@ import { validateQuizReadiness } from './validation.js';
 export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}, presence: PlayerPresenceChecker = absentPlayerPresence) {
   const app = express();
   app.use(express.json());
+
+  app.get('/api/quizzes/:quizId/export', async (request, response) => {
+    if (!getQuiz(db, request.params.quizId)) return response.status(404).json({ error: 'Quiz not found.' });
+    try {
+      const archive = await exportQuizArchive(db, request.params.quizId);
+      response.set('Cache-Control', 'no-store');
+      response.download(archive.path, 'quiz.zip', error => { archive.cleanup(); if (error && !response.headersSent) response.status(500).json({ error: 'Unable to download quiz.' }); });
+    } catch (error) {
+      response.status(error instanceof ArchiveValidationError ? 400 : 500).json({ error: error instanceof ArchiveValidationError ? error.message : 'Unable to export quiz. Check its media files.' });
+    }
+  });
+  app.post('/api/quizzes/import', (request, response) => {
+    archiveUpload(db)(request, response, async error => {
+      if (error || !request.file) {
+        if (request.file) rmSync(request.file.path, { force: true });
+        const failure = error ? uploadFailure(error) : { status: 400, error: 'Upload one ZIP in the file field.' };
+        return response.status(failure.status).json({ error: failure.error });
+      }
+      try { response.status(201).json(await importQuizArchive(db, request.file.path)); }
+      catch (error) { response.status(400).json({ error: error instanceof ArchiveValidationError ? error.message : 'Unable to import quiz. Invalid archive or media; nothing was imported.' }); }
+      finally { rmSync(request.file.path, { force: true }); }
+    });
+  });
 
   app.get('/api/rooms/:roomId/media/:mediaId/content', (request, response) => {
     try {

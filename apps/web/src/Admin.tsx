@@ -28,6 +28,19 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
 
+async function downloadQuiz(id: string) {
+  const response = await fetch(`/api/quizzes/${id}/export`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || 'Unable to export quiz.');
+  }
+  const url = URL.createObjectURL(await response.blob());
+  try {
+    const link = document.createElement('a');
+    link.href = url; link.download = 'quiz.zip'; document.body.append(link); link.click(); link.remove();
+  } finally { URL.revokeObjectURL(url); }
+}
+
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();
 }
@@ -37,6 +50,9 @@ export function QuizList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [imported, setImported] = useState<Quiz | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -87,13 +103,36 @@ export function QuizList() {
     }
   }
 
+  async function importQuiz(file: File) {
+    setBusy(true); setError(''); setNotice(''); setImported(null);
+    try {
+      const body = new FormData(); body.append('file', file);
+      const copy = await api<Quiz>('/api/quizzes/import', { method: 'POST', body });
+      setQuizzes(current => [copy, ...current]); setImported(copy);
+      setNotice('Quiz imported as an editable Draft.');
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); if (importInput.current) importInput.current.value = ''; }
+  }
+
+  async function exportQuiz(quiz: Quiz) {
+    setBusy(true); setError(''); setNotice('');
+    try { await downloadQuiz(quiz.id); setNotice('Quiz ZIP downloaded.'); }
+    catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  }
+
   return <main className="admin">
     <header className="admin-header"><div><h1>Quizzes</h1><p>Your saved drafts</p></div><button onClick={create} disabled={busy}>Create quiz</button></header>
+    <button disabled={busy} onClick={() => importInput.current?.click()}>Import Quiz</button>
+    <input ref={importInput} type="file" accept=".zip,application/zip" aria-label="Quiz ZIP" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importQuiz(file); }} />
+    {notice && <p role="status">{notice} {imported && <Link to={`/admin/quizzes/${imported.id}`}>Open imported quiz</Link>}</p>}
+    {imported && resolveTheme(imported.themeId).manifest.id !== imported.themeId && <p role="alert">Theme “{imported.themeId}” is unavailable. Using Default; the original theme ID is preserved.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {loading ? <p>Loading quizzes...</p> : quizzes.length === 0 ? <p>No quizzes yet. Create one to get started.</p> :
       <ul className="quiz-list">{quizzes.map((quiz) => <li key={quiz.id}>
         <div><Link to={`/admin/quizzes/${quiz.id}`}>{quiz.title}</Link><p>{resolveTheme(quiz.themeId).manifest.name} · Modified {formatDate(quiz.updatedAt)}</p></div>
         <div className="quiz-actions">
+          <button className="subtle" onClick={() => void exportQuiz(quiz)} disabled={busy} aria-label={`Export ${quiz.title}`}>Export</button>
           <button className="subtle" onClick={() => void duplicate(quiz)} disabled={busy} aria-label={`Duplicate ${quiz.title}`}>Duplicate</button>
           <button className="subtle danger" onClick={() => void remove(quiz)} aria-label={`Delete ${quiz.title}`}>Delete</button>
         </div>
@@ -105,6 +144,8 @@ export function QuizEditor() {
   const navigate = useNavigate();
   const [opening, setOpening] = useState(false);
   const [launchError, setLaunchError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState('');
   const { quizId } = useParams();
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
@@ -217,6 +258,13 @@ export function QuizEditor() {
     <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status}</span></div>
     {error && <p role="alert" className="error">{error}</p>}
     {launchError && <p role="alert" className="error">{launchError}</p>}
+    <button disabled={exporting || status !== 'Saved'} onClick={async () => {
+      setExporting(true); setExportNotice(''); setLaunchError('');
+      try { await downloadQuiz(quiz.id); setExportNotice('Quiz ZIP downloaded.'); }
+      catch (cause) { setLaunchError((cause as Error).message); }
+      finally { setExporting(false); }
+    }}>Export Quiz</button>
+    {exportNotice && <p role="status">{exportNotice}</p>}
     <button onClick={() => void openLobby()} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Open lobby</button>
     <button onClick={() => void openLobby(true)} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Start Test Game</button>
     <p>Test Game opens a real lobby for phones. Host starts the game after players join. Test sessions are excluded from normal history.</p>

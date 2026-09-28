@@ -309,3 +309,54 @@ test('Admin starts a labeled Test Game lobby for the current quiz and shows laun
   assert.ok(view.getByText('ABCDE'));
   assert.deepEqual(calls, ['/api/quizzes/quiz-1/test-games', '/api/quizzes/quiz-1/test-games']);
 });
+
+test('Admin imports ZIP with success/edit link and unavailable-theme warning; failed import can be retried', async () => {
+  const copy = { ...quiz, id: 'imported-quiz', themeId: 'missing-theme' };
+  let fail = true;
+  const calls: RequestInit[] = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === '/api/quizzes/import') {
+      calls.push(init!);
+      return fail ? Response.json({ error: 'Missing media.' }, { status: 400 }) : Response.json(copy, { status: 201 });
+    }
+    return Response.json([]);
+  };
+  const view = show('/admin');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Import Quiz' })));
+  const input = view.getByLabelText('Quiz ZIP');
+  fireEvent.change(input, { target: { files: [new File(['zip'], 'quiz.zip', { type: 'application/zip' })] } });
+  await waitFor(() => assert.match(view.getByRole('alert').textContent!, /Missing media/));
+  assert.equal(view.queryByRole('link', { name: 'Open imported quiz' }), null);
+  fail = false;
+  fireEvent.change(input, { target: { files: [new File(['zip'], 'quiz.zip', { type: 'application/zip' })] } });
+  await waitFor(() => assert.ok(view.getByRole('link', { name: 'Open imported quiz' })));
+  assert.equal(view.getByRole('link', { name: 'Open imported quiz' }).getAttribute('href'), '/admin/quizzes/imported-quiz');
+  assert.match(view.getByRole('status').textContent!, /editable Draft/);
+  assert.match(view.getByRole('alert').textContent!, /Using Default.*original theme ID is preserved/);
+  assert.equal(calls.length, 2); assert.equal(calls[1].method, 'POST'); assert.ok(calls[1].body instanceof FormData);
+});
+
+test('Admin export downloads ZIP and reports errors and success without gameplay calls', async () => {
+  let fail = true;
+  const calls: string[] = [];
+  const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;
+  const originalClick = dom.window.HTMLAnchorElement.prototype.click;
+  let downloaded = false, revoked = false;
+  URL.createObjectURL = () => 'blob:quiz-archive'; URL.revokeObjectURL = () => { revoked = true; };
+  dom.window.HTMLAnchorElement.prototype.click = function () { downloaded = this.download === 'quiz.zip'; };
+  try {
+    globalThis.fetch = async input => {
+      const path = String(input); calls.push(path);
+      if (path.endsWith('/export')) return fail ? Response.json({ error: 'Missing source media.' }, { status: 400 }) : new Response('zip', { headers: { 'Content-Type': 'application/zip' } });
+      return Response.json([quiz]);
+    };
+    const view = show('/admin');
+    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Export New Quiz' })));
+    fireEvent.click(view.getByRole('button', { name: 'Export New Quiz' }));
+    await waitFor(() => assert.match(view.getByRole('alert').textContent!, /Missing source media/));
+    fail = false; fireEvent.click(view.getByRole('button', { name: 'Export New Quiz' }));
+    await waitFor(() => assert.match(view.getByRole('status').textContent!, /ZIP downloaded/));
+    assert.ok(downloaded && revoked); assert.equal(view.queryByRole('alert'), null);
+    assert.ok(calls.every(path => path === '/api/quizzes' || path === '/api/quizzes/quiz-1/export'));
+  } finally { URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke; dom.window.HTMLAnchorElement.prototype.click = originalClick; }
+});

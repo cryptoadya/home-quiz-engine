@@ -85,13 +85,18 @@ export function mediaUpload(db: DatabaseSync) {
     fileFilter: (_req, file, cb) => { try { uploadFormat(file.originalname, file.mimetype); cb(null, true); } catch (error) { cb(error as Error); } },
   }).single('file');
 }
+export async function validateMediaFile(path: string, name: string, mimeType: string, sizeBytes: number): Promise<MediaKind> {
+  const format = uploadFormat(name, mimeType);
+  if (!sizeBytes || sizeBytes > mediaLimits[format.kind]) throw new MediaValidationError(`File exceeds ${format.kind} limit or is empty.`);
+  const detected = await fileTypeFromFile(path).catch(() => undefined);
+  if (!detected || detected.mime.split(';')[0] !== format.mime) throw new MediaValidationError('File content does not match its extension and MIME type.');
+  return format.kind;
+}
 export async function persistUpload(db: DatabaseSync, quizId: string, file: Express.Multer.File): Promise<Media> {
   let stored: string | undefined;
   try {
     const format = uploadFormat(file.originalname, file.mimetype);
-    if (!file.size || file.size > mediaLimits[format.kind]) throw new MediaValidationError(`File exceeds ${format.kind} limit or is empty.`);
-    const detected = await fileTypeFromFile(file.path).catch(() => undefined);
-    if (!detected || detected.mime.split(';')[0] !== format.mime) throw new MediaValidationError('File content does not match its extension and MIME type.');
+    await validateMediaFile(file.path, file.originalname, file.mimetype, file.size);
     // Quiz could have been deleted while asynchronous signature detection was running.
     if (!db.prepare('SELECT id FROM quizzes WHERE id = ?').get(quizId)) throw new MediaValidationError('Quiz no longer exists.');
     const media: Media = { id: randomUUID(), quizId, name: file.originalname.normalize('NFKC').replace(/[^\p{L}\p{N} ._()-]/gu, '_').slice(0, 160),

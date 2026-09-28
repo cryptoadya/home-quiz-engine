@@ -20,7 +20,17 @@ export const defaultTheme = {
 
 export type ThemeTokens = { readonly [Key in keyof typeof defaultTheme.tokens]: string };
 export type Theme = { readonly manifest: ThemeManifest; readonly tokens?: Partial<ThemeTokens> };
-export const themes: readonly Theme[] = [defaultTheme];
+// Asset-free Halloween: optional font/correctness parts intentionally inherit Default.
+export const halloweenTheme: Theme = {
+  manifest: { id: 'halloween', name: 'Halloween', version: '1.0.0', author: 'Home Quiz Engine', resources: [], features: [] },
+  tokens: {
+    text: '#30213b', background: '#fff6e9', muted: '#70566f',
+    primary: '#9b430b', onPrimary: '#ffffff', surface: '#fffaf2',
+    border: '#cbb6ce', inputBorder: '#826588', tableBorder: '#cbb6ce',
+    danger: '#8a2534', dangerBorder: '#ad6570',
+  },
+};
+export const themes: readonly Theme[] = [defaultTheme, halloweenTheme];
 
 // Missing configuration parts inherit Default. No optional assets are required to render.
 export function resolveTheme(themeId?: string | null) {

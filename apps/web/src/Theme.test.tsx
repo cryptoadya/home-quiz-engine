@@ -8,6 +8,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { Socket } from 'socket.io-client';
 import { App } from './App';
 import { lobbyTransport } from './lobby';
+import { resolveTheme } from './themes';
 
 const room = { id: 'room', code: 'ABCDE', quizTitle: 'Party', themeId: 'default', state: 'LOBBY', closedAt: null };
 const player = { id: 'player', name: 'Alex', language: 'en', joinedAt: 'now' };
@@ -17,7 +18,7 @@ function show(path: string) { return render(createElement(MemoryRouter, { initia
 
 for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
   for (const themeId of ['default', 'halloween', 'missing-theme', '', undefined, null]) {
-    test(`${path} uses Default for theme ${String(themeId)} on reload and realtime recovery`, async () => {
+    test(`${path} resolves theme ${String(themeId)} on reload and realtime recovery`, async () => {
       const live = Object.assign(new EventEmitter(), { disconnect() {}, connect() {} });
       mock.method(lobbyTransport, 'connect', () => live as unknown as Socket);
       const themedRoom = { ...room, themeId };
@@ -27,11 +28,11 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
       const view = show(path);
       await waitFor(() => assert.ok(view.getByText('Party')));
       const main = view.getByRole('main');
-      assert.equal(main.dataset.theme, 'default');
-      assert.equal(main.style.getPropertyValue('--theme-text'), '#1c2430');
+      assert.equal(main.dataset.theme, themeId === 'halloween' ? 'halloween' : 'default');
+      assert.equal(main.style.getPropertyValue('--theme-text'), themeId === 'halloween' ? '#30213b' : '#1c2430');
       await act(async () => { live.emit('lobby:state', { room: { ...themedRoom, state: 'ROUND_INTRO' }, players: [player] }); });
-      assert.equal(main.dataset.theme, 'default');
-      assert.equal(main.style.getPropertyValue('--theme-background'), '#f5f7fa');
+      assert.equal(main.dataset.theme, themeId === 'halloween' ? 'halloween' : 'default');
+      assert.equal(main.style.getPropertyValue('--theme-background'), themeId === 'halloween' ? '#fff6e9' : '#f5f7fa');
       assert.ok(view.getByText('Party'));
     });
   }
@@ -51,7 +52,7 @@ test('Admin preserves an unavailable selection through edits and allows selectin
   assert.equal(view.getByRole('main').dataset.theme, 'default');
   assert.equal((view.getByLabelText('Theme') as HTMLSelectElement).value, 'missing-theme');
   assert.match(view.getByText(/Theme unavailable/).textContent!, /Default/);
-  assert.equal(view.queryByRole('option', { name: 'Halloween' }), null);
+  assert.ok(view.getByRole('option', { name: 'Halloween' }));
   fireEvent.change(view.getByLabelText('Title'), { target: { value: 'Edited' } });
   await waitFor(() => assert.equal(updates.length, 1));
   assert.equal(updates[0].themeId, 'missing-theme');
@@ -59,4 +60,80 @@ test('Admin preserves an unavailable selection through edits and allows selectin
   await waitFor(() => assert.equal(updates.length, 2));
   assert.equal(updates[1].themeId, 'default');
   assert.equal(view.queryByText(/Theme unavailable/), null);
+});
+
+test('Halloween resolves locally and inherits missing optional configuration from Default', () => {
+  const theme = resolveTheme('halloween');
+  assert.equal(theme.manifest.id, 'halloween');
+  assert.equal(theme.manifest.name, 'Halloween');
+  assert.equal(theme.tokens.primary, '#9b430b');
+  assert.equal(theme.tokens.font, 'system-ui, sans-serif');
+  assert.equal(theme.tokens.correctBackground, '#eaf7ee');
+  assert.deepEqual(theme.manifest.resources, []);
+  for (const id of [undefined, null, '', 'unknown', '__proto__']) {
+    assert.equal(resolveTheme(id).manifest.id, 'default');
+    assert.equal(resolveTheme(id).tokens.primary, '#254f9a');
+  }
+});
+
+test('Admin switches Default and Halloween without changing quiz gameplay settings', async () => {
+  const quiz = { id: 'quiz', title: 'Party', themeId: 'default', defaultAnswerTimeSeconds: 45, shuffleAnswers: true };
+  const updates: Record<string, unknown>[] = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/validation')) return Response.json({ ready: false, problems: [] });
+    if (String(input).endsWith('/rounds')) return Response.json([]);
+    if (init?.method === 'PUT') { const update = JSON.parse(String(init.body)); updates.push(update); Object.assign(quiz, update); }
+    return Response.json(quiz);
+  };
+  const view = show('/admin/quizzes/quiz');
+  await waitFor(() => assert.ok(view.getByDisplayValue('Party')));
+  for (const themeId of ['halloween', 'default']) {
+    fireEvent.change(view.getByLabelText('Theme'), { target: { value: themeId } });
+    assert.equal(view.getByRole('main').dataset.theme, themeId);
+    await waitFor(() => assert.equal(updates.at(-1)?.themeId, themeId));
+    assert.deepEqual(updates.at(-1), { title: 'Party', themeId, defaultAnswerTimeSeconds: 45, shuffleAnswers: true });
+    assert.equal(view.queryByText(/Theme unavailable/), null);
+  }
+});
+
+const phases = ['LOBBY', 'ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'PAUSED', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'] as const;
+for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
+  for (const themeId of ['default', 'halloween']) {
+    test(`${path} retains ${themeId} across every major phase using shared content`, async () => {
+      const live = Object.assign(new EventEmitter(), { disconnect() {}, connect() {} });
+      mock.method(lobbyTransport, 'connect', () => live as unknown as Socket);
+      let state: string = 'LOBBY';
+      const content = { roundNumber: 1, questionNumber: 1, questionCount: 1, nextAction: null, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '', textRu: 'Вопрос', textEn: 'Question', options: [], leaderboard: [{ playerId: 'player', displayName: 'Alex', totalPoints: 3, rank: 1 }] };
+      const playerGame = () => ['ANSWERING', 'ANSWER_REVEAL'].includes(state) ? { state, questionId: 'q', text: 'Question', options: [{ id: 'a', text: 'Answer' }], submission: { submitted: true, optionId: 'a' }, correctOptionId: 'a', result: { outcome: 'correct', points: 3 }, timer: { serverNow: '2026-01-01T00:00:00Z', deadlineAt: '2026-01-01T00:00:30Z', durationSeconds: 30, remainingMs: 0, expired: true } } : null;
+      if (path.startsWith('/play')) dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+      globalThis.fetch = async () => Response.json(path.startsWith('/play') ? { room: { ...room, themeId, state }, player, active: true, game: playerGame() } : { room: { ...room, themeId, state }, players: [player] });
+      const view = show(path);
+      await waitFor(() => assert.ok(view.getByText('Party')));
+      for (const phase of phases) {
+        state = phase;
+        await act(async () => { live.emit('lobby:state', { room: { ...room, themeId, state }, players: [player], game: phase === 'LOBBY' ? null : { ...content, state: phase, ...(phase === 'PAUSED' ? { pausedFromState: 'QUESTION', remainingMs: null } : {}) } }); });
+        assert.equal(view.getByRole('main').dataset.theme, themeId, phase);
+        assert.equal(view.getByRole('main').style.getPropertyValue('--theme-primary'), themeId === 'halloween' ? '#9b430b' : '#254f9a', phase);
+        if (path.startsWith('/play') && phase === 'ANSWERING') await waitFor(() => assert.ok(view.getByText('Answer')));
+        if (path.startsWith('/play') && phase === 'ANSWER_REVEAL') await waitFor(() => assert.ok(view.getByText(/Correct.*3/)));
+        if (!path.startsWith('/play') && phase === 'ROUND_INTRO') assert.ok(view.getByText('Round'));
+        if (!path.startsWith('/play') && ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL'].includes(phase)) assert.ok(view.getByRole('heading', { name: 'Question' }));
+        if (!path.startsWith('/play') && ['LEADERBOARD', 'FINAL_RESULTS'].includes(phase)) assert.ok(view.getByRole('table'));
+        if (!path.startsWith('/play') && phase === 'WINNER_SCREEN') assert.ok(view.container.querySelector('.winners'));
+      }
+    });
+  }
+}
+
+// Relative luminance protects readability when palette tokens change.
+function luminance(hex: string) {
+  const rgb = hex.slice(1).match(/../g)!.map(v => parseInt(v, 16) / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+}
+test('Halloween text, controls and correctness have at least 4.5:1 contrast', () => {
+  const t = resolveTheme('halloween').tokens;
+  for (const [foreground, background] of [[t.text, t.background], [t.muted, t.background], [t.primary, t.background], [t.onPrimary, t.primary], [t.danger, t.background], [t.correctText, t.correctBackground]]) {
+    const a = luminance(foreground), b = luminance(background);
+    assert.ok((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 4.5, `${foreground} on ${background}`);
+  }
 });

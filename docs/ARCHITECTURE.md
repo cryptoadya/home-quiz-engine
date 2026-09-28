@@ -127,7 +127,13 @@ external resources or optional features and uses the existing system font, palet
 and layouts. Configuration supplies semantic CSS tokens, independently of game
 logic. `resolveTheme` selects an installed theme and fills missing/empty tokens from
 Default. Unknown, empty or missing IDs resolve to Default without changing the
-requested ID. Default is the only installed theme in 7A; Halloween is deferred to 7B.
+requested ID. Phase 7B installs `halloween` alongside `default` in the same registry.
+Halloween's version-1.0.0 manifest identifies Home Quiz Engine as author and has
+empty resources/features lists. Its partial token configuration uses warm cream
+backgrounds, aubergine text/borders and burnt-orange controls. Font and correctness
+colors inherit Default through the resolver; no image/font/network resource is
+required for rendering. Missing optional configuration retains Default behavior.
+Normal text, muted text, controls and correctness text have at least 4.5:1 contrast.
 No uploads, theme builder, sound system or dynamic resource loader is introduced.
 
 `ThemeSurface` scopes configuration to the existing Admin quiz editor (including
@@ -136,7 +142,11 @@ Round/Question/Reveal/Leaderboard/Winner, media and answer components inherit th
 same tokens; there are no gameplay component forks. Admin's theme selector lists
 installed manifests. An unavailable saved ID remains visible with a Default
 fallback notice, survives unrelated edits, and can be replaced with Default.
-Quiz-list names also use the resolver. Dedicated Preview modes remain Phase 8.
+Quiz-list names also use the resolver. The selector offers Default and Halloween,
+with no per-surface selection. Both palettes use the same spacing, sizing, phone/TV
+breakpoints, focus/selection states, media fit rules and Matching layouts. There
+are no theme conditions in game, answer, timer or media components or server logic.
+Dedicated Preview modes remain Phase 8.
 
 Quiz settings accept bounded nonempty string IDs independently of installed
 presentation code, so unavailable IDs remain editable and durable. Room metadata

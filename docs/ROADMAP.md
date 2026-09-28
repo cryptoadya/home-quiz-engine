@@ -193,9 +193,25 @@ Focused server/UI regressions cover selection, fallback, frozen projections,
 realtime reconnect, source deletion, restart and unchanged scoring. No theme
 builder, uploads, sounds or dedicated Preview modes are included.
 
-Phase 7B remains pending: implement Halloween through the same presentation
-boundary and verify Default/Halloween behavior parity. Halloween is not installed
-or implemented by 7A. Dedicated Preview modes remain Phase 8.
+Phase 7B adds bundled `halloween` through the existing manifest and partial token
+configuration only: cream backgrounds, aubergine text and burnt-orange controls,
+with Default font/correctness fallbacks and no external assets or sounds. Admin
+offers both installed themes. Existing shared surfaces cover Lobby, Round Intro,
+Question/Answering, Pause, Reveal, Round End, Leaderboard, Final/Winner and Player;
+responsive and image/video/Matching layout rules remain unchanged. Focused coverage
+checks installed resolution, selector switching, every major surface in both themes,
+unknown/missing IDs, optional configuration inheritance and text/control contrast.
+Server parity checks retain frozen Halloween after source edits/deletion and
+reconnect/restart, scoring, frozen video serving and media controls without deadline
+changes. All 348 automated tests, typecheck, build and diff checks passed.
+A local Chrome smoke at 390×844 (Host/Player) and 1920×1080 (Screen) exercised
+Lobby, Round Intro, image/video question decoding, Answering, Reveal/reload,
+Matching images and submission, Pause/Resume, Leaderboard, Final and Winner.
+The two correct submissions scored 3 + 2 points. No horizontal overflow was found;
+images retained contain fitting. Source selection changed to Default after Start,
+while all three room surfaces retained Halloween after Player reload. The existing
+missing favicon produced a 404; physical phone/TV/Wi-Fi acceptance remains pending.
+Dedicated Preview modes and all other Phase 8 scope remain pending.
 
 Scope:
 - Default theme

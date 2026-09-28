@@ -27,6 +27,8 @@ for (const themeId of ['default', 'halloween', 'missing-theme']) {
         return option;
       });
       let api = request(createApp(db));
+      const media = (await api.post(`/api/quizzes/${quiz.id}/media`).attach('file', new URL('./fixtures/media/sample.mp4', import.meta.url).pathname, { contentType: 'video/mp4' }).expect(201)).body;
+      db.prepare('UPDATE questions SET media_json = ? WHERE id = ?').run(JSON.stringify([{ mediaId: media.id, playBeforeTimer: false }]), question.id);
       const settings = { title: 'Party', themeId, defaultAnswerTimeSeconds: 30, shuffleAnswers: false };
       await api.put(`/api/quizzes/${quiz.id}`).send({ ...settings, themeId: themeId === 'default' ? 'halloween' : 'default' }).expect(200);
       const { body: room } = await api.post(`/api/quizzes/${quiz.id}/rooms`).expect(201);
@@ -42,7 +44,16 @@ for (const themeId of ['default', 'halloween', 'missing-theme']) {
       await api.post(`/api/rooms/${room.id}/start-question`).expect(200);
       const restored = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body;
       assert.equal(restored.room.themeId, themeId);
-      assert.doesNotMatch(JSON.stringify(restored), /isCorrect|correctOption/);
+      assert.doesNotMatch(JSON.stringify(restored), /isCorrect|correctOption|mediaUrl|playback/);
+      const deadline = restored.game.timer.deadlineAt;
+      for (const action of ['play', 'pause', 'restart']) {
+        await api.post(`/api/rooms/${room.id}/media/${media.id}/${action}`).send({ questionId: question.id }).expect(200);
+        const projection = (await api.get(`/api/rooms/${room.id}/game/screen`).expect(200)).body;
+        assert.equal(projection.room.themeId, themeId);
+        assert.equal(projection.game.timer.deadlineAt, deadline);
+        assert.equal(projection.game.media[0].mediaId, media.id);
+        assert.equal(projection.game.media[0].playback.playing, action !== 'pause');
+      }
       await api.post(`/api/rooms/${room.id}/answers`).send({ token: identity.token, questionId: question.id, optionId: options[0].id }).expect(200);
       await api.delete(`/api/quizzes/${quiz.id}`).expect(204);
       db.close(); db = initializeDatabase(path); api = request(createApp(db));
@@ -53,6 +64,9 @@ for (const themeId of ['default', 'halloween', 'missing-theme']) {
       }
       const recovery = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identity.token }).expect(200)).body;
       assert.equal(recovery.room.themeId, themeId);
+      const frozenMedia = await api.get(`/api/rooms/${room.id}/media/${media.id}/content`).expect(200);
+      assert.match(frozenMedia.headers['content-type'], /video\/mp4/);
+      assert.ok(frozenMedia.body.length > 0);
       assert.deepEqual(recovery.game.result, { outcome: 'correct', points: 3 });
       // Missing legacy presentation metadata must not invalidate playable content.
       const legacy = getGameSnapshot(db, room.id)!;

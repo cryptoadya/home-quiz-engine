@@ -57,34 +57,34 @@ export function PlayerAnswerContent({ question, language, seconds, onSubmit }: {
     finally { setBusy(false); }
   }
 
-  return <>
-    <h2>{question.text}</h2>
+  return <div className="player-answer" data-answer-state={submission?.submitted ? 'submitted' : locked ? 'disabled' : 'editing'}>
+    <h2 className="player-question">{question.text}</h2>
     {multiple && question.requiredCorrectCount !== undefined && <p>{ru ? 'Количество верных вариантов' : 'Required correct options'}: {question.requiredCorrectCount}</p>}
     <CountdownDisplay seconds={timedOut ? 0 : seconds} language={language} />
     <form onSubmit={event => { event.preventDefault(); void submit(); }}>
-      {matching ? <fieldset disabled={locked}>
+      {matching ? <fieldset disabled={locked} className="matching-answer">
         <legend>{ru ? 'Нажмите слева, затем справа' : 'Tap a left item, then a right item'}</legend>
         <div className="matching-columns">
-          <div>{question.leftItems?.map((item, index) => <button type="button" key={item.id} disabled={locked} aria-pressed={activeLeft === item.id}
+          <div>{question.leftItems?.map((item, index) => <button type="button" key={item.id} disabled={locked} aria-pressed={activeLeft === item.id} data-paired={pairs.some(pair => pair.leftId === item.id) || undefined}
             onClick={() => setActiveLeft(item.id)}>{index + 1}. <MatchingItemContent item={item} /></button>)}</div>
           <div>{question.rightItems?.map(item => { const pair = pairs.find(pair => pair.rightId === item.id); return <button type="button" key={item.id}
-            disabled={locked || !activeLeft} onClick={() => { setMapping(current => [...current.filter(pair => pair.leftId !== activeLeft && pair.rightId !== item.id), { leftId: activeLeft!, rightId: item.id }]); setActiveLeft(null); }}>
+            data-paired={Boolean(pair) || undefined} disabled={locked || !activeLeft} onClick={() => { setMapping(current => [...current.filter(pair => pair.leftId !== activeLeft && pair.rightId !== item.id), { leftId: activeLeft!, rightId: item.id }]); setActiveLeft(null); }}>
             <MatchingItemContent item={item} />{pair ? ` (${question.leftItems!.findIndex(left => left.id === pair.leftId) + 1})` : ''}
           </button>; })}</div>
         </div>
-        <ul>{pairs.map(pair => { const left = question.leftItems?.find(item => item.id === pair.leftId); const right = question.rightItems?.find(item => item.id === pair.rightId); return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>; })}</ul>
+        <ul className="matching-pairs">{pairs.map(pair => { const left = question.leftItems?.find(item => item.id === pair.leftId); const right = question.rightItems?.find(item => item.id === pair.rightId); return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>; })}</ul>
       </fieldset> : <fieldset disabled={locked} className="answer-choices">
         <legend>{multiple ? (ru ? 'Выберите несколько вариантов' : 'Choose multiple options') : (ru ? 'Выберите один вариант' : 'Choose one option')}</legend>
-        {question.options.map(option => <label key={option.id}>
+        {question.options.map(option => <label key={option.id} data-selected={selected.includes(option.id) || undefined}>
           <input type={multiple ? "checkbox" : "radio"} name="answer" value={option.id} checked={selected.includes(option.id)}
             disabled={locked} onChange={() => setSelection(current => multiple ? (current.includes(option.id) ? current.filter(id => id !== option.id) : [...current, option.id]) : [option.id])} />
           {option.text}
         </label>)}
       </fieldset>}
       {!submission?.submitted && <p>{ru ? 'Выбор можно изменить до отправки' : 'You can change your choice before Submit'}</p>}
-      <button type="submit" disabled={locked || !complete}>{ru ? 'Отправить' : 'Submit'}</button>
+      <button className="submit-answer" type="submit" disabled={locked || !complete}>{ru ? 'Отправить' : 'Submit'}</button>
     </form>
-    {submission?.submitted && <p role="status">{ru ? 'Ответ принят' : 'Answer submitted'}</p>}
+    {submission?.submitted && <p className="state-notice submitted" role="status">{ru ? 'Ответ принят' : 'Answer submitted'}</p>}
     {error && <p role="alert">{ru ? 'Не удалось подтвердить ответ. Попробуйте отправить снова или обновить страницу.' : 'Could not confirm your answer. Retry Submit or refresh the page.'}</p>}
-  </>;
+  </div>;
 }

@@ -52,12 +52,12 @@ export function MediaManager({ quizId, onPersistedChange }: { quizId: string; on
     <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide media' : 'Manage media'}</button>
     {open && <>
       <p>Images/GIF up to 20 MB · Audio up to 100 MB · Video up to 500 MB</p>
-      <label>Media file<input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp3,.wav,.ogg,.mp4,.webm" disabled={busy}
+      <label className="upload-field">Media file<input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp3,.wav,.ogg,.mp4,.webm" disabled={busy}
         onChange={event => setFile(event.target.files?.[0] ?? null)} /></label>
       <button type="button" disabled={busy || !file} onClick={() => void upload()}>Upload media</button>
       {status && <p role="status" aria-live="polite">{status}</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      {!busy && !error && items.length === 0 && <p>No media uploaded.</p>}
+      {!busy && !error && items.length === 0 && <p className="empty-state">No media uploaded.</p>}
       <ul className="quiz-list">{items.map(media => <li key={media.id}>
         <div><strong>{media.name}</strong><p>{media.kind} · {media.mimeType} · {(media.sizeBytes / 1024 / 1024).toFixed(2)} MB</p></div>
         <button type="button" className="subtle danger" disabled={busy} aria-label={`Delete media ${media.name}`} onClick={() => void remove(media)}>Delete</button>

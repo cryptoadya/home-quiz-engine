@@ -71,29 +71,31 @@ export function Host() {
     finally { setBusy(false); }
   }
 
-  return <ThemeSurface themeId={room?.themeId}>
+  return <ThemeSurface themeId={room?.themeId} className="host" data-phase={room?.closedAt ? 'CLOSED' : room?.state}>
     <h1>Host</h1>
     <Link to="/admin">Quiz list</Link>
     {(error || loadError) && <p role="alert">{error || loadError}</p>}
     {!room && !error && !loadError && <p>Loading room...</p>}
     {room && <>
-      <h2>{room.quizTitle}</h2>
-      {room.isTest && <p><strong>Тестовая игра / Test Game</strong></p>}
+      <section className="host-overview"><h2>{room.quizTitle}</h2>
+      {room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
       <Link to={`/screen/${room.id}`}>Open Screen</Link>
-      <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
+      <p className="connection-chip" data-connected={connected}>{connected ? 'Connected' : 'Reconnecting…'}</p>
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       {!state?.players?.length && <p role="status">No players. Ask guests to scan the Screen QR code or enter the room code.</p>}
-      <ul className="host-roster">{state?.players?.map(player => <li key={player.id}>
+      <ul className="host-roster">{state?.players?.map(player => <li key={player.id} data-present={player.present}>
         <span>{player.name} — {player.language.toUpperCase()}{player.present !== undefined && ` — ${player.present ? 'Online' : 'Disconnected'}`}</span>
         {!room.closedAt && !['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) && !(state?.game?.state === 'PAUSED' && state.game.pausedFromState === 'FINAL_RESULTS') &&
           <button className="subtle danger" aria-label={`Kick ${player.name}`} disabled={busy} onClick={() => void kick(player)}>Kick</button>}
       </li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
-      <p>State: <span>{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>
+      <p>State: <span className="phase-chip">{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>
+      </section>
+      <section className="host-controls" aria-label="Game controls">
       {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&
         <button onClick={() => void start('pause')} disabled={busy}>Pause</button>}
       {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
-        <p>Game paused.</p>
+        <p className="state-notice paused">Game paused.</p>
         {state?.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} host mediaBusy />}
         {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <>
           <p>{state.game.disconnectedPlayer?.name} disconnected.</p>
@@ -102,7 +104,7 @@ export function Host() {
         {state?.game?.state === 'PAUSED' && <p>Paused from: {state.game.pausedFromState.toLowerCase().replaceAll('_', ' ')}</p>}
         {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' ? <>
           <button onClick={() => void start('wait-for-player')} disabled={busy || !state.game.disconnectedPlayer?.present}>Wait for Player</button>
-          <button onClick={() => void start('continue-without-player')} disabled={busy}>Continue Without Player</button>
+          <button className="subtle danger" onClick={() => void start('continue-without-player')} disabled={busy}>Continue Without Player</button>
         </> : <button onClick={() => void start('resume')} disabled={busy}>Resume</button>}
       </section>}
       {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
@@ -125,7 +127,10 @@ export function Host() {
           ? ('questionNumber' in state.game && state.game.questionNumber < state.game.questionCount ? 'Next Question' : 'Next')
           : { 'show-leaderboard': 'Show Leaderboard', 'next-round': 'Next Round', 'final-results': 'Final Results', 'show-winner': 'Show Winner' }[state.game.nextAction]}</button>}
       </>}
-      {room.closedAt ? <p role="status">Room closed</p> : <button onClick={() => void close()} disabled={busy}>Close room</button>}
+      </section>
+      <footer className="host-danger">
+      {room.closedAt ? <p role="status">Room closed</p> : <button className="subtle danger" onClick={() => void close()} disabled={busy}>Close room</button>}
+      </footer>
     </>}
   </ThemeSurface>;
 }

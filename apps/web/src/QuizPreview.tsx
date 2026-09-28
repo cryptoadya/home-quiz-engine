@@ -74,8 +74,8 @@ export function QuizPreview(props: Props) {
       </select></label>
       <button onClick={props.onClose}>Close preview</button>
     </div>
-    <p>Visual preview · timer is frozen · answers stay local. Reveal uses an unanswered sample result.</p>
-    <ThemeSurface as="div" themeId={props.quiz?.themeId} className={mode === 'Screen' ? 'screen-lobby' : mode === 'Host' ? 'preview-host' : 'player'}>
+    <p className="preview-banner">Visual preview · timer is frozen · answers stay local. Reveal uses an unanswered sample result.</p>
+    <ThemeSurface as="div" themeId={props.quiz?.themeId} data-phase={reveal ? 'ANSWER_REVEAL' : 'ANSWERING'} className={mode === 'Screen' ? 'screen-lobby' : mode === 'Host' ? 'preview-host' : 'player'}>
       <h1>{mode === 'Screen' ? (reveal ? 'Ответ / Answer Reveal' : 'Вопрос / Question') : mode === 'Host' ? 'Host' : language === 'ru' ? 'Игрок' : 'Player'}</h1>
       {(mode === 'Host' || mode === 'Screen') && <h2>{props.quiz?.title}</h2>}
       <div className="game-content">

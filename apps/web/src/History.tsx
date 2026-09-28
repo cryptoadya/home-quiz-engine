@@ -1,3 +1,4 @@
+import { ThemeSurface } from './themes/ThemeSurface';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -23,11 +24,11 @@ export function History() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
-  return <main className="admin history">
+  return <ThemeSurface className="admin history">
     <Link to="/admin">← Quiz list</Link>
     <header className="admin-header"><div><h1>History</h1><p>Latest 100 completed real games. Test Games are excluded.</p></div></header>
     {error ? <p role="alert" className="error">{error}</p> : loading ? <p>Loading history...</p> : entries.length === 0
-      ? <p>No completed real games yet. Games appear here when final results are shown.</p>
+      ? <p className="empty-state">No completed real games yet. Games appear here when final results are shown.</p>
       : <ul className="history-list">{entries.map(entry => <li key={entry.sessionId}>
         <h2>{entry.quizTitle}</h2>
         <p><time dateTime={entry.completedAt}>{new Date(entry.completedAt).toLocaleString()}</time></p>
@@ -36,5 +37,5 @@ export function History() {
           <tbody>{entry.players.map(player => <tr key={player.playerId}><td>{player.displayName}</td><td>{player.totalPoints}</td></tr>)}</tbody>
         </table>
       </li>)}</ul>}
-  </main>;
+  </ThemeSurface>;
 }

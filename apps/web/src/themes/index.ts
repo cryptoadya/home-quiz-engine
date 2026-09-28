@@ -11,23 +11,35 @@ export type ThemeManifest = {
 export const defaultTheme = {
   manifest: { id: 'default', name: 'Default', version: '1.0.0', author: 'Home Quiz Engine', resources: [], features: [] } satisfies ThemeManifest,
   tokens: {
-    font: 'system-ui, sans-serif', text: '#1c2430', background: '#f5f7fa',
-    muted: '#5b6470', border: '#d4dbe3', primary: '#254f9a', onPrimary: '#ffffff',
-    danger: '#a12424', dangerBorder: '#c8a4a4', inputBorder: '#9da9b7', surface: '#ffffff',
-    correctBorder: '#23834a', correctBackground: '#eaf7ee', correctText: '#153c24', tableBorder: '#cccccc',
+    font: 'system-ui, sans-serif', text: '#20243d', background: '#eef2fb',
+    muted: '#535d76', border: '#d7deed', primary: '#4338b5', onPrimary: '#ffffff',
+    danger: '#ad3347', dangerBorder: '#d89ca6', inputBorder: '#8894b0', surface: '#ffffff',
+    correctBorder: '#23834a', correctBackground: '#eaf7ee', correctText: '#153c24', tableBorder: '#d7deed',
+    accent: '#087c89', glow: '#dcdafa', glowSecondary: '#d5f0f3',
+    shadow: '0 18px 60px #283b6a12, 0 3px 10px #283b6a08',
+    contentBackground: '#ffffff', contentText: '#20243d', contentMuted: '#59627c',
+    selectedBackground: '#eeedff', selectedText: '#33298b',
+    wrongBackground: '#fff0f1', wrongText: '#9b293d',
+    warningBackground: '#fff4d9', warningText: '#79500e',
   },
 } as const;
 
 export type ThemeTokens = { readonly [Key in keyof typeof defaultTheme.tokens]: string };
 export type Theme = { readonly manifest: ThemeManifest; readonly tokens?: Partial<ThemeTokens> };
-// Asset-free Halloween: optional font/correctness parts intentionally inherit Default.
+// Both palettes share layout and gameplay; missing optional parts inherit Default.
 export const halloweenTheme: Theme = {
   manifest: { id: 'halloween', name: 'Halloween', version: '1.0.0', author: 'Home Quiz Engine', resources: [], features: [] },
   tokens: {
-    text: '#30213b', background: '#fff6e9', muted: '#70566f',
-    primary: '#9b430b', onPrimary: '#ffffff', surface: '#fffaf2',
-    border: '#cbb6ce', inputBorder: '#826588', tableBorder: '#cbb6ce',
-    danger: '#8a2534', dangerBorder: '#ad6570',
+    text: '#fff1de', background: '#1c1426', muted: '#c8b5d3',
+    primary: '#ffad62', onPrimary: '#301c24', surface: '#2c203b',
+    border: '#594466', inputBorder: '#a48bad', tableBorder: '#594466',
+    danger: '#ff9bab', dangerBorder: '#ac6479',
+    accent: '#c8b0ef', glow: '#3e2349', glowSecondary: '#352b4c',
+    shadow: '0 18px 60px #08050d40, 0 3px 10px #08050d30',
+    contentBackground: '#fff4e2', contentText: '#30213b', contentMuted: '#70566f',
+    selectedBackground: '#59352c', selectedText: '#fff1de',
+    wrongBackground: '#fff0f1', wrongText: '#9b293d',
+    warningBackground: '#483423', warningText: '#ffd997',
   },
 };
 export const themes: readonly Theme[] = [defaultTheme, halloweenTheme];

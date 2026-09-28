@@ -29,10 +29,10 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
       await waitFor(() => assert.ok(view.getByText('Party')));
       const main = view.getByRole('main');
       assert.equal(main.dataset.theme, themeId === 'halloween' ? 'halloween' : 'default');
-      assert.equal(main.style.getPropertyValue('--theme-text'), themeId === 'halloween' ? '#30213b' : '#1c2430');
+      assert.equal(main.style.getPropertyValue('--theme-text'), resolveTheme(themeId).tokens.text);
       await act(async () => { live.emit('lobby:state', { room: { ...themedRoom, state: 'ROUND_INTRO' }, players: [player] }); });
       assert.equal(main.dataset.theme, themeId === 'halloween' ? 'halloween' : 'default');
-      assert.equal(main.style.getPropertyValue('--theme-background'), themeId === 'halloween' ? '#fff6e9' : '#f5f7fa');
+      assert.equal(main.style.getPropertyValue('--theme-background'), resolveTheme(themeId).tokens.background);
       assert.ok(view.getByText('Party'));
     });
   }
@@ -66,13 +66,13 @@ test('Halloween resolves locally and inherits missing optional configuration fro
   const theme = resolveTheme('halloween');
   assert.equal(theme.manifest.id, 'halloween');
   assert.equal(theme.manifest.name, 'Halloween');
-  assert.equal(theme.tokens.primary, '#9b430b');
+  assert.equal(theme.tokens.primary, '#ffad62');
   assert.equal(theme.tokens.font, 'system-ui, sans-serif');
   assert.equal(theme.tokens.correctBackground, '#eaf7ee');
   assert.deepEqual(theme.manifest.resources, []);
   for (const id of [undefined, null, '', 'unknown', '__proto__']) {
     assert.equal(resolveTheme(id).manifest.id, 'default');
-    assert.equal(resolveTheme(id).tokens.primary, '#254f9a');
+    assert.equal(resolveTheme(id).tokens.primary, resolveTheme('default').tokens.primary);
   }
 });
 
@@ -113,7 +113,7 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
         state = phase;
         await act(async () => { live.emit('lobby:state', { room: { ...room, themeId, state }, players: [player], game: phase === 'LOBBY' ? null : { ...content, state: phase, ...(phase === 'PAUSED' ? { pausedFromState: 'QUESTION', remainingMs: null } : {}) } }); });
         assert.equal(view.getByRole('main').dataset.theme, themeId, phase);
-        assert.equal(view.getByRole('main').style.getPropertyValue('--theme-primary'), themeId === 'halloween' ? '#9b430b' : '#254f9a', phase);
+        assert.equal(view.getByRole('main').style.getPropertyValue('--theme-primary'), resolveTheme(themeId).tokens.primary, phase);
         if (path.startsWith('/play') && phase === 'ANSWERING') await waitFor(() => assert.ok(view.getByText('Answer')));
         if (path.startsWith('/play') && phase === 'ANSWER_REVEAL') await waitFor(() => assert.ok(view.getByText(/Correct.*3/)));
         if (!path.startsWith('/play') && phase === 'ROUND_INTRO') assert.ok(view.getByText('Round'));
@@ -130,9 +130,9 @@ function luminance(hex: string) {
   const rgb = hex.slice(1).match(/../g)!.map(v => parseInt(v, 16) / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
   return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
 }
-test('Halloween text, controls and correctness have at least 4.5:1 contrast', () => {
-  const t = resolveTheme('halloween').tokens;
-  for (const [foreground, background] of [[t.text, t.background], [t.muted, t.background], [t.primary, t.background], [t.onPrimary, t.primary], [t.danger, t.background], [t.correctText, t.correctBackground]]) {
+for (const themeId of ['default', 'halloween']) test(`${themeId} text, answer states and controls have at least 4.5:1 contrast`, () => {
+  const t = resolveTheme(themeId).tokens;
+  for (const [foreground, background] of [[t.text, t.background], [t.muted, t.background], [t.primary, t.background], [t.onPrimary, t.primary], [t.danger, t.background], [t.correctText, t.correctBackground], [t.contentText, t.contentBackground], [t.contentMuted, t.contentBackground], [t.selectedText, t.selectedBackground], [t.wrongText, t.wrongBackground], [t.warningText, t.warningBackground], [t.text, t.surface], [t.muted, t.surface], [t.primary, t.surface], [t.text, t.glow], [t.muted, t.glow], [t.text, t.glowSecondary], [t.muted, t.glowSecondary]]) {
     const a = luminance(foreground), b = luminance(background);
     assert.ok((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 4.5, `${foreground} on ${background}`);
   }

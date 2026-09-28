@@ -20,7 +20,7 @@ export function Countdown({ timer, language }: { timer: AnswerTimer; language?: 
 }
 
 export function CountdownDisplay({ seconds, language, durationSeconds }: { seconds: number; durationSeconds?: number; language?: 'ru' | 'en' }) {
-  return <div className="countdown">
+  return <div className="countdown" data-urgent={seconds <= 10 || undefined}>
     <span>{language === 'ru' ? 'Осталось секунд' : language === 'en' ? 'Seconds remaining' : 'Осталось секунд / Seconds remaining'}</span>
     <strong role="timer" aria-label={language === 'ru' ? 'Осталось секунд' : 'Seconds remaining'}>{seconds}</strong>
     {durationSeconds !== undefined && <progress aria-label="Time remaining" max={durationSeconds} value={Math.min(seconds, durationSeconds)} />}

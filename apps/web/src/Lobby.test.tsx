@@ -151,13 +151,13 @@ test('Screen leaves QR and join instructions when Start is broadcast and on relo
   assert.ok(view.getByText('Замороженный раунд'));
   assert.equal(view.queryByRole('link', { name: 'RU' }), null);
   assert.equal(view.queryByText(/scan a QR/), null);
-  assert.equal(view.container.querySelector('svg'), null);
+  assert.equal(view.container.querySelector('.join-codes svg'), null);
   view.unmount();
   globalThis.fetch = async () => Response.json(started);
   view = show('/screen/room');
   await waitFor(() => assert.ok(view.getByText('Frozen round')));
   assert.ok(view.getByText('Frozen title'));
-  assert.equal(view.container.querySelector('svg'), null);
+  assert.equal(view.container.querySelector('.join-codes svg'), null);
 });
 
 for (const language of ['ru', 'en']) test(`Player ${language} leaves waiting on Start and restores starting state`, async () => {
@@ -470,6 +470,8 @@ for (const [outcome, language, label, points] of [
       ...(revealed ? { correctOptionId: 'a', result: { outcome, points } } : {}) } });
   let view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText('Pick')));
+  // The initial HTTP question can paint before the Player socket effect subscribes.
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   revealed = true;
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWER_REVEAL' } }); });
   await waitFor(() => assert.ok(view.getByText(label)));
@@ -480,6 +482,7 @@ for (const [outcome, language, label, points] of [
   assert.doesNotMatch(view.container.innerHTML, /rank|leaderboard/i);
   view.unmount(); view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(label)));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWER_REVEAL', closedAt: 'now' } }); });
   assert.equal(view.queryByText(label), null);
   assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));

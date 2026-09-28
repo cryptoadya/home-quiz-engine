@@ -121,7 +121,7 @@ export function QuizList() {
     finally { setBusy(false); }
   }
 
-  return <main className="admin">
+  return <ThemeSurface className="admin">
     <Link to="/admin/history">History</Link>
     <header className="admin-header"><div><h1>Quizzes</h1><p>Your saved drafts</p></div><button onClick={create} disabled={busy}>Create quiz</button></header>
     <button disabled={busy} onClick={() => importInput.current?.click()}>Import Quiz</button>
@@ -129,7 +129,7 @@ export function QuizList() {
     {notice && <p role="status">{notice} {imported && <Link to={`/admin/quizzes/${imported.id}`}>Open imported quiz</Link>}</p>}
     {imported && resolveTheme(imported.themeId).manifest.id !== imported.themeId && <p role="alert">Theme “{imported.themeId}” is unavailable. Using Default; the original theme ID is preserved.</p>}
     {error && <p role="alert" className="error">{error}</p>}
-    {loading ? <p>Loading quizzes...</p> : quizzes.length === 0 ? <p>No quizzes yet. Create one to get started.</p> :
+    {loading ? <p>Loading quizzes...</p> : quizzes.length === 0 ? <p className="empty-state">No quizzes yet. Create one to get started.</p> :
       <ul className="quiz-list">{quizzes.map((quiz) => <li key={quiz.id}>
         <div><Link to={`/admin/quizzes/${quiz.id}`}>{quiz.title}</Link><p>{resolveTheme(quiz.themeId).manifest.name} · Modified {formatDate(quiz.updatedAt)}</p></div>
         <div className="quiz-actions">
@@ -138,7 +138,7 @@ export function QuizList() {
           <button className="subtle danger" onClick={() => void remove(quiz)} disabled={busy} aria-label={`Delete ${quiz.title}`}>Delete</button>
         </div>
       </li>)}</ul>}
-  </main>;
+  </ThemeSurface>;
 }
 
 export function QuizEditor() {
@@ -245,8 +245,8 @@ export function QuizEditor() {
     }
   }
 
-  if (loading) return <main className="admin"><p>Loading quiz...</p></main>;
-  if (!quiz) return <main className="admin"><Link to="/admin">← Quiz list</Link><p role="alert">{error}</p></main>;
+  if (loading) return <ThemeSurface className="admin"><p>Loading quiz...</p></ThemeSurface>;
+  if (!quiz) return <ThemeSurface className="admin"><Link to="/admin">← Quiz list</Link><p role="alert">{error}</p></ThemeSurface>;
   const settings: QuizSettings = {
     title: quiz.title,
     themeId: quiz.themeId,
@@ -268,7 +268,7 @@ export function QuizEditor() {
     {exportNotice && <p role="status">{exportNotice}</p>}
     <button onClick={() => void openLobby()} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Open lobby</button>
     <button onClick={() => void openLobby(true)} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Start Test Game</button>
-    <p>Test Game opens a real lobby for phones. Host starts the game after players join. Test sessions are excluded from normal history.</p>
+    <p className="preview-banner">Test Game opens a real lobby for phones. Host starts the game after players join. Test sessions are excluded from normal history.</p>
     <section className="readiness" aria-label="Quiz readiness">
       <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Draft · ${validation.problems.length} ${validation.problems.length === 1 ? 'problem' : 'problems'}` : 'Checking readiness...'}</strong>
       {validationError && <p role="alert" className="error">Could not refresh readiness: {validationError}</p>}

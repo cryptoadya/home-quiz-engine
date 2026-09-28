@@ -41,7 +41,9 @@ test('health and quiz CRUD persist drafts with validation', async () => {
     for (const invalid of [
       { ...settings, title: '   ' },
       { ...settings, title: 'a'.repeat(101) },
-      { ...settings, themeId: 'other' },
+      { ...settings, themeId: '' },
+      { ...settings, themeId: null },
+      { ...settings, themeId: 'a'.repeat(101) },
       { ...settings, defaultAnswerTimeSeconds: 0 },
       { ...settings, defaultAnswerTimeSeconds: 1.5 },
       { ...settings, defaultAnswerTimeSeconds: 3601 },

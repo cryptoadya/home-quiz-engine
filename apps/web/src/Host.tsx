@@ -1,3 +1,4 @@
+import { ThemeSurface } from './themes/ThemeSurface';
 import { Countdown } from './Countdown';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -56,7 +57,7 @@ export function Host() {
     finally { setBusy(false); }
   }
 
-  return <main>
+  return <ThemeSurface themeId={room?.themeId}>
     <h1>Host</h1>
     <Link to="/admin">Quiz list</Link>
     {(error || loadError) && <p role="alert">{error || loadError}</p>}
@@ -106,5 +107,5 @@ export function Host() {
       </>}
       {room.closedAt ? <p role="status">Room closed</p> : <button onClick={() => void close()} disabled={busy}>Close room</button>}
     </>}
-  </main>;
+  </ThemeSurface>;
 }

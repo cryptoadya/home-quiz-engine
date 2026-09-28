@@ -8,7 +8,7 @@ import { listOptions, listQuestions } from './questions.js';
 export type Quiz = {
   id: string;
   title: string;
-  themeId: 'default' | 'halloween';
+  themeId: string;
   defaultAnswerTimeSeconds: number;
   shuffleAnswers: boolean;
   createdAt: string;
@@ -124,8 +124,8 @@ export function validateQuizChanges(value: unknown): { changes: QuizChanges } | 
   if (typeof input.title !== 'string' || input.title.trim().length === 0 || input.title.trim().length > 100) {
     return { error: 'Title must be 1–100 characters.' };
   }
-  if (input.themeId !== 'default' && input.themeId !== 'halloween') {
-    return { error: 'Theme must be default or halloween.' };
+  if (typeof input.themeId !== 'string' || input.themeId.trim().length === 0 || input.themeId.length > 100) {
+    return { error: 'Theme ID must be 1–100 characters.' };
   }
   if (!Number.isInteger(input.defaultAnswerTimeSeconds) || (input.defaultAnswerTimeSeconds as number) < 1 || (input.defaultAnswerTimeSeconds as number) > 3600) {
     return { error: 'Answer time must be an integer from 1 to 3600 seconds.' };

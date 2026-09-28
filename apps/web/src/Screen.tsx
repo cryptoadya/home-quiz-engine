@@ -1,3 +1,4 @@
+import { ThemeSurface } from './themes/ThemeSurface';
 import { Countdown } from './Countdown';
 import { useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
@@ -8,7 +9,7 @@ export function Screen() {
   const { roomId } = useParams();
   const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
   const local = /^(localhost|127(?:\.\d+){3}|\[::1\]|0\.0\.0\.0)$/.test(window.location.hostname);
-  return <main className="screen-lobby">
+  return <ThemeSurface themeId={state?.room.themeId} className="screen-lobby">
     <h1>{state?.room.closedAt ? 'Викторина / Quiz' : state?.room.state === 'PAUSED' ? 'Пауза / Paused' : state?.room.state && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.room.state) ? 'Игра / Game' : state?.room.state === 'ANSWER_REVEAL' ? 'Ответ / Answer Reveal' : state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : (state?.room.state === 'QUESTION' || state?.room.state === 'ANSWERING') ? 'Вопрос / Question' : 'Лобби / Lobby'}</h1>
     {error && <p role="alert">{error}</p>}
     {!state && !error && <p>Загрузка / Loading…</p>}
@@ -33,5 +34,5 @@ export function Screen() {
       {state.room.state === 'LOBBY' && <><p>Игроки / Players: {state.players?.length ?? 0} / 30</p>
       <ul className="screen-roster">{state.players?.map(player => <li key={player.id}>{player.name}</li>)}</ul></>}
     </>}
-  </main>;
+  </ThemeSurface>;
 }

@@ -87,21 +87,21 @@ test('editor autosaves basic settings and keeps a failed save visible', async ()
     if (String(input).endsWith('/rounds')) return Response.json([]);
     if (init?.method === 'PUT') {
       updates.push(JSON.parse(String(init.body)));
-      return fail ? Response.json({ error: 'Save unavailable.' }, { status: 500 }) : Response.json(quiz);
+      return fail ? Response.json({ error: 'Save unavailable.' }, { status: 500 }) : Response.json({ ...quiz, themeId: 'halloween' });
     }
-    return Response.json(quiz);
+    return Response.json({ ...quiz, themeId: 'halloween' });
   };
   const view = show('/admin/quizzes/quiz-1');
   await waitFor(() => assert.ok(view.getByDisplayValue('New Quiz')));
   fireEvent.change(view.getByLabelText('Title'), { target: { value: 'Party Quiz' } });
-  fireEvent.change(view.getByLabelText('Theme'), { target: { value: 'halloween' } });
+  fireEvent.change(view.getByLabelText('Theme'), { target: { value: 'default' } });
   fireEvent.change(view.getByLabelText('Default answer time (seconds)'), { target: { value: '45' } });
   fireEvent.click(view.getByLabelText('Shuffle answers'));
   assert.equal(view.getAllByRole('status')[0].textContent, 'Saving...');
   await waitFor(() => assert.equal(view.getAllByRole('status')[0].textContent, 'Saved'), { timeout: 2000 });
   assert.equal(updates.length, 1);
   assert.deepEqual(updates[0], {
-    title: 'Party Quiz', themeId: 'halloween', defaultAnswerTimeSeconds: 45, shuffleAnswers: true,
+    title: 'Party Quiz', themeId: 'default', defaultAnswerTimeSeconds: 45, shuffleAnswers: true,
   });
 
   fail = true;

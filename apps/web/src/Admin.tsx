@@ -1,3 +1,5 @@
+import { ThemeSurface } from './themes/ThemeSurface';
+import { resolveTheme, themes } from './themes';
 import { MediaManager } from './Media';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -6,7 +8,7 @@ import { Rounds } from './Rounds';
 export type Quiz = {
   id: string;
   title: string;
-  themeId: 'default' | 'halloween';
+  themeId: string;
   defaultAnswerTimeSeconds: number;
   shuffleAnswers: boolean;
   createdAt: string;
@@ -90,7 +92,7 @@ export function QuizList() {
     {error && <p role="alert" className="error">{error}</p>}
     {loading ? <p>Loading quizzes...</p> : quizzes.length === 0 ? <p>No quizzes yet. Create one to get started.</p> :
       <ul className="quiz-list">{quizzes.map((quiz) => <li key={quiz.id}>
-        <div><Link to={`/admin/quizzes/${quiz.id}`}>{quiz.title}</Link><p>{quiz.themeId === 'default' ? 'Default' : 'Halloween'} · Modified {formatDate(quiz.updatedAt)}</p></div>
+        <div><Link to={`/admin/quizzes/${quiz.id}`}>{quiz.title}</Link><p>{resolveTheme(quiz.themeId).manifest.name} · Modified {formatDate(quiz.updatedAt)}</p></div>
         <div className="quiz-actions">
           <button className="subtle" onClick={() => void duplicate(quiz)} disabled={busy} aria-label={`Duplicate ${quiz.title}`}>Duplicate</button>
           <button className="subtle danger" onClick={() => void remove(quiz)} aria-label={`Delete ${quiz.title}`}>Delete</button>
@@ -210,7 +212,7 @@ export function QuizEditor() {
     shuffleAnswers: quiz.shuffleAnswers,
   };
 
-  return <main className="admin editor">
+  return <ThemeSurface themeId={quiz.themeId} className="admin editor">
     <Link to="/admin" onClick={flush}>← Quiz list</Link>
     <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status}</span></div>
     {error && <p role="alert" className="error">{error}</p>}
@@ -228,13 +230,15 @@ export function QuizEditor() {
     </section>
     <div className="fields">
       <label>Title<input value={quiz.title} maxLength={100} onChange={(event) => change({ ...settings, title: event.target.value })} /></label>
-      <label>Theme<select value={quiz.themeId} onChange={(event) => change({ ...settings, themeId: event.target.value as Quiz['themeId'] })}>
-        <option value="default">Default</option><option value="halloween">Halloween</option>
+      <label>Theme<select value={quiz.themeId} onChange={(event) => change({ ...settings, themeId: event.target.value })}>
+        {themes.map(theme => <option key={theme.manifest.id} value={theme.manifest.id}>{theme.manifest.name}</option>)}
+        {!themes.some(theme => theme.manifest.id === quiz.themeId) && <option value={quiz.themeId}>{quiz.themeId || 'Missing theme'} (unavailable)</option>}
       </select></label>
+      {!themes.some(theme => theme.manifest.id === quiz.themeId) && <p>Theme unavailable. Using Default. Select Default to replace this unavailable theme.</p>}
       <label>Default answer time (seconds)<input type="number" min="1" max="3600" step="1" value={quiz.defaultAnswerTimeSeconds} onChange={(event) => change({ ...settings, defaultAnswerTimeSeconds: Number(event.target.value) })} /></label>
       <label className="checkbox"><input type="checkbox" checked={quiz.shuffleAnswers} onChange={(event) => change({ ...settings, shuffleAnswers: event.target.checked })} /> Shuffle answers</label>
     </div>
     <MediaManager key={quiz.id} quizId={quiz.id} onPersistedChange={refreshValidation} />
     <Rounds quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
-  </main>;
+  </ThemeSurface>;
 }

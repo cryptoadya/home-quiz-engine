@@ -10,7 +10,7 @@ Logical pieces:
 
 - `apps/web` — React UI for Admin, Host, Screen, Player
 - `apps/server` — Express API + Socket.IO + SQLite access + local media serving
-- `themes` — theme manifests/assets/styles
+- `apps/web/src/themes` — bundled presentation manifests/configuration
 - `data/quizzes` — local per-quiz media/data area at runtime (gitignored)
 
 No microservices.
@@ -121,7 +121,33 @@ Each quiz owns its own copied media. No cross-quiz dedup/reference counting in V
 
 ## Themes
 
-Game components are shared. Theme configuration/assets modify presentation only. Missing theme parts fall back to Default.
+Phase 7A adds a small bundled manifest/config boundary in `apps/web/src/themes`.
+The manifest records id/name/version/author/resources/features; Default has no
+external resources or optional features and uses the existing system font, palette
+and layouts. Configuration supplies semantic CSS tokens, independently of game
+logic. `resolveTheme` selects an installed theme and fills missing/empty tokens from
+Default. Unknown, empty or missing IDs resolve to Default without changing the
+requested ID. Default is the only installed theme in 7A; Halloween is deferred to 7B.
+No uploads, theme builder, sound system or dynamic resource loader is introduced.
+
+`ThemeSurface` scopes configuration to the existing Admin quiz editor (including
+its question/Matching media previews), Host, Screen and Player roots. The existing
+Round/Question/Reveal/Leaderboard/Winner, media and answer components inherit the
+same tokens; there are no gameplay component forks. Admin's theme selector lists
+installed manifests. An unavailable saved ID remains visible with a Default
+fallback notice, survives unrelated edits, and can be replaced with Default.
+Quiz-list names also use the resolver. Dedicated Preview modes remain Phase 8.
+
+Quiz settings accept bounded nonempty string IDs independently of installed
+presentation code, so unavailable IDs remain editable and durable. Room metadata
+adds only `themeId`: Lobby reads the current editable quiz; every started state,
+HTTP reload, authenticated Player reconnect and realtime subscription reads the
+frozen snapshot ID, even after source edits/deletion or server restart. Start
+continues freezing the ID inside its existing transaction. Legacy version-1
+snapshots with missing/null theme IDs are interpreted as Default without rewriting
+durable JSON; unknown strings are retained. Theme fallback does not relax other
+snapshot validation or alter timers, membership, answers, scoring or information
+boundaries.
 
 ## Realtime Lobby (Phase 2C)
 

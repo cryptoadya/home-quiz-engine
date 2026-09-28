@@ -124,17 +124,18 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
       await state;
     }
 
-    db.prepare("UPDATE quizzes SET title = 'Final Lobby title' WHERE id = ?").run(quiz.id);
+    db.prepare("UPDATE quizzes SET title = 'Final Lobby title', theme_id = 'unavailable-party-theme' WHERE id = ?").run(quiz.id);
     const states = sockets.map(nextState);
     await api.post(`/api/rooms/${room.id}/start`).expect(200);
     for (const [i, payload] of (await Promise.all(states)).entries()) {
       assert.equal(payload.room.state, 'ROUND_INTRO');
       assert.equal(payload.room.quizTitle, 'Final Lobby title');
+      assert.equal(payload.room.themeId, 'unavailable-party-theme');
       assert.equal(payload.players?.length, i === 2 ? undefined : 2);
       assert.doesNotMatch(JSON.stringify(payload), /isCorrect|snapshot|questions|options|token/);
     }
     await api.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Charlie', language: 'en' }).expect(409);
-    db.prepare("UPDATE quizzes SET title = 'After start' WHERE id = ?").run(quiz.id);
+    db.prepare("UPDATE quizzes SET title = 'After start', theme_id = 'default' WHERE id = ?").run(quiz.id);
     await api.delete(`/api/quizzes/${quiz.id}`).expect(204);
     for (const [i, socket] of sockets.entries()) {
       socket.disconnect();
@@ -146,6 +147,7 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
       const refreshed = await state;
       assert.equal(refreshed.room.state, 'ROUND_INTRO');
       assert.equal(refreshed.room.quizTitle, 'Final Lobby title');
+      assert.equal(refreshed.room.themeId, 'unavailable-party-theme');
     }
     const questionStates = sockets.map(nextState);
     await api.post(`/api/rooms/${room.id}/start-round`).expect(200);

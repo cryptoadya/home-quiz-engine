@@ -1,3 +1,4 @@
+import { ThemeSurface } from './themes/ThemeSurface';
 import { PlayerRevealContent } from './PlayerReveal';
 import { PlayerAnswer } from './PlayerAnswer';
 import { useLobby, type Room, type PlayerQuestion, type PlayerReveal } from './lobby';
@@ -112,7 +113,7 @@ function PlayerRoom({ code }: { code: string }) {
   const ru = identity?.player.language === 'ru';
   const currentRoom = live?.room ?? identity?.room;
   const isActive = identity?.active && currentRoom?.closedAt === null;
-  return <main className="player">
+  return <ThemeSurface themeId={(currentRoom ?? room)?.themeId} className="player">
     <h1>Player</h1>
     {error && <p role="alert">{error}</p>}
     {subscriptionError && <p role="alert">{subscriptionError} {ru ? 'Обновите страницу для повторного подключения.' : 'Reload to reconnect.'}</p>}
@@ -158,5 +159,5 @@ function PlayerRoom({ code }: { code: string }) {
         </form>
       </>}
     </>}
-  </main>;
+  </ThemeSurface>;
 }

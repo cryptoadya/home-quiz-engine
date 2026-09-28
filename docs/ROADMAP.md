@@ -175,11 +175,27 @@ precedence. A local Chrome smoke exercised ordered MP3/MP4 completion into
 ANSWERING, pre-timer and ANSWERING Pause/Resume, media replay and Screen reload.
 An EOF seek issue found with the short MP3 fixture was fixed and rechecked.
 Autoplay was enabled for this smoke; physical phone/TV/Wi-Fi acceptance remains
-pending. Phase 7 is not started.
+pending. Phase 7A is described below.
 
 Acceptance: image, audio, video and multi-media questions work on the home LAN.
 
 ## Phase 7 — Theme system + Halloween
+
+Phase 7A implements the bundled manifest/config boundary, canonical Default theme
+and safe fallback for unavailable IDs and missing configuration tokens. Shared
+components consume scoped presentation tokens across the Admin quiz editor and
+existing media previews, Host, Screen and Player, including all game phases.
+Theme selection remains quiz-level; Start freezes the ID, room projections use
+that frozen value, and editor changes cannot affect started games. Unknown IDs
+remain durable/editable while rendering Default; the selector offers installed
+themes only. Legacy snapshots missing a theme ID remain playable as Default.
+Focused server/UI regressions cover selection, fallback, frozen projections,
+realtime reconnect, source deletion, restart and unchanged scoring. No theme
+builder, uploads, sounds or dedicated Preview modes are included.
+
+Phase 7B remains pending: implement Halloween through the same presentation
+boundary and verify Default/Halloween behavior parity. Halloween is not installed
+or implemented by 7A. Dedicated Preview modes remain Phase 8.
 
 Scope:
 - Default theme

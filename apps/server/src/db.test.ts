@@ -92,8 +92,8 @@ test('Phase 2D Lobby and started sessions migrate navigation without changing sn
         options: [{ id: 'a', textRu: 'Да', textEn: 'Yes', isCorrect: true, position: 0 }, { id: 'b', textRu: 'Нет', textEn: 'No', isCorrect: false, position: 1 }] }] }] });
   old.exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
     INSERT INTO schema_migrations VALUES (1), (2), (3), (4), (5), (6);
-    CREATE TABLE quizzes (id TEXT PRIMARY KEY, title TEXT);
-    INSERT INTO quizzes VALUES ('quiz', 'Editable');
+    CREATE TABLE quizzes (id TEXT PRIMARY KEY, title TEXT, theme_id TEXT NOT NULL);
+    INSERT INTO quizzes VALUES ('quiz', 'Editable', 'default');
     CREATE TABLE game_sessions (id TEXT PRIMARY KEY, code TEXT NOT NULL, quiz_id TEXT REFERENCES quizzes(id) ON DELETE SET NULL,
       state TEXT NOT NULL CHECK (state IN ('LOBBY', 'ROUND_INTRO')), created_at TEXT NOT NULL, closed_at TEXT,
       snapshot_json TEXT CHECK (snapshot_json IS NULL OR json_valid(snapshot_json)), roster_locked_at TEXT,

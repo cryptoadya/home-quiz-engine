@@ -9,6 +9,7 @@ export type Room = {
   code: string;
   quizId: string | null;
   quizTitle: string;
+  themeId: string;
   state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN' | 'PAUSED';
   createdAt: string;
   closedAt: string | null;
@@ -16,6 +17,7 @@ export type Room = {
 
 const roomQuery = `SELECT s.id, s.code, s.quiz_id AS quizId,
   CASE WHEN s.state = 'LOBBY' THEN q.title ELSE json_extract(s.snapshot_json, '$.title') END AS quizTitle,
+  COALESCE(CASE WHEN s.state = 'LOBBY' THEN q.theme_id ELSE json_extract(s.snapshot_json, '$.themeId') END, 'default') AS themeId,
   s.state, s.created_at AS createdAt, s.closed_at AS closedAt
   FROM game_sessions s LEFT JOIN quizzes q ON s.state = 'LOBBY' AND q.id = s.quiz_id`;
 

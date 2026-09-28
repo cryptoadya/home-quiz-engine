@@ -43,10 +43,11 @@ function validRound(value: unknown): boolean {
 
 export function parseGameSnapshot(json: string): GameSnapshot {
   const value: unknown = JSON.parse(json);
-  if (!record(value) || value.schemaVersion !== 1 || !strings(value, ['title', 'themeId'])
+  if (!record(value) || value.schemaVersion !== 1 || !strings(value, ['title'])
+    || (value.themeId != null && typeof value.themeId !== 'string')
     || !integer(value.defaultAnswerTimeSeconds, 1, 3600) || typeof value.shuffleAnswers !== 'boolean'
     || !ordered(value.rounds, validRound)) throw new Error('Invalid game snapshot.');
-  const snapshot = value as GameSnapshot;
+  const snapshot = { ...value, themeId: value.themeId ?? 'default' } as GameSnapshot;
   if (snapshot.media !== undefined && (!Array.isArray(snapshot.media) || snapshot.media.some(media => !validMediaMetadata(media))
     || new Set(snapshot.media.map(media => media.id)).size !== snapshot.media.length)) throw new Error('Invalid snapshot media.');
   for (const round of snapshot.rounds) for (const question of round.questions) {

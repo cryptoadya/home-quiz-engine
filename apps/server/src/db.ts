@@ -611,6 +611,7 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
     END;
     ALTER TABLE game_sessions ADD COLUMN pre_timer_media_id TEXT;
     ALTER TABLE media_playback ADD COLUMN resume_on_game_resume INTEGER NOT NULL DEFAULT 0 CHECK (resume_on_game_resume IN (0, 1));` },
+  { version: 24, sql: `ALTER TABLE game_sessions ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0 CHECK (is_test IN (0, 1));` },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

@@ -15,6 +15,7 @@ export function Screen() {
     {!state && !error && <p>Загрузка / Loading…</p>}
     {state && <>
       <h2>{state.room.quizTitle}</h2>
+      {state.room.isTest && <p><strong>Тестовая игра / Test Game</strong></p>}
       <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
       {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state !== 'LOBBY'
         ? <section className="game-content">{state.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} />}{state.game && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <BoundaryContent game={state.game as import('./lobby').GameBoundary} />}{state.game?.state === 'ROUND_INTRO' && <RoundIntroContent round={state.game} />}{(state.game?.state === 'QUESTION' || state.game?.state === 'ANSWERING' || state.game?.state === 'ANSWER_REVEAL') && <QuestionContent question={state.game} onMediaEnded={(id, revision, duration) => reportMediaEnded(state.game && 'questionId' in state.game ? state.game.questionId! : '', id, revision, duration)} />}{state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}</section> : <>

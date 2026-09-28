@@ -279,3 +279,33 @@ test('draft cannot launch and server launch rejection remains visible', async ()
   await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Quiz is not ready.')));
   assert.ok(view.getByRole('heading', { name: 'Edit quiz' }));
 });
+
+test('Admin starts a labeled Test Game lobby for the current quiz and shows launch errors', async () => {
+  let ready = false, fail = true;
+  const calls: string[] = [];
+  const room = { id: 'test-room', code: 'ABCDE', quizTitle: quiz.title, state: 'LOBBY', closedAt: null, isTest: true };
+  globalThis.fetch = async (input, init) => {
+    const path = String(input);
+    if (path.endsWith('/validation')) return Response.json({ ready, problems: [] });
+    if (path.endsWith('/rounds')) return Response.json([]);
+    if (path.endsWith('/test-games') && init?.method === 'POST') {
+      calls.push(path);
+      return fail ? Response.json({ error: 'Quiz is not ready.' }, { status: 409 }) : Response.json(room, { status: 201 });
+    }
+    if (path.endsWith('/game/host')) return Response.json({ room, players: [] });
+    return Response.json(quiz);
+  };
+  let view = show('/admin/quizzes/quiz-1');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Test Game' })));
+  assert.equal((view.getByRole('button', { name: 'Start Test Game' }) as HTMLButtonElement).disabled, true);
+  view.unmount(); ready = true;
+  view = show('/admin/quizzes/quiz-1');
+  await waitFor(() => assert.equal((view.getByRole('button', { name: 'Start Test Game' }) as HTMLButtonElement).disabled, false));
+  fireEvent.click(view.getByRole('button', { name: 'Start Test Game' }));
+  await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Quiz is not ready.')));
+  fail = false;
+  fireEvent.click(view.getByRole('button', { name: 'Start Test Game' }));
+  await waitFor(() => assert.ok(view.getByText('Тестовая игра / Test Game')));
+  assert.ok(view.getByText('ABCDE'));
+  assert.deepEqual(calls, ['/api/quizzes/quiz-1/test-games', '/api/quizzes/quiz-1/test-games']);
+});

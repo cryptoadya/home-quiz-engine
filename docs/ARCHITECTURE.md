@@ -809,4 +809,50 @@ Preview has no room/session hook, realtime subscription, authoritative timer,
 identity storage, session snapshot or gameplay mutation endpoint. Opening, changing
 mode/state, selecting answers, local Submit, playing media and closing cannot create
 rooms, players, submissions, scores or history. Existing editor autosave remains the
-only content mutation path. Test Game, import/export and history remain later slices.
+only content mutation path. Test Game is implemented in Phase 8B below; import/export
+and history UI remain later slices.
+
+
+## Real Test Game sessions (Phase 8B)
+
+Migration 24 adds `game_sessions.is_test INTEGER NOT NULL DEFAULT 0`, constrained
+to 0/1. Existing and normally created rooms remain real games. Public room
+projections expose a boolean `isTest`, including HTTP, code lookup, authenticated
+Player reconnect and realtime snapshots. It is session metadata, independent of
+editable quiz content and the frozen quiz snapshot, and has no update endpoint.
+
+Admin's **Start Test Game** calls `POST /api/quizzes/:quizId/test-games`, which
+creates an ordinary Lobby through `createRoom` with `isTest=true`. Readiness and
+saved-settings gating match Open lobby; the server independently validates the
+persisted quiz. Admin explains the phone/Host flow and history exclusion. Host
+and bilingual Screen label the Test Game throughout the session, including closure.
+Phones use the same room codes, QR links, join limits and reconnect tokens.
+
+Host Start requires players, revalidates readiness and freezes content, theme,
+roster and referenced session media through the existing transaction. Test Game
+has no alternate gameplay path or relaxed rules: timers, pre-timer media, answer
+privacy, submissions, disconnect Pause/Wait/Continue, scoring, navigation and
+restart recovery all use the real-game engine. Source edits/deletion after Start
+cannot change the running session or its independent media copies.
+
+There is no completed-game history query or UI yet. Phase 8D must filter normal
+completed-game history with `is_test = 0` by default, in addition to its completion
+criteria; closure alone is not proof of completion. Test sessions must never enter
+that default query. No history records or history UI are introduced here.
+
+Retention is deterministic: delete only `is_test = 1` sessions with non-null
+`closed_at` at least **seven days** before cleanup's UTC clock, inclusive at the
+cutoff. Age starts at closure, not creation; open sessions in any phase (including
+Lobby, Answering, Paused and Winner) and all real sessions are retained indefinitely
+by this cleanup. It runs opportunistically in `createQuizServer` at startup before
+presence/deadline recovery. No worker, background service or automatic closure is
+added. Recently closed tests remain available until a later eligible startup.
+
+`cleanupTestGames` selects eligible rows under `BEGIN IMMEDIATE`, removes only
+their frozen session media directories, then deletes session rows. Existing foreign
+keys cascade players, answers, scores, exclusions and playback. Source quiz media
+is untouched. Files are removed before rows so filesystem failures roll SQL back
+and leave closed rows eligible for retry on a later startup; startup logs a failure
+and continues serving. Filesystem and SQLite are not crash-atomic: interrupted
+cleanup can leave a closed test with partially removed media until retry. Cleanup
+never affects an open Test Game or a real game.

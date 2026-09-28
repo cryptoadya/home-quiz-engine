@@ -247,14 +247,14 @@ test('migration 13 preserves Phase 4A pauses and enforces reason invariants', as
     const players = db.prepare('SELECT * FROM session_players').all();
     const source = readFileSync(new URL('./db.ts', import.meta.url), 'utf8');
     const schema = source.split('version: 12,')[1].split('sql: `')[1].split('INSERT INTO game_sessions_new')[0].replace('CREATE TABLE game_sessions_new', 'CREATE TABLE old_sessions');
-    const columns = Object.keys(before).filter(key => !['pause_reason', 'paused_player_id', 'pre_timer_media_id'].includes(key)).join(', ');
+    const columns = Object.keys(before).filter(key => !['pause_reason', 'paused_player_id', 'pre_timer_media_id', 'is_test'].includes(key)).join(', ');
     db.exec('PRAGMA foreign_keys = OFF');
     db.exec(`${schema} INSERT INTO old_sessions SELECT ${columns} FROM game_sessions;
       DROP TRIGGER delete_quiz_lobbies; DROP TABLE game_sessions; ALTER TABLE old_sessions RENAME TO game_sessions;
       CREATE UNIQUE INDEX game_sessions_active_code ON game_sessions(code) WHERE closed_at IS NULL;
       CREATE TRIGGER delete_quiz_lobbies BEFORE DELETE ON quizzes BEGIN DELETE FROM game_sessions WHERE quiz_id = OLD.id AND state = 'LOBBY'; END;
       DROP TABLE question_exclusions; DELETE FROM schema_migrations WHERE version >= 13 AND version < 17`);
-    db.exec('ALTER TABLE media_playback DROP COLUMN resume_on_game_resume; DELETE FROM schema_migrations WHERE version = 23; ALTER TABLE questions DROP COLUMN media_json; DROP TABLE media; DELETE FROM schema_migrations WHERE version = 21; ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
+    db.exec('ALTER TABLE media_playback DROP COLUMN resume_on_game_resume; DELETE FROM schema_migrations WHERE version IN (23, 24); ALTER TABLE questions DROP COLUMN media_json; DROP TABLE media; DELETE FROM schema_migrations WHERE version = 21; ALTER TABLE questions DROP COLUMN show_correct_count; DELETE FROM schema_migrations WHERE version = 20');
     db.close(); db = initializeDatabase(path);
     assert.deepEqual(row(db, f.room.id), before); assert.equal(before.pause_reason, 'manual'); assert.equal(before.paused_player_id, null);
     assert.deepEqual(db.prepare('SELECT * FROM session_players').all(), players);

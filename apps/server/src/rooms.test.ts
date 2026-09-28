@@ -41,6 +41,7 @@ test('room API gates readiness and persists the Lobby lifecycle without freezing
     assert.equal(room.quizTitle, quiz.title);
     assert.equal(room.state, 'LOBBY');
     assert.equal(room.closedAt, null);
+    assert.equal(room.isTest, false);
     assert.ok(Number.isFinite(Date.parse(room.createdAt)));
     assert.match(room.code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/);
     const another = await app.post(`/api/quizzes/${quiz.id}/rooms`);
@@ -49,7 +50,7 @@ test('room API gates readiness and persists the Lobby lifecycle without freezing
     assert.equal((await app.get(`/api/rooms/code/${room.code.toLowerCase()}`)).body.id, room.id);
     assert.equal((await app.get('/api/rooms/code/ZZZZZ!')).status, 404);
     assert.equal((await app.get('/api/rooms/missing')).status, 404);
-    assert.deepEqual(Object.keys(room).sort(), ['id', 'code', 'quizId', 'quizTitle', 'themeId', 'state', 'createdAt', 'closedAt'].sort());
+    assert.deepEqual(Object.keys(room).sort(), ['id', 'code', 'quizId', 'quizTitle', 'themeId', 'isTest', 'state', 'createdAt', 'closedAt'].sort());
     db.prepare('UPDATE quizzes SET title = ? WHERE id = ?').run('Edited in Lobby', quiz.id);
     db.prepare('UPDATE questions SET text_en = ?').run('Edited question');
     assert.equal(db.prepare('SELECT count(*) AS n FROM questions').get()?.n, 1);

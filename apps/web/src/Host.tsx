@@ -64,6 +64,7 @@ export function Host() {
     {!room && !error && !loadError && <p>Loading room...</p>}
     {room && <>
       <h2>{room.quizTitle}</h2>
+      {room.isTest && <p><strong>Тестовая игра / Test Game</strong></p>}
       <Link to={`/screen/${room.id}`}>Open Screen</Link>
       <p>{connected ? 'Connected' : 'Reconnecting…'}</p>
       <p>Players: {state?.players?.length ?? 0} / 30</p>

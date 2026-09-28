@@ -611,3 +611,15 @@ for (const language of ['ru', 'en']) test(`Player ${language} new boundaries sta
   assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
   assert.equal(view.queryByText(labels[3]), null);
 });
+
+for (const surface of ['host', 'screen']) test(`${surface} labels test sessions throughout gameplay and after closure`, async () => {
+  socket();
+  const testRoom = { ...room, isTest: true, state: 'ROUND_INTRO' };
+  globalThis.fetch = async () => Response.json({ room: testRoom, players: [] });
+  const view = show(`/${surface}/room`);
+  await waitFor(() => assert.ok(view.getByText('Тестовая игра / Test Game')));
+  view.unmount();
+  globalThis.fetch = async () => Response.json({ room: { ...testRoom, closedAt: 'now' }, players: [] });
+  const closed = show(`/${surface}/room`);
+  await waitFor(() => assert.ok(closed.getByText('Тестовая игра / Test Game')));
+});

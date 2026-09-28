@@ -190,11 +190,11 @@ export function QuizEditor() {
     timer.current = setTimeout(flush, 400);
   }
 
-  async function openLobby() {
+  async function openLobby(isTest = false) {
     setOpening(true);
     setLaunchError('');
     try {
-      const room = await api<{ id: string }>(`/api/quizzes/${quizId}/rooms`, { method: 'POST' });
+      const room = await api<{ id: string }>(`/api/quizzes/${quizId}/${isTest ? 'test-games' : 'rooms'}`, { method: 'POST' });
       navigate(`/host/${room.id}`);
     } catch (cause) {
       setLaunchError((cause as Error).message);
@@ -218,6 +218,8 @@ export function QuizEditor() {
     {error && <p role="alert" className="error">{error}</p>}
     {launchError && <p role="alert" className="error">{launchError}</p>}
     <button onClick={() => void openLobby()} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Open lobby</button>
+    <button onClick={() => void openLobby(true)} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Start Test Game</button>
+    <p>Test Game opens a real lobby for phones. Host starts the game after players join. Test sessions are excluded from normal history.</p>
     <section className="readiness" aria-label="Quiz readiness">
       <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Draft · ${validation.problems.length} ${validation.problems.length === 1 ? 'problem' : 'problems'}` : 'Checking readiness...'}</strong>
       {validationError && <p role="alert" className="error">Could not refresh readiness: {validationError}</p>}

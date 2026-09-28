@@ -10,6 +10,7 @@ export type Room = {
   quizId: string | null;
   quizTitle: string;
   themeId: string;
+  isTest: boolean;
   state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN' | 'PAUSED';
   createdAt: string;
   closedAt: string | null;
@@ -18,15 +19,19 @@ export type Room = {
 const roomQuery = `SELECT s.id, s.code, s.quiz_id AS quizId,
   CASE WHEN s.state = 'LOBBY' THEN q.title ELSE json_extract(s.snapshot_json, '$.title') END AS quizTitle,
   COALESCE(CASE WHEN s.state = 'LOBBY' THEN q.theme_id ELSE json_extract(s.snapshot_json, '$.themeId') END, 'default') AS themeId,
-  s.state, s.created_at AS createdAt, s.closed_at AS closedAt
+  s.is_test AS isTest, s.state, s.created_at AS createdAt, s.closed_at AS closedAt
   FROM game_sessions s LEFT JOIN quizzes q ON s.state = 'LOBBY' AND q.id = s.quiz_id`;
 
+function publicRoom(row: Record<string, unknown> | undefined): Room | null {
+  return row ? { ...row, isTest: row.isTest === 1 } as Room : null;
+}
+
 export function getRoom(db: DatabaseSync, id: string): Room | null {
-  return db.prepare(`${roomQuery} WHERE s.id = ?`).get(id) as Room | undefined ?? null;
+  return publicRoom(db.prepare(`${roomQuery} WHERE s.id = ?`).get(id));
 }
 
 export function getRoomByCode(db: DatabaseSync, code: string): Room | null {
-  return db.prepare(`${roomQuery} WHERE s.code = ? AND s.closed_at IS NULL`).get(code.trim().toUpperCase()) as Room | undefined ?? null;
+  return publicRoom(db.prepare(`${roomQuery} WHERE s.code = ? AND s.closed_at IS NULL`).get(code.trim().toUpperCase()));
 }
 
 function generateRoomCode(): string {
@@ -36,7 +41,7 @@ function generateRoomCode(): string {
 
 type CreateResult = { room: Room } | { status: 404 | 409 | 503; error: string; validation?: QuizValidation };
 
-export function createRoom(db: DatabaseSync, quizId: string, nextCode = generateRoomCode): CreateResult {
+export function createRoom(db: DatabaseSync, quizId: string, nextCode = generateRoomCode, isTest = false): CreateResult {
   // One local synchronous transaction keeps validation and allocation together.
   db.exec('BEGIN IMMEDIATE');
   let committed = false;
@@ -44,11 +49,11 @@ export function createRoom(db: DatabaseSync, quizId: string, nextCode = generate
     const validation = validateQuizReadiness(db, quizId);
     if (!validation) return { status: 404, error: 'Quiz not found.' };
     if (!validation.ready) return { status: 409, error: 'Quiz is not ready. Review the validation problems.', validation };
-    const insert = db.prepare(`INSERT INTO game_sessions (id, code, quiz_id, state, created_at)
-      VALUES (?, ?, ?, 'LOBBY', ?) ON CONFLICT(code) WHERE closed_at IS NULL DO NOTHING`);
+    const insert = db.prepare(`INSERT INTO game_sessions (id, code, quiz_id, state, created_at, is_test)
+      VALUES (?, ?, ?, 'LOBBY', ?, ?) ON CONFLICT(code) WHERE closed_at IS NULL DO NOTHING`);
     for (let attempt = 0; attempt < 100; attempt++) {
       const id = randomUUID();
-      if (!insert.run(id, nextCode(), quizId, new Date().toISOString()).changes) continue;
+      if (!insert.run(id, nextCode(), quizId, new Date().toISOString(), Number(isTest)).changes) continue;
       const room = getRoom(db, id)!;
       db.exec('COMMIT');
       committed = true;

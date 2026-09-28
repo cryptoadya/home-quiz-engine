@@ -240,7 +240,27 @@ A local Chrome smoke exercised RU/EN answering, local Submit, Screen/Host correc
 Matching text/image content, bilingual Reveal, Default/Halloween switching and live
 source edits. PNG, MP4 and MP3 decoded through editable-media URLs. The isolated
 smoke database retained zero gameplay records. Physical phone/TV/Wi-Fi acceptance
-remains pending. Phase 8B, Test Game, import/export and history are not implemented.
+remains pending.
+
+Phase 8B implements Admin Start Test Game using the ordinary real Lobby/Host/
+Screen/Player flow. Migration 24 persists a boolean session marker (`is_test`,
+projected as `isTest`); existing and normal rooms default to false. Host and Screen
+clearly label tests. Readiness, Start-time frozen content/media/roster, phones,
+timers, media, reconnect, disconnect handling and scoring reuse the real engine.
+Phase 8D's default completed-game history query must require `is_test = 0`; no
+history UI/query or import/export is implemented here. Startup opportunistically
+cleans only tests closed for at least seven days (inclusive, measured from UTC
+closure), including frozen media and dependent gameplay rows. Open tests and all
+real sessions are retained. Focused regressions cover creation/readiness, durable
+marker, real/test parity, source deletion, frozen media, reconnect/restart/scoring,
+retention cutoff, open games and source/real-session isolation. All 361 automated
+tests, typecheck, build and diff checks passed. A local Chrome smoke used a
+390×844 Player with Host and Screen: Admin launch, normal join, timer, refresh
+and disconnect Pause/Wait, accepted Submit (+3), Reveal/reload, final results,
+Winner and confirmed closure. Frozen JPG decoded after source quiz deletion;
+Host/Screen retained the Test Game label. No Player horizontal overflow was found.
+The existing missing favicon produced a 404. Physical phone/TV/Wi-Fi acceptance
+remains pending.
 
 Scope:
 - Preview modes

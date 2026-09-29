@@ -89,3 +89,31 @@ test('temporary reconnect failure retains token and blocks a second join until r
   fireEvent.click(view.getByRole('button', { name: 'Retry' }));
   await waitFor(() => assert.match(view.getByRole('status').textContent!, /Waiting for the host/));
 });
+
+for (const themeId of ['default', 'halloween']) test(`gameplay header keeps identity and live language switching together (${themeId})`, async () => {
+  dom.window.localStorage.setItem(key, saved);
+  const gameRoom = { ...room, themeId, state: 'QUESTION' };
+  let language = 'en';
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === 'PATCH') {
+      assert.equal(String(url), '/api/rooms/room/player');
+      assert.deepEqual(JSON.parse(String(init.body)), { token: 'secret', language: 'ru' });
+      language = 'ru';
+    }
+    return Response.json({ room: gameRoom, player: { ...player, language }, active: true });
+  };
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Get ready for the question')));
+  const header = view.container.querySelector('header')!;
+  assert.equal(header.querySelector('h2')?.textContent, 'Party');
+  assert.match(header.textContent!, /ABCDE/);
+  assert.match(header.textContent!, /Alex/);
+  assert.ok(header.contains(view.getByLabelText('Player language')));
+  assert.equal(view.queryByLabelText('New player name'), null);
+  fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'ru' } });
+  await waitFor(() => assert.ok(view.getByText('Приготовьтесь к вопросу')));
+  assert.equal((view.getByLabelText('Player language') as HTMLSelectElement).value, 'ru');
+  assert.equal(dom.window.localStorage.getItem(key), saved);
+  assert.match(header.textContent!, /ABCDE/);
+  assert.match(header.textContent!, /Alex/);
+});

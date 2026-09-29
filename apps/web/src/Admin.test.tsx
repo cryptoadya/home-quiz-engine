@@ -18,6 +18,27 @@ function show(path: string) {
 
 afterEach(() => { cleanup(); });
 
+for (const themeId of ['default', 'halloween']) test(`editor renders one header/settings block with long question content (${themeId})`, async () => {
+  const round = { id: 'round', quizId: quiz.id, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '', showLeaderboardAfter: false, position: 0 };
+  const question = { id: 'question', roundId: round.id, type: 'single_choice', textRu: 'Длинный вопрос '.repeat(50), textEn: 'Long question '.repeat(50), points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, position: 0 };
+  globalThis.fetch = async input => {
+    const path = String(input);
+    if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [] });
+    if (path.endsWith('/rounds')) return Response.json([round]);
+    if (path.endsWith('/questions')) return Response.json([question]);
+    if (path.endsWith('/options') || path.endsWith('/media')) return Response.json([]);
+    return Response.json({ ...quiz, themeId });
+  };
+  const view = show('/admin/quizzes/quiz-1');
+  await waitFor(() => assert.ok(view.getByLabelText('Question text EN')));
+  // DOM cardinality is independent of viewport size and full-page capture stitching.
+  assert.equal(view.getAllByRole('heading', { name: 'Edit quiz' }).length, 1);
+  for (const label of ['Title', 'Theme', 'Default answer time (seconds)', 'Shuffle answers']) {
+    assert.equal(view.getAllByLabelText(label, { exact: true }).length, 1);
+  }
+  assert.equal(view.container.querySelectorAll('main.editor').length, 1);
+});
+
 test('Admin lists drafts, creates one, and confirms deletion', async () => {
   let confirmed = false;
   const calls: string[] = [];

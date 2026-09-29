@@ -50,6 +50,7 @@ test('Screen renders count, same-room bilingual QR links, LAN origin and live cl
     const view = show('/screen/room');
     await waitFor(() => assert.ok(view.getByText('ABCDE')));
     assert.ok(view.getByText(/Players: 1/));
+    assert.equal(view.queryByRole('alert'), null);
     for (const lang of ['ru', 'en']) {
       const link = view.getByRole('link', { name: lang.toUpperCase() }) as HTMLAnchorElement;
       assert.equal(link.href, `http://192.168.1.50:5173/play/ABCDE?lang=${lang}`);
@@ -94,6 +95,32 @@ test('localhost Screen warns about phone reachability', async () => {
   globalThis.fetch = async () => Response.json({ room, players: [] });
   const view = show('/screen/room');
   await waitFor(() => assert.match(view.getByRole('alert').textContent!, /LAN address/));
+});
+
+for (const hostname of ['party.localhost', 'localhost.', '127.0.0.2', '0.0.0.0', '[::1]', '[::]', '[::ffff:127.0.0.1]']) {
+  test(`Screen keeps QR links but warns for guest-unreachable origin ${hostname}`, async () => {
+    dom.reconfigure({ url: `http://${hostname}:5173/screen/room` });
+    try {
+      socket();
+      globalThis.fetch = async () => Response.json({ room, players: [] });
+      const view = show('/screen/room');
+      await waitFor(() => assert.ok(view.getByText('ABCDE')));
+      assert.match(view.getByRole('alert').textContent!, /LAN address/);
+      assert.ok(view.getByRole('alert').classList.contains('screen-join-warning'));
+      for (const language of ['RU', 'EN']) assert.ok(view.getByRole('link', { name: language }).querySelector('svg'));
+    } finally { dom.reconfigure({ url: 'http://localhost' }); }
+  });
+}
+
+test('Host keeps detailed phone joining guidance in a collapsed Lobby disclosure', async () => {
+  socket();
+  globalThis.fetch = async () => Response.json({ room, players: [] });
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByText('ABCDE')));
+  const help = view.getByText('Joining from phones').closest('details');
+  assert.ok(help);
+  assert.equal(help.open, false);
+  assert.match(help.textContent!, /LAN address.*localhost/);
 });
 
 

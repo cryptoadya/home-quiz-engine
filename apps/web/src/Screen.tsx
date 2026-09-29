@@ -4,11 +4,12 @@ import { useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useLobby } from './lobby';
 import { RoundIntroContent, QuestionContent, BoundaryContent } from './GameContent';
+import { needsLanAddress } from './join-origin';
 
 export function Screen() {
   const { roomId } = useParams();
   const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
-  const local = /^(localhost|127(?:\.\d+){3}|\[::1\]|0\.0\.0\.0)$/.test(window.location.hostname);
+  const local = needsLanAddress(window.location.origin);
   return <ThemeSurface themeId={state?.room.themeId} className="screen-lobby" data-phase={state?.room.closedAt ? 'CLOSED' : state?.room.state}>
     <header className="screen-header">
     <h1>{state?.room.closedAt ? 'Викторина / Quiz' : state?.room.state === 'PAUSED' ? 'Пауза / Paused' : state?.room.state && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.room.state) ? 'Игра / Game' : state?.room.state === 'ANSWER_REVEAL' ? 'Ответ / Answer Reveal' : state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : (state?.room.state === 'QUESTION' || state?.room.state === 'ANSWERING') ? 'Вопрос / Question' : 'Лобби / Lobby'}</h1>
@@ -26,7 +27,7 @@ export function Screen() {
         <p className="eyebrow">Код комнаты / Room code</p>
         <strong className="room-code">{state.room.code}</strong>
         <p>Подключитесь к Wi-Fi и сканируйте QR / Join the Wi-Fi and scan a QR code</p>
-        {local && <p role="alert">Откройте экран по LAN-адресу / Open Screen using this computer’s LAN address; localhost QR links will not work on phones.</p>}
+        {local && <p className="screen-join-warning" role="alert">QR недоступен для телефонов — нужен LAN-адрес. / Phone QR links need a LAN address.</p>}
         <div className="join-codes">{(['ru', 'en'] as const).map(language => {
           const url = new URL(`/play/${encodeURIComponent(state.room.code)}`, window.location.origin);
           url.searchParams.set('lang', language);

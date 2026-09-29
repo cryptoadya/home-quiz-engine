@@ -80,6 +80,10 @@ export function Host() {
       <section className="host-overview"><h2>{room.quizTitle}</h2>
       {room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
       <Link to={`/screen/${room.id}`}>Open Screen</Link>
+      {!room.closedAt && room.state === 'LOBBY' && <details className="host-join-help">
+        <summary>Joining from phones</summary>
+        <p>Open Screen using this computer’s LAN address on the party Wi-Fi (for example, http://192.168.1.50:5173). QR links use the Screen address; localhost and loopback links will not work on guests’ phones.</p>
+      </details>}
       <p className="connection-chip" data-connected={connected}>{connected ? 'Connected' : 'Reconnecting…'}</p>
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       {!state?.players?.length && <p role="status">No players. Ask guests to scan the Screen QR code or enter the room code.</p>}

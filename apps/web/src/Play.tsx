@@ -138,10 +138,9 @@ function PlayerRoom({ code }: { code: string }) {
     {error && <p role="alert">{error}</p>}
     {subscriptionError && <p role="alert">{subscriptionError} {ru ? 'Обновите страницу для повторного подключения.' : 'Reload to reconnect.'}</p>}
     {identity ? <>
-      <header className="player-header"><h2>{currentRoom?.quizTitle}</h2>
+      <header className="player-header" data-compact={isActive && currentRoom?.state !== 'LOBBY' || undefined}><h2>{currentRoom?.quizTitle}</h2>
       <div className="player-meta"><p className="phase-chip">{currentRoom?.code}</p>
-      <p>{identity.player.name}</p></div></header>
-      {removed && <p className="state-notice excluded" role="status">{ru ? 'Ведущий удалил вас из игры.' : 'The host removed you from the game.'}</p>}
+      <p>{identity.player.name}</p></div>
       {isActive && <div className="fields player-settings">
         <label>{ru ? 'Язык' : 'Language'}<select aria-label="Player language" value={identity.player.language} disabled={busy} onChange={event => void updateIdentity({ language: event.target.value as 'ru' | 'en' })}>
           <option value="ru">RU</option><option value="en">EN</option>
@@ -151,6 +150,8 @@ function PlayerRoom({ code }: { code: string }) {
           <button disabled={busy} type="submit">{ru ? 'Изменить имя' : 'Rename'}</button>
         </form>}
       </div>}
+      </header>
+      {removed && <p className="state-notice excluded" role="status">{ru ? 'Ведущий удалил вас из игры.' : 'The host removed you from the game.'}</p>}
       {!removed && (isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
         {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game?.excluded && currentRoom?.state === 'ANSWERING' ? <p className="state-notice excluded" role="status">{ru ? 'Этот вопрос продолжен без вас' : 'This question continued without you'}</p> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
           token={token} roomId={identity.room.id} language={identity.player.language} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}

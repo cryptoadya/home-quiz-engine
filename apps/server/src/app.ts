@@ -169,7 +169,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
       return response.status(result.status).json({ error: result.error });
     });
   }
-  for (const [action, command] of [['pause', pauseGame], ['resume', resumeGame], ['wait-for-player', (db: DatabaseSync, roomId: string) => waitForPlayer(db, roomId, presence)], ['continue-without-player', continueWithoutPlayer]] as const) {
+  for (const [action, command] of [['pause', pauseGame], ['resume', resumeGame], ['wait-for-player', (db: DatabaseSync, roomId: string) => waitForPlayer(db, roomId, presence)], ['continue-without-player', (db: DatabaseSync, roomId: string) => continueWithoutPlayer(db, roomId, Date.now, presence)]] as const) {
     app.post(`/api/rooms/:roomId/${action}`, (request, response) => {
       const result = command(db, request.params.roomId);
       if ('room' in result) {
@@ -220,7 +220,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
     return response.status(201).json(result);
   });
   app.post('/api/rooms/:roomId/players/:playerId/kick', (request, response) => {
-    const result = kickPlayer(db, request.params.roomId, request.params.playerId, request.body?.confirmed);
+    const result = kickPlayer(db, request.params.roomId, request.params.playerId, request.body?.confirmed, Date.now, presence);
     if ('status' in result) return response.status(result.status).json({ error: result.error });
     lobbyChanged(result.room.id);
     return response.json(result.room);

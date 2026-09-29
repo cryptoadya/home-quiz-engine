@@ -1,9 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { getRoom, type Room } from './rooms.js';
 import { completeQuestionInTransaction } from './reveal.js';
-import { absentPlayerPresence, resolveDisconnectPauseInTransaction } from './pause.js';
+import { absentPlayerPresence, resolveDisconnectPauseInTransaction, type PlayerPresenceChecker } from './pause.js';
 
-export function kickPlayer(db: DatabaseSync, roomId: string, playerId: string, confirmed: unknown, clock: () => number = Date.now): { room: Room } | { status: number; error: string } {
+export function kickPlayer(db: DatabaseSync, roomId: string, playerId: string, confirmed: unknown, clock: () => number = Date.now, presence: PlayerPresenceChecker = absentPlayerPresence): { room: Room } | { status: number; error: string } {
   if (confirmed !== true) return { status: 400, error: 'Confirm permanent player removal.' };
   db.exec('BEGIN IMMEDIATE');
   let committed = false;
@@ -21,7 +21,7 @@ export function kickPlayer(db: DatabaseSync, roomId: string, playerId: string, c
     // Keep frozen membership and accepted answer records; removed_at is the single
     // permanent removal boundary, distinct from temporary question exclusions.
     if (room.state === 'PAUSED' && session.paused_player_id === playerId) {
-      const result = resolveDisconnectPauseInTransaction(db, roomId, true, absentPlayerPresence, clock, true);
+      const result = resolveDisconnectPauseInTransaction(db, roomId, true, presence, clock, true);
       if ('status' in result) return result;
     } else completeQuestionInTransaction(db, roomId, clock());
     db.exec('COMMIT'); committed = true;

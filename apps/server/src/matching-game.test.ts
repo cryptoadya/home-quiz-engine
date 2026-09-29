@@ -120,7 +120,7 @@ test('Matching reconnect/restart, disconnect Pause + Wait/Continue, exclusion an
       await request(createApp(db)).post(`${f.root}/next`).expect(200); assert.ok('room' in startQuestion(db, f.room.id, 10000));
       if (q.type === 'matching') {
         assert.equal(autoPauseForDisconnectedPlayer(db, f.room.id, f.players[1].player.id, () => 11000), true);
-        assert.ok('room' in continueWithoutPlayer(db, f.room.id, () => 12000));
+        assert.ok('room' in continueWithoutPlayer(db, f.room.id, () => 12000, () => true));
         const excluded = getPlayerGame(db, f.room.id, 'en', f.players[1].player.id) as any;
         assert.equal(excluded.excluded, true); assert.deepEqual(excluded.leftItems, []);
         const answer = { token: f.players[1].token, questionId: q.id, mapping: matchingContent(f.room.id, q).correctMapping };

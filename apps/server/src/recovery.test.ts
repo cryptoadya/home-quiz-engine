@@ -121,6 +121,7 @@ test('fresh Host/Screen subscriptions and Player identity restore every major ga
     await api.post(`${f.root}/next`).expect(200); await api.post(`${f.root}/start-question`).expect(200);
     const next = (await api.post(`${f.root}/reconnect`).send({ token: f.identities[1].token })).body.game;
     assert.equal(next.excluded, false); assert.equal(next.options.length, 2);
+    await open('player', f.identities[1].token);
     const alice = (await open('player', f.identities[0].token)).socket;
     await disconnect(alice); await api.post(`${f.root}/continue-without-player`).expect(200);
     await restore('ANSWERING');

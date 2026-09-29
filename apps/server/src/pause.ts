@@ -2,6 +2,7 @@ import { preTimerMediaId, freezeMediaPlayback, resumeMediaPlayback } from './med
 import type { DatabaseSync } from 'node:sqlite';
 import { getRoom, type Room } from './rooms.js';
 import { currentContent } from './snapshot.js';
+import { listPlayers } from './players.js';
 import { getSubmission, isQuestionExcluded } from './answers.js';
 import { completeQuestionInTransaction } from './reveal.js';
 
@@ -100,8 +101,8 @@ export function waitForPlayer(db: DatabaseSync, roomId: string, presence: Player
   return resolveDisconnectPause(db, roomId, false, presence, clock);
 }
 
-export function continueWithoutPlayer(db: DatabaseSync, roomId: string, clock: () => number = Date.now): Result {
-  return resolveDisconnectPause(db, roomId, true, absentPlayerPresence, clock);
+export function continueWithoutPlayer(db: DatabaseSync, roomId: string, clock: () => number = Date.now, presence: PlayerPresenceChecker = absentPlayerPresence): Result {
+  return resolveDisconnectPause(db, roomId, true, presence, clock);
 }
 
 function resolveDisconnectPause(db: DatabaseSync, roomId: string, exclude: boolean, presence: PlayerPresenceChecker, clock: () => number): Result {
@@ -142,11 +143,24 @@ export function resolveDisconnectPauseInTransaction(db: DatabaseSync, roomId: st
   if (!exclude && !presence(roomId, playerId)) return { status: 409, error: 'Player has not reconnected yet.' };
   if (exclude && !removed) db.prepare('INSERT INTO question_exclusions (session_id, question_id, player_id) VALUES (?, ?, ?)').run(roomId, questionId, playerId);
   const now = clock();
-  // Score directly from PAUSED when exclusion completes the question. No timer
-  // is created and no intermediate state can escape this transaction.
+  // Complete directly from PAUSED before considering another target or timer.
+  if (exclude && completeQuestionInTransaction(db, roomId, now, questionId, true)) {
+    resumeMediaPlayback(db, roomId, now);
+    return { room: getRoom(db, roomId)! };
+  }
+  // Presence already records losses while paused. Derive unresolved players from
+  // the fixed roster, in its stable joined_at / id order, rather than socket order.
+  const next = listPlayers(db, roomId).find(player =>
+    !isQuestionExcluded(db, roomId, questionId, player.id)
+    && !getSubmission(db, roomId, questionId, player.id).submitted
+    && !presence(roomId, player.id));
+  if (next) {
+    db.prepare('UPDATE game_sessions SET paused_player_id = ? WHERE id = ?').run(next.id, roomId);
+    return { room: getRoom(db, roomId)! };
+  }
   if (row.paused_from_state === 'QUESTION') {
     db.prepare(`UPDATE game_sessions SET state = 'QUESTION', paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`).run(roomId);
-  } else if (!exclude || !completeQuestionInTransaction(db, roomId, now, questionId, true)) {
+  } else {
     db.prepare(`UPDATE game_sessions SET state = 'ANSWERING', answer_started_at = ?, answer_deadline_at = ?,
       paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`)
       .run(new Date(now).toISOString(), new Date(now + remaining).toISOString(), roomId);

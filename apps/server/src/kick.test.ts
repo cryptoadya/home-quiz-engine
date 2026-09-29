@@ -150,7 +150,7 @@ test('Kick during pre-timer disconnect Pause restores the same media cursor and 
     await s.start();
     assert.equal((await s.api.get(s.root)).body.state, 'QUESTION');
     assert.equal(autoPauseForDisconnectedPlayer(s.db, s.room.id, s.players[0].player.id), true);
-    assert.ok('room' in kickPlayer(s.db, s.room.id, s.players[0].player.id, true));
+    assert.ok('room' in kickPlayer(s.db, s.room.id, s.players[0].player.id, true, Date.now, () => true));
     const cursor = s.db.prepare('SELECT pre_timer_media_id FROM game_sessions').get()!.pre_timer_media_id;
     assert.equal(cursor, video.id);
     assert.equal((await s.api.get(s.root)).body.state, 'QUESTION');

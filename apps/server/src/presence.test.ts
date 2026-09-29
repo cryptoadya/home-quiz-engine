@@ -17,7 +17,7 @@ import * as pause from './pause.js';
 import { submitAnswer } from './answers.js';
 import { createDeadlineManager } from './deadlines.js';
 
-async function fixture(db: ReturnType<typeof initializeDatabase>) {
+async function fixture(db: ReturnType<typeof initializeDatabase>, preTimer = false) {
   const quiz = createQuiz(db);
   const round = createRound(db, quiz.id);
   const question = createQuestion(db, round.id);
@@ -28,6 +28,10 @@ async function fixture(db: ReturnType<typeof initializeDatabase>) {
     return option;
   });
   const api = request(createApp(db));
+  if (preTimer) {
+    const media = (await api.post(`/api/quizzes/${quiz.id}/media`).attach('file', readFileSync(new URL('./fixtures/media/sample.mp3', import.meta.url)), { filename: 'sample.mp3', contentType: 'audio/mpeg' }).expect(201)).body;
+    db.prepare('UPDATE questions SET media_json = ? WHERE id = ?').run(JSON.stringify([{ mediaId: media.id, playBeforeTimer: true }]), question.id);
+  }
   const room = (await api.post(`/api/quizzes/${quiz.id}/rooms`).expect(201)).body;
   const identities = [];
   for (const name of ['Alice', 'Bob', 'Carol']) identities.push((await api.post(`/api/rooms/code/${room.code}/players`).send({ name, language: 'en' }).expect(201)).body);
@@ -195,6 +199,7 @@ for (const replacement of ['disconnect', 'audience', 'room', 'identity', 'invali
     assert.equal((await api.post(`${f.root}/reconnect`).send({ token: f.identities[0].token })).body.room.state, 'PAUSED');
     // Clear any replacement membership while paused; it must not overwrite Alice.
     if (a.connected) await disconnect(a);
+    await open('player', f.identities[2].token);
     assert.deepEqual(row(db, f.room.id), frozen);
     await api.post(`${f.root}/wait-for-player`).expect(200);
     await api.post(`${f.root}/answers`).send({ token: f.identities[0].token, questionId: f.question.id, optionId: f.options[0].id }).expect(200);
@@ -233,6 +238,8 @@ test('restart preserves auto-pause metadata; empty runtime presence never pauses
     assert.equal((getSurfaceState(db, f.room.id, 'host')!.game as { disconnectedPlayer: { name: string } }).disconnectedPlayer.name, 'Alice');
     runtime.deadlines.stop(); await new Promise<void>(resolve => runtime.io.close(() => resolve()));
     await request(createApp(db)).post(`${f.root}/continue-without-player`).expect(200);
+    assert.equal(row(db, f.room.id).state, 'PAUSED');
+    await request(createApp(db, () => {}, () => true)).post(`${f.root}/wait-for-player`).expect(200);
     assert.equal(row(db, f.room.id).pause_reason, null); assert.equal(row(db, f.room.id).paused_player_id, null);
     db.close(); db = initializeDatabase(path);
     runtime = createQuizServer(db);
@@ -283,7 +290,7 @@ test('Wait requires live presence and preserves frozen time and expected respond
     await f.api.post(`${f.root}/wait-for-player`).expect(409).expect(({ body }) => assert.equal(body.error, 'Player has not reconnected yet.'));
     assert.deepEqual(row(db, f.room.id), frozen);
     let present = false;
-    const api = request(createApp(db, () => {}, (roomId, playerId) => present && roomId === f.room.id && playerId === f.identities[0].player.id));
+    const api = request(createApp(db, () => {}, (roomId, playerId) => roomId === f.room.id && (playerId !== f.identities[0].player.id || present)));
     assert.equal((await api.get(`${f.root}/game/host`)).body.game.disconnectedPlayer.present, false);
     present = true;
     assert.equal((await api.get(`${f.root}/game/host`)).body.game.disconnectedPlayer.present, true);
@@ -317,14 +324,14 @@ for (const immediate of [false, true]) test(`Continue excludes only current ques
     if (immediate) for (const identity of f.identities.slice(1)) await f.api.post(`${f.root}/answers`).send({ token: identity.token, questionId: f.question.id, optionId: f.options[0].id }).expect(200);
     pause.autoPauseForDisconnectedPlayer(db, f.room.id, f.identities[0].player.id);
     const remaining = row(db, f.room.id).paused_remaining_ms;
-    await f.api.post(`${f.root}/continue-without-player`).expect(200);
+    await request(createApp(db, () => {}, () => true)).post(`${f.root}/continue-without-player`).expect(200);
     assert.equal(row(db, f.room.id).state, immediate ? 'ANSWER_REVEAL' : 'ANSWERING');
     if (immediate) { assert.equal(row(db, f.room.id).answer_deadline_at, null); assert.equal(row(db, f.room.id).answer_started_at, null); }
     assert.equal(row(db, f.room.id).pause_reason, null);
     assert.equal(db.prepare('SELECT in_roster FROM session_players WHERE id = ?').get(f.identities[0].player.id)!.in_roster, 1);
     assert.equal(db.prepare('SELECT count(*) n FROM question_exclusions').get()!.n, 1);
     assert.equal(db.prepare('SELECT count(*) n FROM player_answers WHERE player_id = ?').get(f.identities[0].player.id)!.n, 0);
-    await f.api.post(`${f.root}/continue-without-player`).expect(409);
+    await request(createApp(db, () => {}, () => true)).post(`${f.root}/continue-without-player`).expect(409);
     if (!immediate) {
       const resumed = row(db, f.room.id);
       assert.equal(Date.parse(String(resumed.answer_deadline_at)) - Date.parse(String(resumed.answer_started_at)), remaining);
@@ -333,7 +340,7 @@ for (const immediate of [false, true]) test(`Continue excludes only current ques
       await f.api.post(`${f.root}/answers`).send({ token: f.identities[0].token, questionId: f.question.id, optionId: f.options[0].id }).expect(409);
       assert.equal(pause.autoPauseForDisconnectedPlayer(db, f.room.id, f.identities[0].player.id), false);
       assert.equal(pause.autoPauseForDisconnectedPlayer(db, f.room.id, f.identities[1].player.id), true);
-      await f.api.post(`${f.root}/continue-without-player`).expect(200);
+      await request(createApp(db, () => {}, () => true)).post(`${f.root}/continue-without-player`).expect(200);
       // Exclusions survive restart; only Carol is still expected.
       db.close(); db = initializeDatabase(path);
       const api = request(createApp(db));
@@ -460,3 +467,85 @@ test('Continue rolls back exclusion and scores if scoring cannot commit', async 
     assert.equal(db.prepare('SELECT count(*) n FROM question_scores').get()!.n, 0);
   } finally { db.close(); }
 });
+
+// Real socket departures must remain visible to resolution even while PAUSED.
+for (const preTimer of [false, true]) for (const scenario of ['continue', 'wait', 'three', 'excluded', 'removed', 'second-tab', 'kick', ...(preTimer ? [] : ['submitted', 'reveal'])]) {
+  test(`multiple disconnects: ${scenario}, pre-timer=${preTimer}`, async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'quiz-multi-disconnect-'));
+    const db = initializeDatabase(join(directory, 'quiz.sqlite'));
+    const f = await fixture(db, preTimer);
+    const { server, io } = createQuizServer(db);
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    const api = request(server);
+    const sockets: Socket[] = [];
+    async function open(index: number) {
+      const socket = connect(`http://127.0.0.1:${(server.address() as { port: number }).port}`, { transports: ['websocket'], forceNew: true });
+      sockets.push(socket); await once(socket, 'connect');
+      const reply = event(socket);
+      socket.emit('lobby:subscribe', { roomId: f.room.id, audience: 'player', token: f.identities[index].token });
+      await reply; return socket;
+    }
+    async function disconnect(socket: Socket) {
+      const done = once(io.sockets.sockets.get(socket.id!)!, 'disconnect');
+      socket.disconnect(); await done;
+    }
+    async function submit(index: number) {
+      await api.post(`${f.root}/answers`).send({ token: f.identities[index].token, questionId: f.question.id, optionId: f.options[0].id }).expect(200);
+    }
+    const media = () => db.prepare('SELECT * FROM media_playback WHERE session_id = ?').all(f.room.id);
+    try {
+      // Equal join times exercise the stable ID tie-breaker, independently of departure order.
+      const ordered = [...f.identities].sort((a, b) => a.player.id.localeCompare(b.player.id));
+      for (const identity of f.identities) db.prepare('UPDATE session_players SET joined_at = ? WHERE id = ?').run('2026-01-01T00:00:00.000Z', identity.player.id);
+      const tabs = await Promise.all(f.identities.map((_, index) => open(index)));
+      if (scenario === 'second-tab') await open(1);
+      await api.post(`${f.root}/start`).expect(200); await api.post(`${f.root}/start-round`).expect(200);
+      await api.post(`${f.root}/start-question`).expect(200);
+      if (scenario === 'submitted' || scenario === 'reveal') await submit(1);
+      if (scenario === 'reveal') await submit(2);
+      if (scenario === 'excluded') db.prepare('INSERT INTO question_exclusions VALUES (?, ?, ?)').run(f.room.id, f.question.id, f.identities[1].player.id);
+      if (scenario === 'removed') await api.post(`${f.root}/players/${f.identities[1].player.id}/kick`).send({ confirmed: true }).expect(200);
+      await disconnect(tabs[0]);
+      const frozen = row(db, f.room.id), frozenMedia = media();
+      if (scenario === 'three') {
+        // Disconnect the remaining roster in reverse order; decisions must use roster order.
+        for (const identity of ordered.filter(p => p.player.id !== f.identities[0].player.id).reverse()) await disconnect(tabs[f.identities.indexOf(identity)]);
+      } else if (scenario !== 'removed') await disconnect(tabs[1]);
+      assert.deepEqual(row(db, f.room.id), frozen);
+      if (scenario === 'wait') {
+        await api.post(`${f.root}/wait-for-player`).expect(409);
+        await open(0);
+        await api.post(`${f.root}/wait-for-player`).expect(200);
+      } else if (scenario === 'kick') {
+        await api.post(`${f.root}/players/${f.identities[0].player.id}/kick`).send({ confirmed: true }).expect(200);
+      } else await api.post(`${f.root}/continue-without-player`).expect(200);
+      const pending = scenario === 'three' ? ordered.filter(p => p.player.id !== f.identities[0].player.id)
+        : ['continue', 'wait', 'kick'].includes(scenario) ? [f.identities[1]] : [];
+      for (const identity of pending) {
+        assert.deepEqual({ ...row(db, f.room.id) }, { ...frozen, paused_player_id: identity.player.id });
+        assert.deepEqual(media(), frozenMedia);
+        const host = (await api.get(`${f.root}/game/host`).expect(200)).body;
+        assert.equal(host.game.disconnectedPlayer.id, identity.player.id);
+        assert.equal(host.game.disconnectedPlayer.present, false);
+        await api.post(`${f.root}/continue-without-player`).expect(200);
+      }
+      const resolved = row(db, f.room.id);
+      const reveal = !preTimer && ['three', 'reveal'].includes(scenario);
+      assert.equal(resolved.state, reveal ? 'ANSWER_REVEAL' : preTimer ? 'QUESTION' : 'ANSWERING');
+      if (reveal || preTimer) {
+        assert.equal(resolved.answer_started_at, null); assert.equal(resolved.answer_deadline_at, null);
+      } else assert.equal(Date.parse(String(resolved.answer_deadline_at)) - Date.parse(String(resolved.answer_started_at)), frozen.paused_remaining_ms);
+      if (preTimer) {
+        assert.equal(resolved.pre_timer_media_id, frozen.pre_timer_media_id);
+        assert.equal(media()[0].position_seconds, frozenMedia[0].position_seconds);
+        assert.equal(media()[0].playing, 1);
+        assert.equal(media()[0].revision, Number(frozenMedia[0].revision) + 1);
+      }
+      if (reveal) assert.equal(db.prepare('SELECT count(*) n FROM question_scores').get()!.n, 3);
+      await api.post(`${f.root}/close`).expect(200);
+    } finally {
+      sockets.forEach(socket => socket.disconnect());
+      await new Promise<void>(resolve => io.close(() => resolve())); db.close(); rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}

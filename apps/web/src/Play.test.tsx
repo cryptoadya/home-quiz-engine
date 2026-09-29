@@ -50,28 +50,103 @@ test('direct code flow prefills the room and shows duplicate-name errors', async
   assert.equal(dom.window.localStorage.getItem(key), null);
 });
 
-for (const closed of [false, true]) test(`stored identity restores ${closed ? 'closed' : 'waiting'} state without joining`, async () => {
+test('active stored identity restores waiting state without looking up the code or joining', async () => {
   dom.window.localStorage.setItem(key, saved);
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url), '/api/rooms/room/reconnect');
     assert.deepEqual(JSON.parse(String(init?.body)), { token: 'secret' });
-    return Response.json({ player, room: { ...room, closedAt: closed ? 'now' : null }, active: !closed });
+    return Response.json({ player, room, active: true });
   };
   const view = show('/play/ABCDE');
-  await waitFor(() => assert.match(view.getByRole('status').textContent!, closed ? /Room closed/ : /Waiting for the host/));
+  await waitFor(() => assert.match(view.getByRole('status').textContent!, /Waiting for the host/));
   assert.equal(view.queryByLabelText('Name'), null);
   assert.equal(dom.window.localStorage.getItem(key), saved);
 });
 
-test('invalid stored token is cleared and direct flow falls back to join form', async () => {
+for (const status of [401, 404]) test(`revoked or missing saved reconnect (${status}) is cleared and falls back to join form`, async () => {
   dom.window.localStorage.setItem(key, saved);
   dom.window.localStorage.setItem('quiz-player:FGHJK', 'other-room');
   globalThis.fetch = async (url) => String(url).endsWith('/reconnect')
-    ? Response.json({ error: 'Invalid player reconnect token.' }, { status: 401 }) : Response.json(room);
+    ? Response.json({ error: 'Invalid player reconnect token.' }, { status }) : Response.json(room);
   const view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByLabelText('Name')));
   assert.equal(dom.window.localStorage.getItem(key), null);
   assert.equal(dom.window.localStorage.getItem('quiz-player:FGHJK'), 'other-room');
+});
+
+for (const stale of [
+  { closedAt: 'closed', active: false },
+  { closedAt: 'closed', active: true },
+  { closedAt: null, active: false },
+]) test(`stale reconnect ${JSON.stringify(stale)} resolves reused code and replaces identity only after joining`, async () => {
+  dom.window.localStorage.setItem(key, saved);
+  const newRoom = { ...room, id: 'new-room', quizTitle: 'New party' };
+  const newPlayer = { ...player, id: 'new-player', name: 'Sam' };
+  const requests: { url: string; body: unknown }[] = [];
+  globalThis.fetch = async (url, init) => {
+    const path = String(url);
+    requests.push({ url: path, body: init?.body ? JSON.parse(String(init.body)) : null });
+    if (path === '/api/rooms/room/reconnect') return Response.json({ player, room: { ...room, closedAt: stale.closedAt }, active: stale.active });
+    if (path === '/api/rooms/code/ABCDE') return Response.json(newRoom);
+    if (path === '/api/rooms/code/ABCDE/players') return Response.json({ room: newRoom, player: newPlayer, active: true, token: 'new-secret' }, { status: 201 });
+    if (path === '/api/rooms/new-room/player') return Response.json({ room: newRoom, player: { ...newPlayer, language: 'ru' }, active: true });
+    throw new Error(`Unexpected request: ${path}`);
+  };
+  const view = show('/play/ABCDE?lang=en');
+  await waitFor(() => assert.ok(view.getByLabelText('Name')));
+  assert.ok(view.getByText('New party'));
+  assert.equal(view.queryByText('Alex'), null);
+  assert.equal(dom.window.localStorage.getItem(key), null);
+  fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Sam' } });
+  fireEvent.click(view.getByRole('button', { name: 'Join' }));
+  await waitFor(() => assert.match(view.getByRole('status').textContent!, /Waiting for the host/));
+  assert.ok(view.getByText('Sam'));
+  assert.equal(dom.window.localStorage.getItem(key), JSON.stringify({ roomId: 'new-room', token: 'new-secret' }));
+  fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'ru' } });
+  await waitFor(() => assert.match(view.getByRole('status').textContent!, /Ожидайте ведущего/));
+  assert.deepEqual(requests, [
+    { url: '/api/rooms/room/reconnect', body: { token: 'secret' } },
+    { url: '/api/rooms/code/ABCDE', body: null },
+    { url: '/api/rooms/code/ABCDE/players', body: { name: 'Sam', language: 'en' } },
+    { url: '/api/rooms/new-room/player', body: { token: 'new-secret', language: 'ru' } },
+  ]);
+});
+
+for (const destination of ['missing', 'started', 'closed']) test(`closed saved room with ${destination} code destination does not offer a false join or active session`, async () => {
+  dom.window.localStorage.setItem(key, saved);
+  globalThis.fetch = async (url) => {
+    if (String(url) === '/api/rooms/room/reconnect') return Response.json({ player, room: { ...room, closedAt: 'closed' }, active: false });
+    assert.equal(String(url), '/api/rooms/code/ABCDE');
+    return destination === 'missing'
+      ? Response.json({ error: 'Active room not found.' }, { status: 404 })
+      : Response.json({ ...room, id: 'new-room', state: destination === 'started' ? 'ANSWERING' : 'LOBBY', closedAt: destination === 'closed' ? 'closed' : null });
+  };
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.match(view.getByRole('alert').textContent!, /not found|no longer accepting players/));
+  assert.equal(view.queryByLabelText('Name'), null);
+  assert.equal(view.queryByLabelText('Player language'), null);
+  assert.equal(view.queryByText('Alex'), null);
+  assert.equal(dom.window.localStorage.getItem(key), null);
+});
+
+test('active started-game reconnect restores gameplay and accepted answer without code lookup', async () => {
+  dom.window.localStorage.setItem(key, saved);
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), '/api/rooms/room/reconnect');
+    assert.deepEqual(JSON.parse(String(init?.body)), { token: 'secret' });
+    return Response.json({ player, room: { ...room, state: 'ANSWERING' }, active: true, game: {
+      state: 'ANSWERING', questionId: 'q1', text: 'Pick a fruit', options: [{ id: 'a', text: 'Apple' }],
+      submission: { submitted: true, optionId: 'a' },
+      timer: { serverNow: new Date(0).toISOString(), deadlineAt: new Date(30000).toISOString(), durationSeconds: 30, remainingMs: 30000, expired: false },
+    } });
+  };
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Answer submitted')));
+  assert.ok(view.getByText('Pick a fruit'));
+  assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
+  assert.equal((view.getByRole('radio') as HTMLInputElement).disabled, true);
+  assert.equal(view.queryByLabelText('Name'), null);
+  assert.equal(dom.window.localStorage.getItem(key), saved);
 });
 
 test('temporary reconnect failure retains token and blocks a second join until retry succeeds', async () => {

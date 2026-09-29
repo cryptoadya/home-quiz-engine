@@ -52,9 +52,14 @@ function PlayerRoom({ code }: { code: string }) {
         });
         const body = await response.json();
         if (!active || revision !== identityRevision.current) return;
-        if (response.ok) { if (active) { setToken(saved.token); setIdentity(body); } return; }
-        if (response.status !== 401 && response.status !== 404) throw new Error(body.error || 'Could not reconnect. Please retry.');
+        if (response.ok && body.active && body.room.closedAt === null) {
+          setToken(saved.token); setIdentity(body); return;
+        }
+        if (!response.ok && response.status !== 401 && response.status !== 404) throw new Error(body.error || 'Could not reconnect. Please retry.');
+        // Closed/inactive identities can still reconnect successfully by ID, but
+        // this URL's code may now belong to a different room. Resolve it afresh.
         window.localStorage.removeItem(storageKey(code));
+        setToken(null); setIdentity(null);
       }
       const response = await fetch(`/api/rooms/code/${encodeURIComponent(code)}`);
       const body = await response.json();

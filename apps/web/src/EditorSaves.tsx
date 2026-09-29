@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
-type Edit = { persist: () => Promise<unknown>; blocked?: string };
+type Edit = { persist: () => Promise<unknown>; blocked?: string; owner?: string; discarded?: boolean };
 type SaveState = { status: string; error: string };
 
 class SaveQueue {
@@ -8,6 +8,7 @@ class SaveQueue {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private operations = new Set<Promise<void>>();
   private running: Promise<void> | undefined;
+  private activeEdit: Edit | undefined;
   private listeners = new Set<() => void>();
   private state: SaveState = { status: 'Saved', error: '' };
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -17,12 +18,28 @@ class SaveQueue {
     this.state = { status, error };
     this.listeners.forEach(listener => listener());
   }
-  schedule(key: string, persist: Edit['persist'], blocked?: string) {
-    this.pending.set(key, { persist, blocked });
+  schedule(key: string, persist: Edit['persist'], blocked?: string, owner?: string) {
+    this.pending.set(key, { persist, blocked, owner });
     clearTimeout(this.timer);
     this.publish(blocked || 'Saving...');
     if (!blocked) this.timer = setTimeout(() => { void this.flush().catch(() => {}); }, 400);
   }
+  discard = (owner: string) => {
+    let discarded = false;
+    for (const [key, edit] of this.pending) {
+      if (edit.owner !== owner) continue;
+      edit.discarded = true;
+      this.pending.delete(key);
+      discarded = true;
+    }
+    // A sent PUT cannot be undone. Keep waiting for it, but do not retry or
+    // require success for work whose owner is about to be deleted.
+    if (this.activeEdit?.owner === owner) this.activeEdit.discarded = true;
+    if (!this.pending.size) {
+      clearTimeout(this.timer);
+      if (discarded) this.publish(this.unsaved ? 'Saving...' : 'Saved');
+    }
+  };
   // Immediate mutations commit their UI only on success. Track them without
   // replaying failed POST/DELETE requests as if they were pending draft edits.
   perform = (action: () => Promise<void>): Promise<void> => {
@@ -54,7 +71,10 @@ class SaveQueue {
       while (this.pending.size) {
         const [key, edit] = this.pending.entries().next().value!;
         if (edit.blocked) throw new Error(edit.blocked);
-        await edit.persist();
+        this.activeEdit = edit;
+        try { await edit.persist(); }
+        catch (cause) { if (!edit.discarded) throw cause; }
+        finally { this.activeEdit = undefined; }
         // Object identity is the edit version, including repeated equal values.
         if (this.pending.get(key) === edit) this.pending.delete(key);
       }
@@ -76,6 +96,7 @@ class SaveBarrier {
   private listeners = new Set<() => void>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private notify = () => { this.listeners.forEach(listener => listener()); };
+  discard = (owner: string) => { this.queues.forEach(queue => queue.discard(owner)); };
   register(queue: SaveQueue) {
     this.queues.add(queue);
     const unsubscribe = queue.subscribe(this.notify);
@@ -106,11 +127,12 @@ export function EditorSaves({ children }: { children: ReactNode }) {
   return <SavesContext.Provider value={barrier}>{children}</SavesContext.Provider>;
 }
 export function useSaveBarrier() { return useContext(SavesContext); }
-export function useEditorSave() {
+export function useEditorSave(owner?: string) {
   const barrier = useSaveBarrier();
   const [queue] = useState(() => new SaveQueue());
   const state = useSyncExternalStore(queue.subscribe, queue.snapshot);
   useEffect(() => barrier?.register(queue), [barrier, queue]);
   useEffect(() => () => { if (queue.snapshot().status !== 'Save failed') void queue.flush().catch(() => {}); }, [queue]);
-  return { ...state, schedule: queue.schedule.bind(queue), flush: queue.flush, perform: queue.perform };
+  return { ...state, schedule: (key: string, persist: Edit['persist'], blocked?: string, editOwner = owner) => queue.schedule(key, persist, blocked, editOwner),
+    discard: queue.discard, flush: queue.flush, perform: queue.perform };
 }

@@ -58,7 +58,7 @@ test('Admin lists drafts, creates one, and confirms deletion', async () => {
   assert.ok(view.getByText(/Modified/));
   fireEvent.click(view.getByRole('link', { name: 'New Quiz' }));
   await waitFor(() => assert.ok(view.getByDisplayValue('New Quiz')));
-  fireEvent.click(view.getByRole('link', { name: /Quiz list/ }));
+  fireEvent.click(view.getByRole('button', { name: /Quiz list/ }));
   await waitFor(() => assert.ok(view.getByRole('button', { name: 'Delete New Quiz' })));
   fireEvent.click(view.getByRole('button', { name: 'Delete New Quiz' }));
   assert.equal(calls.filter((call) => call.startsWith('DELETE')).length, 0);

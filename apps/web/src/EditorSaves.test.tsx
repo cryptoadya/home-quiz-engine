@@ -1,10 +1,13 @@
 import { dom } from './test-dom';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { createElement } from 'react';
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
+import { createElement, useSyncExternalStore } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QuizEditor } from './Admin';
+import { EditorSaves, useEditorSave, useSaveBarrier } from './EditorSaves';
+import { Rounds } from './Rounds';
+import { Questions } from './Questions';
 
 afterEach(cleanup);
 function deferred<T>() {
@@ -20,9 +23,16 @@ async function editor(matching = false, secondRound = false) {
   const pair = { id: 'p', questionId: 'a', left: { kind: 'text', textRu: '', textEn: '' }, right: { kind: 'text', textRu: '', textEn: '' }, position: 0 };
   const writes: { path: string; body: Record<string, unknown>; reply: ReturnType<typeof deferred<Response>> }[] = [];
   const actions: string[] = [];
+  const deletions: { path: string; reply: ReturnType<typeof deferred<Response>> }[] = [];
+  window.confirm = () => true;
   let validations = 0;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (init?.method === 'DELETE') {
+      const reply = deferred<Response>();
+      deletions.push({ path, reply });
+      return reply.promise;
+    }
     if (init?.method === 'PUT') {
       const reply = deferred<Response>();
       writes.push({ path, body: init.body ? JSON.parse(String(init.body)) : {}, reply });
@@ -44,6 +54,7 @@ async function editor(matching = false, secondRound = false) {
   dom.window.HTMLAnchorElement.prototype.click = () => {};
   const view = render(createElement(MemoryRouter, { initialEntries: ['/admin/quizzes/q'] }, createElement(Routes, null,
     createElement(Route, { path: '/admin/quizzes/:quizId', element: createElement(QuizEditor) }),
+    createElement(Route, { path: '/admin', element: createElement('p', null, 'Quiz list opened') }),
     createElement(Route, { path: '/host/:roomId', element: createElement('p', null, 'Lobby opened') }))));
   await waitFor(() => assert.ok(view.getByLabelText(matching ? 'Pair 1 left EN' : 'Option 1 EN')));
   const edit = (label: string, value: string) => fireEvent.change(view.getByLabelText(label, { exact: true }), { target: { value } });
@@ -51,7 +62,7 @@ async function editor(matching = false, secondRound = false) {
     await waitFor(() => assert.ok(writes[index]), { timeout: 2000 });
     await act(async () => { writes[index].reply.resolve(Response.json(ok ? {} : { error: 'Offline' }, { status: ok ? 200 : 500 })); });
   };
-  return { view, writes, actions, edit, reply, validations: () => validations };
+  return { view, writes, actions, deletions, edit, reply, validations: () => validations };
 }
 
 for (const matching of [false, true]) test(`failed first PUT retains later ${matching ? 'pair' : 'option'} edits and retry saves both`, async () => {
@@ -194,4 +205,173 @@ for (const label of ['Question text EN', 'Round title EN']) test(`${label}: an o
   await e.reply(1);
   assert.ok(Object.values(e.writes[1].body).includes('Latest draft'));
   await waitFor(() => assert.equal(e.actions.length, 1));
+});
+
+const exitEditor = (e: Awaited<ReturnType<typeof editor>>) => fireEvent.click(e.view.getByText('← Quiz list'));
+async function replyDelete(e: Awaited<ReturnType<typeof editor>>, ok = true) {
+  await waitFor(() => assert.equal(e.deletions.length, 1));
+  assert.equal(e.deletions[0].path, '/api/quizzes/q/rounds/r');
+  await act(async () => { e.deletions[0].reply.resolve(ok ? new Response(null, { status: 204 }) : Response.json({ error: 'Delete failed' }, { status: 500 })); });
+}
+
+test('Quiz list waits for quiz, round and question saves and ignores duplicate exit clicks', async () => {
+  const e = await editor();
+  e.edit('Title', 'New quiz'); e.edit('Round title EN', 'New round'); e.edit('Question text EN', 'New question');
+  const exit = e.view.getByText('← Quiz list');
+  fireEvent.click(exit); fireEvent.click(exit);
+  for (let index = 0; index < 3; index++) {
+    assert.ok(e.view.queryByRole('heading', { name: 'Edit quiz' }));
+    assert.ok(!e.view.queryByText('Quiz list opened'));
+    await e.reply(index);
+  }
+  await waitFor(() => assert.ok(e.view.queryByText('Quiz list opened')));
+  assert.equal(e.writes.length, 3);
+});
+
+test('failed exit save preserves visible draft, shows the error and allows retry', async () => {
+  const e = await editor();
+  e.edit('Question text EN', 'Keep this draft');
+  exitEditor(e);
+  await e.reply(0, false);
+  assert.ok(!e.view.queryByText('Quiz list opened'));
+  assert.equal((e.view.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Keep this draft');
+  assert.ok(e.view.getAllByRole('alert').some(node => node.textContent?.includes('Offline')));
+  exitEditor(e);
+  await e.reply(1);
+  await waitFor(() => assert.ok(e.view.queryByText('Quiz list opened')));
+});
+
+test('blocked incomplete round prevents Quiz list navigation and preserves its draft', async () => {
+  const e = await editor();
+  e.edit('Round description RU', 'Описание');
+  exitEditor(e);
+  await waitFor(() => assert.ok(e.view.queryAllByRole('alert').some(node => node.textContent?.includes('Complete both languages'))));
+  assert.ok(!e.view.queryByText('Quiz list opened'));
+  assert.equal((e.view.getByLabelText('Round description RU') as HTMLTextAreaElement).value, 'Описание');
+  assert.equal(e.writes.length, 0);
+});
+
+test('confirmed incomplete round deletion discards its round/question drafts and clears global status', async () => {
+  const e = await editor(false, true);
+  e.edit('Round description RU', 'Описание');
+  e.edit('Question text EN', 'Discard child');
+  // A previously failed barrier must not leave a stale failed round queue.
+  exitEditor(e);
+  await e.reply(0, false);
+  await waitFor(() => assert.ok(e.view.queryAllByRole('alert').length));
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
+  await replyDelete(e);
+  assert.equal(e.writes.length, 1, 'Deleted drafts must never be retried');
+  assert.ok(!e.view.queryByRole('button', { name: 'Round / Раунд' }));
+  await waitFor(() => assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved'));
+  fireEvent.click(e.view.getByRole('button', { name: 'Export Quiz' }));
+  await waitFor(() => assert.equal(e.actions.length, 1));
+  assert.equal(e.writes.length, 1);
+});
+
+test('round deletion preserves unrelated quiz save and waits for it', async () => {
+  const e = await editor();
+  e.edit('Round description RU', 'Discard'); e.edit('Title', 'Keep quiz');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
+  await waitFor(() => assert.equal(e.writes.length, 1));
+  assert.equal(e.writes[0].path, '/api/quizzes/q');
+  assert.equal(e.writes[0].body.title, 'Keep quiz');
+  assert.equal(e.deletions.length, 0);
+  await e.reply(0);
+  await replyDelete(e);
+  assert.ok(e.view.getByText('No rounds yet.'));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+});
+
+test('failed unrelated save prevents DELETE and remains retryable', async () => {
+  const e = await editor();
+  e.edit('Round description RU', 'Discard'); e.edit('Title', 'Keep quiz');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
+  await e.reply(0, false);
+  assert.equal(e.deletions.length, 0);
+  assert.ok(e.view.getByRole('button', { name: 'Round / Раунд' }));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
+  await e.reply(1);
+  assert.equal(e.writes[1].body.title, 'Keep quiz');
+  await replyDelete(e);
+});
+
+test('DELETE failure keeps the incomplete round visible with an error', async () => {
+  const e = await editor();
+  e.edit('Round description RU', 'Keep visible');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
+  await replyDelete(e, false);
+  assert.ok(e.view.getByRole('button', { name: 'Round / Раунд' }));
+  assert.equal((e.view.getByLabelText('Round description RU') as HTMLTextAreaElement).value, 'Keep visible');
+  assert.ok(e.view.getAllByRole('alert').some(node => node.textContent?.includes('Delete failed')));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
+});
+
+for (const succeeds of [true, false]) test(`round deletion waits for an in-flight save (${succeeds ? 'success' : 'failure'}) without replaying its replacement`, async () => {
+  const e = await editor();
+  e.edit('Round title EN', 'In flight');
+  await waitFor(() => assert.equal(e.writes.length, 1), { timeout: 2000 });
+  e.edit('Round title EN', 'Discard replacement');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
+  assert.equal(e.deletions.length, 0);
+  await e.reply(0, succeeds);
+  await replyDelete(e);
+  assert.equal(e.writes.length, 1);
+  assert.ok(e.view.getByText('No rounds yet.'));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+});
+
+function GlobalSaveStatus() {
+  const barrier = useSaveBarrier()!;
+  return <output data-testid="global-save-status">{useSyncExternalStore(barrier.subscribe, barrier.snapshot)}</output>;
+}
+
+test('round deletion waits for another round question queue and preserves its failed draft', async () => {
+  const e = await editor();
+  cleanup();
+  const view = render(<EditorSaves><GlobalSaveStatus /><Rounds quizId="q" /><Questions quizId="q" roundId="r2" /></EditorSaves>);
+  await waitFor(() => assert.equal(view.getAllByLabelText('Question text EN').length, 2));
+  const other = within(view.container.querySelectorAll('.questions')[1] as HTMLElement);
+  fireEvent.change(view.getByLabelText('Round description RU'), { target: { value: 'Discard target' } });
+  fireEvent.change(other.getByLabelText('Question text EN'), { target: { value: 'Other round draft' } });
+  fireEvent.click(view.getByRole('button', { name: 'Delete round' }));
+  await waitFor(() => assert.equal(e.writes.length, 1));
+  assert.equal(e.writes[0].path, '/api/quizzes/q/rounds/r2/questions/a');
+  assert.equal(e.deletions.length, 0);
+  await e.reply(0, false);
+  assert.equal(e.deletions.length, 0);
+  assert.equal(view.getByTestId('global-save-status').textContent, 'Save failed');
+  assert.equal((other.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Other round draft');
+  fireEvent.click(view.getByRole('button', { name: 'Delete round' }));
+  await e.reply(1);
+  assert.equal(e.writes[1].body.textEn, 'Other round draft');
+  await replyDelete(e);
+  assert.ok(view.getByText('No rounds yet.'));
+  assert.equal(view.getByTestId('global-save-status').textContent, 'Saved');
+});
+
+test('targeted discard preserves a different round draft in the same queue', async () => {
+  let saves!: ReturnType<typeof useEditorSave>;
+  let barrier!: NonNullable<ReturnType<typeof useSaveBarrier>>;
+  const persisted: string[] = [];
+  function Drafts() {
+    saves = useEditorSave(); barrier = useSaveBarrier()!;
+    return <GlobalSaveStatus />;
+  }
+  const view = render(<EditorSaves><Drafts /></EditorSaves>);
+  await act(async () => {
+    saves.schedule('r', async () => { persisted.push('r'); }, 'Incomplete target', 'r');
+    saves.schedule('r2', async () => { persisted.push('r2'); }, 'Incomplete other round', 'r2');
+    barrier.discard('r');
+    await assert.rejects(barrier.flush(), /Incomplete other round/);
+  });
+  assert.equal(persisted.length, 0);
+  assert.equal(view.getByTestId('global-save-status').textContent, 'Save failed');
+  await act(async () => {
+    saves.schedule('r2', async () => { persisted.push('r2'); }, undefined, 'r2');
+    await barrier.flush();
+  });
+  assert.deepEqual(persisted, ['r2']);
+  assert.equal(view.getByTestId('global-save-status').textContent, 'Saved');
 });

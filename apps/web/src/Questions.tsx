@@ -42,7 +42,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const saves = useEditorSave();
+  const saves = useEditorSave(roundId);
   const { status } = saves;
   const [error, setError] = useState('');
 

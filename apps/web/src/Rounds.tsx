@@ -77,7 +77,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
       });
       onPersistedChange?.();
-    }, valid ? undefined : 'Complete both languages to save');
+    }, valid ? undefined : 'Complete both languages to save', round.id);
   }
 
   async function add() {
@@ -118,6 +118,8 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
     if (!window.confirm(`Delete “${round.titleEn}”? This cannot be undone.`)) return;
     setBusy(true);
     try {
+      if (barrier) barrier.discard(round.id);
+      else saves.discard(round.id);
       await (barrier?.flush() ?? saves.flush());
       await saves.perform(async () => {
         await api<void>(`${base}/${round.id}`, { method: 'DELETE' });
@@ -168,7 +170,9 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
         <button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button>
       </div>}
-      {selected && <Questions quiz={quiz} roundNumber={rounds.indexOf(selected) + 1} key={selected.id} quizId={quizId} roundId={selected.id} onPersistedChange={onPersistedChange} />}
+      {selected && <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        <Questions quiz={quiz} roundNumber={rounds.indexOf(selected) + 1} key={selected.id} quizId={quizId} roundId={selected.id} onPersistedChange={onPersistedChange} />
+      </fieldset>}
     </>}
   </section>;
 }

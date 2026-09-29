@@ -149,6 +149,8 @@ export function QuizEditor() {
 
 function QuizEditorContent() {
   const navigate = useNavigate();
+  const [exiting, setExiting] = useState(false);
+  const exitPending = useRef(false);
   const [opening, setOpening] = useState(false);
   const [launchError, setLaunchError] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -192,7 +194,16 @@ function QuizEditorContent() {
     return () => { active = false; };
   }, [quizId]);
 
-  function flush() { void barrier.flush().catch(() => {}); }
+  async function exitEditor() {
+    if (exitPending.current) return;
+    exitPending.current = true;
+    setExiting(true); setError('');
+    try {
+      await barrier.flush();
+      navigate('/admin');
+    } catch (cause) { setError((cause as Error).message); }
+    finally { exitPending.current = false; setExiting(false); }
+  }
   function change(settings: QuizSettings) {
     setQuiz(current => current ? { ...current, ...settings } : current);
     setError('');
@@ -228,19 +239,19 @@ function QuizEditorContent() {
   };
 
   return <ThemeSurface themeId={quiz.themeId} className="admin editor">
-    <Link to="/admin" onClick={flush}>← Quiz list</Link>
+    <button className="subtle" disabled={exiting || opening || exporting} onClick={() => void exitEditor()}>← Quiz list</button>
     <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status}</span></div>
     {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
     {launchError && <p role="alert" className="error">{launchError}</p>}
-    <button disabled={exporting || opening} onClick={async () => {
+    <button disabled={exporting || opening || exiting} onClick={async () => {
       setExporting(true); setExportNotice(''); setLaunchError('');
       try { await barrier.flush(); await downloadQuiz(quiz.id); setExportNotice('Quiz ZIP downloaded.'); }
       catch (cause) { setLaunchError((cause as Error).message); }
       finally { setExporting(false); }
     }}>Export Quiz</button>
     {exportNotice && <p role="status">{exportNotice}</p>}
-    <button onClick={() => void openLobby()} disabled={opening || exporting || !validation?.ready || Boolean(validationError)}>Open lobby</button>
-    <button onClick={() => void openLobby(true)} disabled={opening || exporting || !validation?.ready || Boolean(validationError)}>Start Test Game</button>
+    <button onClick={() => void openLobby()} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Open lobby</button>
+    <button onClick={() => void openLobby(true)} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Start Test Game</button>
     <p className="preview-banner">Test Game opens a real lobby for phones. Host starts the game after players join. Test sessions are excluded from normal history.</p>
     <section className="readiness" aria-label="Quiz readiness">
       <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Draft · ${validation.problems.length} ${validation.problems.length === 1 ? 'problem' : 'problems'}` : 'Checking readiness...'}</strong>
@@ -252,7 +263,7 @@ function QuizEditorContent() {
         </li>)}</ul>
       </details>}
     </section>
-    <fieldset disabled={opening || exporting} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+    <fieldset disabled={opening || exporting || exiting} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
     <div className="fields">
       <label>Title<input value={quiz.title} maxLength={100} onChange={(event) => change({ ...settings, title: event.target.value })} /></label>
       <label>Theme<select value={quiz.themeId} onChange={(event) => change({ ...settings, themeId: event.target.value })}>

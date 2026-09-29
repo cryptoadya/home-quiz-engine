@@ -1,4 +1,5 @@
 import { ThemeSurface } from './themes/ThemeSurface';
+import { ThemeDecoration } from './themes/ThemeDecoration';
 import { PlayerRevealContent } from './PlayerReveal';
 import { PlayerAnswer } from './PlayerAnswer';
 import { useLobby, type Room, type PlayerQuestion, type PlayerReveal } from './lobby';
@@ -134,7 +135,7 @@ function PlayerRoom({ code }: { code: string }) {
   const currentRoom = live?.room ?? identity?.room;
   const isActive = !removed && identity?.active && currentRoom?.closedAt === null;
   return <ThemeSurface themeId={(currentRoom ?? room)?.themeId} className="player" data-phase={currentRoom?.closedAt ? 'CLOSED' : currentRoom?.state} data-excluded={identity?.game?.excluded || undefined}>
-    <h1>Player</h1>
+    <h1>Player<ThemeDecoration kind="player" /></h1>
     {error && <p role="alert">{error}</p>}
     {subscriptionError && <p role="alert">{subscriptionError} {ru ? 'Обновите страницу для повторного подключения.' : 'Reload to reconnect.'}</p>}
     {identity ? <>

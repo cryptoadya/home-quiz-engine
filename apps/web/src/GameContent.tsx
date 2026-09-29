@@ -2,11 +2,11 @@ import { PlayableMedia } from './PlayableMedia';
 import type { MediaAction } from './lobby';
 import { MatchingItemContent, MediaImage } from './MediaImage';
 import type { CurrentQuestion, RoundIntro } from './lobby';
-import { PartyDecoration } from './themes/PartyDecoration';
+import { ThemeDecoration } from './themes/ThemeDecoration';
 
 export function RoundIntroContent({ round }: { round: RoundIntro }) {
   return <div className="round-intro">
-    <PartyDecoration />
+    <ThemeDecoration kind="round" />
     <h2 className="phase-chip">Раунд {round.roundNumber} / Round {round.roundNumber}</h2>
     <h3 lang="ru">{round.titleRu}</h3>
     <h3 lang="en">{round.titleEn}</h3>
@@ -47,7 +47,8 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
 
 export function BoundaryContent({ game }: { game: import('./lobby').GameBoundary }) {
   return <div className={`boundary-content ${game.state === 'WINNER_SCREEN' ? 'winner-stage' : ''}`} data-phase={game.state}>
-    {game.state === 'WINNER_SCREEN' && <PartyDecoration />}
+    {game.state === 'WINNER_SCREEN' && <ThemeDecoration kind="winner" />}
+    {game.state === 'ROUND_END' && <ThemeDecoration kind="waiting" />}
     <h2>{game.state === 'ROUND_END' ? 'Раунд завершён / Round complete' : game.state === 'LEADERBOARD' ? 'Таблица лидеров / Leaderboard' : game.state === 'FINAL_RESULTS' ? 'Финальные результаты / Final results' : 'Победители / Winners'}</h2>
     {game.state === 'ROUND_END' && <><h3 lang="ru">{game.titleRu}</h3><h3 lang="en">{game.titleEn}</h3></>}
     {game.leaderboard?.length === 0 && <p role="status">Нет участников / No remaining players</p>}

@@ -5,12 +5,14 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useLobby } from './lobby';
 import { RoundIntroContent, QuestionContent, BoundaryContent } from './GameContent';
 import { needsLanAddress } from './join-origin';
+import { ThemeDecoration } from './themes/ThemeDecoration';
 
 export function Screen() {
   const { roomId } = useParams();
   const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
   const local = needsLanAddress(window.location.origin);
   return <ThemeSurface themeId={state?.room.themeId} className="screen-lobby" data-phase={state?.room.closedAt ? 'CLOSED' : state?.room.state}>
+    <ThemeDecoration kind="corners" />
     <header className="screen-header">
     <h1>{state?.room.closedAt ? 'Викторина / Quiz' : state?.room.state === 'PAUSED' ? 'Пауза / Paused' : state?.room.state && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.room.state) ? 'Игра / Game' : state?.room.state === 'ANSWER_REVEAL' ? 'Ответ / Answer Reveal' : state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : (state?.room.state === 'QUESTION' || state?.room.state === 'ANSWERING') ? 'Вопрос / Question' : 'Лобби / Lobby'}</h1>
     {state && <>
@@ -24,6 +26,9 @@ export function Screen() {
     {state && <>
       {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state !== 'LOBBY'
         ? <section className="game-content">{state.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} />}{state.game && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <BoundaryContent game={state.game as import('./lobby').GameBoundary} />}{state.game?.state === 'ROUND_INTRO' && <RoundIntroContent round={state.game} />}{(state.game?.state === 'QUESTION' || state.game?.state === 'ANSWERING' || state.game?.state === 'ANSWER_REVEAL') && <QuestionContent question={state.game} onMediaEnded={(id, revision, duration) => reportMediaEnded(state.game && 'questionId' in state.game ? state.game.questionId! : '', id, revision, duration)} />}{state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}</section> : <>
+        <div className="screen-join">
+        <ThemeDecoration kind="lobby" />
+        <div className="screen-join-panel">
         <p className="eyebrow">Код комнаты / Room code</p>
         <strong className="room-code">{state.room.code}</strong>
         <p>Подключитесь к Wi-Fi и сканируйте QR / Join the Wi-Fi and scan a QR code</p>
@@ -36,6 +41,7 @@ export function Screen() {
             <span>{language.toUpperCase()}</span>
           </a>;
         })}</div>
+        </div></div>
       </>}
       {state.room.state === 'LOBBY' && <><p>Игроки / Players: {state.players?.length ?? 0} / 30</p>
       <ul className="screen-roster">{state.players?.map(player => <li key={player.id}>{player.name}</li>)}</ul></>}

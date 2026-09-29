@@ -114,6 +114,17 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
         await act(async () => { live.emit('lobby:state', { room: { ...room, themeId, state }, players: [player], game: phase === 'LOBBY' ? null : { ...content, state: phase, ...(phase === 'PAUSED' ? { pausedFromState: 'QUESTION', remainingMs: null } : {}) } }); });
         assert.equal(view.getByRole('main').dataset.theme, themeId, phase);
         assert.equal(view.getByRole('main').style.getPropertyValue('--theme-primary'), resolveTheme(themeId).tokens.primary, phase);
+        const art = [...view.container.querySelectorAll<HTMLImageElement>('.halloween-art')];
+        const expected = themeId !== 'halloween' ? 0 : path.startsWith('/play') ? 1
+          : (path.startsWith('/screen') ? 2 : 0) + (['ROUND_INTRO', 'ROUND_END', 'WINNER_SCREEN'].includes(phase) || path.startsWith('/screen') && phase === 'LOBBY' ? 1 : 0);
+        assert.equal(art.length, expected, `${phase} requests only its decorative artwork`);
+        for (const image of art) {
+          assert.equal(image.alt, '');
+          assert.equal(image.getAttribute('aria-hidden'), 'true');
+          assert.ok(image.width > 0 && image.height > 0, 'intrinsic bounds prevent layout shifts');
+        }
+        if (themeId === 'halloween' && phase === 'WINNER_SCREEN') assert.equal(view.container.querySelector('.party-decoration'), null);
+        if (path.startsWith('/play') && phase === 'ANSWERING') assert.equal(view.container.querySelector('.player-header')?.getAttribute('data-compact'), 'true');
         if (path.startsWith('/play') && phase === 'ANSWERING') await waitFor(() => assert.ok(view.getByText('Answer')));
         if (path.startsWith('/play') && phase === 'ANSWER_REVEAL') await waitFor(() => assert.ok(view.getByText(/Correct.*3/)));
         if (!path.startsWith('/play') && phase === 'ROUND_INTRO') assert.ok(view.getByText('Round'));

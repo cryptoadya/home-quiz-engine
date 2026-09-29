@@ -137,8 +137,6 @@ progress::-moz-progress-bar { background: var(--theme-primary); border-radius: 9
 .party-halo { fill: var(--theme-glow); }
 .party-stars { color: var(--theme-accent); }
 .party-bats { display: none; }
-[data-theme="halloween"] .party-bats { display: block; color: var(--theme-primary); }
-[data-theme="halloween"] .party-stars { color: var(--theme-accent); }
 .boundary-content > h2 { font-size: clamp(1.6rem, 3vw, 3.5rem); margin-top: .5rem; }
 .leaderboard { width: 100%; border-collapse: separate; border-spacing: 0 .6rem; text-align: left; table-layout: fixed; }
 .leaderboard thead th { color: var(--theme-muted); font-size: .65em; font-weight: 600; padding: .5rem .8rem; }

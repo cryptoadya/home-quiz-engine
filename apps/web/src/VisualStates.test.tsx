@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
-import { BoundaryContent } from './GameContent';
+import { BoundaryContent, RoundIntroContent } from './GameContent';
+import { ThemeSurface } from './themes/ThemeSurface';
 import { PlayerAnswerContent } from './PlayerAnswer';
 import { PlayerRevealContent } from './PlayerReveal';
 import type { PlayerReveal } from './lobby';
@@ -56,6 +57,36 @@ test('scoreboard preserves shared first places and multiple Winner cards', () =>
   view.rerender(createElement(BoundaryContent, { game: { ...game, state: 'WINNER_SCREEN', leaderboard: leaderboard.slice(0, 2) } }));
   assert.equal(view.container.querySelectorAll('.winner-card').length, 2);
   assert.equal(view.container.querySelector('.party-decoration')?.getAttribute('aria-hidden'), 'true');
+  assert.ok(view.getByText('Alex'));
+  assert.ok(view.getByText('Sam'));
+});
+
+test('Halloween round decoration preserves optional author art and falls back to Default decoration', () => {
+  const round = { state: 'ROUND_INTRO' as const, roundNumber: 1, questionCount: 1, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '', artUrl: '/media/author-art.png' };
+  const view = render(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(RoundIntroContent, { round })));
+  assert.ok(view.container.querySelector('.halloween-art--round'));
+  assert.equal(view.getByRole('img', { name: 'Round art' }).getAttribute('src'), round.artUrl);
+  assert.equal(view.getAllByRole('img').length, 1, 'decoration stays out of accessibility reading order');
+  view.rerender(createElement(ThemeSurface, { themeId: 'unavailable' }, createElement(RoundIntroContent, { round })));
+  assert.equal(view.container.querySelector('.halloween-art'), null);
+  assert.ok(view.container.querySelector('.party-decoration'));
+  assert.equal(view.getByRole('img', { name: 'Round art' }).getAttribute('src'), round.artUrl);
+});
+
+test('Halloween standings retain one rank per row, including ties, and celebrate every winner', () => {
+  const leaderboard = [
+    { playerId: 'a', displayName: 'Alex', totalPoints: 8, rank: 1 },
+    { playerId: 'b', displayName: 'Sam', totalPoints: 8, rank: 1 },
+    { playerId: 'c', displayName: 'Jo', totalPoints: 5, rank: 3 },
+  ];
+  const game = { state: 'LEADERBOARD' as const, roundNumber: 1, questionCount: 1, titleRu: '', titleEn: '', nextAction: null, leaderboard };
+  const view = render(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(BoundaryContent, { game })));
+  assert.deepEqual([...view.container.querySelectorAll('.rank-badge')].map(el => el.textContent), ['1', '1', '3']);
+  assert.equal(view.container.querySelector('.halloween-art'), null);
+  view.rerender(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(BoundaryContent, { game: { ...game, state: 'WINNER_SCREEN', leaderboard: leaderboard.slice(0, 2) } })));
+  assert.ok(view.container.querySelector('.halloween-art--winner'));
+  assert.equal(view.container.querySelector('.party-decoration'), null);
+  assert.equal(view.container.querySelectorAll('.winner-card').length, 2);
   assert.ok(view.getByText('Alex'));
   assert.ok(view.getByText('Sam'));
 });

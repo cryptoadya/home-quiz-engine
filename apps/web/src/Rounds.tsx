@@ -1,3 +1,4 @@
+import { useEditorSave, useSaveBarrier } from './EditorSaves';
 import { useEffect, useRef, useState } from 'react';
 import type { Quiz } from './Admin';
 import { MediaImage } from './MediaImage';
@@ -34,19 +35,17 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('Saved');
+  const saves = useEditorSave();
+  const barrier = useSaveBarrier();
+  const { status } = saves;
   const [error, setError] = useState('');
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pending = useRef<{ id: string; changes: RoundChanges } | null>(null);
-  const revision = useRef(0);
-  const saveChain = useRef<Promise<void>>(Promise.resolve());
   const incomplete = useRef(false);
   const appliedTarget = useRef<typeof targetRound>(null);
 
   useEffect(() => {
     if (targetRound && targetRound !== appliedTarget.current && rounds.some((round) => round.id === targetRound.id)) {
       appliedTarget.current = targetRound;
-      setSelectedId(targetRound.id);
+      void selectRound(targetRound.id);
     }
   }, [targetRound, rounds]);
 
@@ -62,96 +61,73 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
     return () => { active = false; };
   }, [base]);
 
-  function flush() {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    if (!pending.current) return;
-    const { id, changes } = pending.current;
-    pending.current = null;
-    const version = revision.current;
-    saveChain.current = saveChain.current.then(async () => {
-      try {
-        await api<Round>(`${base}/${id}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
-        });
-        onPersistedChange?.();
-        if (version === revision.current) { setStatus('Saved'); setError(''); }
-      } catch (cause) {
-        if (version === revision.current) { setStatus('Save failed'); setError((cause as Error).message); }
-      }
-    });
+  async function selectRound(id: string) {
+    try { await (barrier?.flush() ?? saves.flush()); setSelectedId(id); setError(''); }
+    catch (cause) { setError((cause as Error).message); }
   }
 
-  useEffect(() => () => { flush(); }, [quizId]);
-
   function change(round: Round, changes: RoundChanges) {
-    setRounds((current) => current.map((item) => item.id === round.id ? { ...item, ...changes } : item));
-    revision.current += 1;
-    if (timer.current) clearTimeout(timer.current);
-    pending.current = null;
+    setRounds(current => current.map(item => item.id === round.id ? { ...item, ...changes } : item));
     const valid = Boolean(changes.titleRu.trim() && changes.titleEn.trim()) &&
       Boolean(changes.descriptionRu.trim()) === Boolean(changes.descriptionEn.trim());
     incomplete.current = !valid;
-    if (!valid) {
-      setStatus('Complete both languages to save');
-      setError('');
-      return;
-    }
-    setStatus('Saving...');
     setError('');
-    pending.current = { id: round.id, changes };
-    timer.current = setTimeout(flush, 400);
+    saves.schedule(round.id, async () => {
+      await api<Round>(`${base}/${round.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
+      });
+      onPersistedChange?.();
+    }, valid ? undefined : 'Complete both languages to save');
   }
 
   async function add() {
-    flush();
-    await saveChain.current;
     setBusy(true);
     try {
-      const round = await api<Round>(base, { method: 'POST' });
-      onPersistedChange?.();
-      setRounds((current) => [...current, round]);
-      setSelectedId(round.id);
-      setStatus('Saved');
-      setError('');
+      await (barrier?.flush() ?? saves.flush());
+      await saves.perform(async () => {
+        const round = await api<Round>(base, { method: 'POST' });
+        onPersistedChange?.();
+        setRounds((current) => [...current, round]);
+        setSelectedId(round.id);
+        setError('');
+      });
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
 
   async function move(index: number, direction: -1 | 1) {
-    flush();
-    await saveChain.current;
     const next = [...rounds];
     [next[index], next[index + direction]] = [next[index + direction], next[index]];
     setBusy(true);
     try {
-      const saved = await api<Round[]>(`${base}/order`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: next.map((round) => round.id) }),
+      await (barrier?.flush() ?? saves.flush());
+      await saves.perform(async () => {
+        const saved = await api<Round[]>(`${base}/order`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: next.map((round) => round.id) }),
       });
       onPersistedChange?.();
       setRounds(saved);
       setError('');
+      });
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
 
   async function remove(round: Round) {
     if (!window.confirm(`Delete “${round.titleEn}”? This cannot be undone.`)) return;
-    if (pending.current?.id === round.id) pending.current = null;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    await saveChain.current;
     setBusy(true);
     try {
-      await api<void>(`${base}/${round.id}`, { method: 'DELETE' });
-      onPersistedChange?.();
-      const next = rounds.filter((item) => item.id !== round.id);
-      setRounds(next);
-      setSelectedId(next[0]?.id ?? null);
-      incomplete.current = false;
-      setStatus('Saved');
-      setError('');
+      await (barrier?.flush() ?? saves.flush());
+      await saves.perform(async () => {
+        await api<void>(`${base}/${round.id}`, { method: 'DELETE' });
+        onPersistedChange?.();
+        const next = rounds.filter((item) => item.id !== round.id);
+        setRounds(next);
+        setSelectedId(next[0]?.id ?? null);
+        incomplete.current = false;
+        setError('');
+      });
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
@@ -165,11 +141,11 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
 
   return <section className="rounds">
     <div className="editor-heading"><h2>Rounds</h2><span className="round-status" role="status" aria-live="polite">{status}</span></div>
-    {error && <p role="alert" className="error">{error}</p>}
+    {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
     {loading ? <p>Loading rounds...</p> : <>
       <button onClick={() => void add()} disabled={busy || incomplete.current}>Add round</button>
       {rounds.length === 0 ? <p>No rounds yet.</p> : <ol className="round-list">{rounds.map((round, index) => <li key={round.id}>
-        <button className={selectedId === round.id ? 'selected-round' : 'subtle'} onClick={() => { flush(); setSelectedId(round.id); }} disabled={busy || incomplete.current}>
+        <button className={selectedId === round.id ? 'selected-round' : 'subtle'} onClick={() => void selectRound(round.id)} disabled={busy || incomplete.current}>
           {round.titleEn} / {round.titleRu}
         </button>
         <div className="round-order">

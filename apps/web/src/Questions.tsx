@@ -1,7 +1,8 @@
 import { QuizPreview } from './QuizPreview';
 import type { Quiz } from './Admin';
 import { MediaImage } from './MediaImage';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useEditorSave } from './EditorSaves';
 
 export type Question = {
   id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
@@ -41,12 +42,9 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('Saved');
+  const saves = useEditorSave();
+  const { status } = saves;
   const [error, setError] = useState('');
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pending = useRef<Map<string, { path: string; body: QuestionFields | OptionFields | PairFields }>>(new Map());
-  const chain = useRef<Promise<void>>(Promise.resolve());
-  const revision = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -79,39 +77,17 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     return () => { active = false; };
   }, [previewOpen, quizId]);
 
-  function flush() {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    if (pending.current.size === 0) return;
-    const saves = [...pending.current.values()];
-    pending.current.clear();
-    const version = revision.current;
-    chain.current = chain.current.then(async () => {
-      try {
-        for (const save of saves) await api(save.path, json('PUT', save.body));
-        onPersistedChange?.();
-        if (version === revision.current) { setStatus('Saved'); setError(''); }
-      } catch (cause) {
-        if (version === revision.current) { setStatus('Save failed'); setError((cause as Error).message); }
-      }
-    });
+  async function selectQuestion(id: string) {
+    try { await saves.flush(); setSelectedId(id); setError(''); }
+    catch (cause) { setError((cause as Error).message); }
   }
-  useEffect(() => () => { flush(); }, [base]);
-
   function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields) {
-    revision.current += 1;
-    pending.current.set(key, { path, body });
-    setStatus('Saving...');
-    setError('');
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(flush, 400);
+    saves.schedule(key, async () => { await api(path, json('PUT', body)); onPersistedChange?.(); });
   }
   async function afterSaves(action: () => Promise<void>) {
-    flush();
-    await chain.current;
     setBusy(true);
-    try { await action(); onPersistedChange?.(); setError(''); }
-    catch (cause) { setStatus('Save failed'); setError((cause as Error).message); }
+    try { await saves.perform(async () => { await action(); onPersistedChange?.(); }); setError(''); }
+    catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
 
@@ -159,7 +135,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
 
   return <section className="questions">
     <div className="editor-heading"><h3>Questions</h3><span role="status" className="question-status" aria-live="polite">{status}</span></div>
-    {error && <p role="alert" className="error">{error}</p>}
+    {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
     {loading ? <p>Loading questions...</p> : <>
       <button disabled={busy} onClick={() => void afterSaves(async () => {
         const question = await api<Question>(base, { method: 'POST' });
@@ -179,7 +155,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
       })}>Add Matching question</button>
       {questions.length === 0 ? <p>No questions yet.</p> : <ol className="round-list">{questions.map((question, index) => <li key={question.id}>
         <button className={selectedId === question.id ? 'selected-round' : 'subtle'} disabled={busy}
-          onClick={() => { flush(); setSelectedId(question.id); }}>
+          onClick={() => void selectQuestion(question.id)}>
           {index + 1}. {question.textEn || question.textRu || 'Untitled question'}
         </button>
         <div className="round-order">

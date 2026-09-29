@@ -1,7 +1,8 @@
+import { EditorSaves, useEditorSave, useSaveBarrier } from './EditorSaves';
 import { ThemeSurface } from './themes/ThemeSurface';
 import { resolveTheme, themes } from './themes';
 import { MediaManager } from './Media';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Rounds } from './Rounds';
 
@@ -142,6 +143,11 @@ export function QuizList() {
 }
 
 export function QuizEditor() {
+  const { quizId } = useParams();
+  return <EditorSaves key={quizId}><QuizEditorContent /></EditorSaves>;
+}
+
+function QuizEditorContent() {
   const navigate = useNavigate();
   const [opening, setOpening] = useState(false);
   const [launchError, setLaunchError] = useState('');
@@ -150,16 +156,14 @@ export function QuizEditor() {
   const { quizId } = useParams();
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState('Saved');
+  const saves = useEditorSave();
+  const barrier = useSaveBarrier()!;
+  const status = useSyncExternalStore(barrier.subscribe, barrier.snapshot);
   const [error, setError] = useState('');
   const [validation, setValidation] = useState<QuizValidation | null>(null);
   const [validationError, setValidationError] = useState('');
   const [targetRound, setTargetRound] = useState<{ id: string } | null>(null);
   const validationRevision = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pending = useRef<QuizSettings | null>(null);
-  const revision = useRef(0);
-  const saveChain = useRef<Promise<void>>(Promise.resolve());
 
   function refreshValidation() {
     const version = ++validationRevision.current;
@@ -188,54 +192,23 @@ export function QuizEditor() {
     return () => { active = false; };
   }, [quizId]);
 
-  function save(settings: QuizSettings, version: number) {
-    saveChain.current = saveChain.current.then(async () => {
-      try {
-        await api<Quiz>(`/api/quizzes/${quizId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settings),
-        });
-        refreshValidation();
-        if (version === revision.current) {
-          setStatus('Saved');
-          setError('');
-        }
-      } catch (cause) {
-        if (version === revision.current) {
-          setStatus('Save failed');
-          setError((cause as Error).message);
-        }
-      }
-    });
-  }
-
-  function flush() {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    if (pending.current) {
-      const settings = pending.current;
-      pending.current = null;
-      save(settings, revision.current);
-    }
-  }
-
-  useEffect(() => () => { flush(); }, [quizId]);
-
+  function flush() { void barrier.flush().catch(() => {}); }
   function change(settings: QuizSettings) {
-    setQuiz((current) => current ? { ...current, ...settings } : current);
-    setStatus('Saving...');
+    setQuiz(current => current ? { ...current, ...settings } : current);
     setError('');
-    revision.current += 1;
-    pending.current = settings;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(flush, 400);
+    saves.schedule('settings', async () => {
+      await api<Quiz>(`/api/quizzes/${quizId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings),
+      });
+      refreshValidation();
+    });
   }
 
   async function openLobby(isTest = false) {
     setOpening(true);
     setLaunchError('');
     try {
+      await barrier.flush();
       const room = await api<{ id: string }>(`/api/quizzes/${quizId}/${isTest ? 'test-games' : 'rooms'}`, { method: 'POST' });
       navigate(`/host/${room.id}`);
     } catch (cause) {
@@ -257,17 +230,17 @@ export function QuizEditor() {
   return <ThemeSurface themeId={quiz.themeId} className="admin editor">
     <Link to="/admin" onClick={flush}>← Quiz list</Link>
     <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status}</span></div>
-    {error && <p role="alert" className="error">{error}</p>}
+    {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
     {launchError && <p role="alert" className="error">{launchError}</p>}
-    <button disabled={exporting || status !== 'Saved'} onClick={async () => {
+    <button disabled={exporting || opening} onClick={async () => {
       setExporting(true); setExportNotice(''); setLaunchError('');
-      try { await downloadQuiz(quiz.id); setExportNotice('Quiz ZIP downloaded.'); }
+      try { await barrier.flush(); await downloadQuiz(quiz.id); setExportNotice('Quiz ZIP downloaded.'); }
       catch (cause) { setLaunchError((cause as Error).message); }
       finally { setExporting(false); }
     }}>Export Quiz</button>
     {exportNotice && <p role="status">{exportNotice}</p>}
-    <button onClick={() => void openLobby()} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Open lobby</button>
-    <button onClick={() => void openLobby(true)} disabled={opening || !validation?.ready || Boolean(validationError) || status !== 'Saved'}>Start Test Game</button>
+    <button onClick={() => void openLobby()} disabled={opening || exporting || !validation?.ready || Boolean(validationError)}>Open lobby</button>
+    <button onClick={() => void openLobby(true)} disabled={opening || exporting || !validation?.ready || Boolean(validationError)}>Start Test Game</button>
     <p className="preview-banner">Test Game opens a real lobby for phones. Host starts the game after players join. Test sessions are excluded from normal history.</p>
     <section className="readiness" aria-label="Quiz readiness">
       <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Draft · ${validation.problems.length} ${validation.problems.length === 1 ? 'problem' : 'problems'}` : 'Checking readiness...'}</strong>
@@ -279,6 +252,7 @@ export function QuizEditor() {
         </li>)}</ul>
       </details>}
     </section>
+    <fieldset disabled={opening || exporting} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
     <div className="fields">
       <label>Title<input value={quiz.title} maxLength={100} onChange={(event) => change({ ...settings, title: event.target.value })} /></label>
       <label>Theme<select value={quiz.themeId} onChange={(event) => change({ ...settings, themeId: event.target.value })}>
@@ -291,5 +265,6 @@ export function QuizEditor() {
     </div>
     <MediaManager key={quiz.id} quizId={quiz.id} onPersistedChange={refreshValidation} />
     <Rounds quiz={quiz} quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
+    </fieldset>
   </ThemeSurface>;
 }

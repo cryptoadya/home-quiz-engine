@@ -70,7 +70,15 @@ for (const state of ['ROUND_INTRO', 'QUESTION', 'ANSWER_REVEAL', 'ROUND_END', 'L
       assert.ok(Date.parse(String(session(db).paused_at)));
       for (const audience of ['host', 'screen'] as const) {
         const projection = (await api.get(`${root}/game/${audience}`).expect(200)).body.game;
-        assert.deepEqual(projection, { state: 'PAUSED', pausedFromState: state, remainingMs: null, ...(audience === 'host' ? { reason: 'manual', disconnectedPlayer: null } : {}) });
+        const { content, ...metadata } = projection;
+        assert.equal(Boolean(content), ['QUESTION', 'ANSWER_REVEAL'].includes(state));
+        if (content) {
+          assert.equal(content.textEn, 'Question');
+          assert.equal(content.state, state);
+          if (state === 'ANSWER_REVEAL') assert.equal(content.options.filter((option: { isCorrect?: boolean }) => option.isCorrect).length, 1);
+          else if (audience === 'screen') assert.equal(JSON.stringify(content).includes('isCorrect'), false);
+        }
+        assert.deepEqual(metadata, { state: 'PAUSED', pausedFromState: state, remainingMs: null, ...(audience === 'host' ? { reason: 'manual', disconnectedPlayer: null } : {}) });
       }
       for (const action of ['pause', 'start', 'start-round', 'start-question', 'next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner']) await api.post(`${root}/${action}`).expect(409);
       assert.equal((await api.post(`${root}/resume`).expect(200)).body.state, state);
@@ -344,4 +352,25 @@ test('paused Reveal reload preserves scored answers and completed timer context'
     assert.equal(restored.result!.outcome, 'correct');
     assert.deepEqual(restored.submission, { submitted: true, optionId: options[0].id });
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+for (const showOptions of [false, true]) test(`text-only paused Answering preserves Screen visibility (options=${showOptions})`, async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, root, room, question } = await setup(db);
+    db.prepare('UPDATE questions SET show_options_on_screen = ? WHERE id = ?').run(Number(showOptions), question.id);
+    await api.post(`${root}/start`).expect(200);
+    await api.post(`${root}/start-round`).expect(200);
+    startQuestion(db, room.id, epoch);
+    pauseGame(db, room.id, () => epoch + 100);
+    const screen = (await api.get(`${root}/game/screen`).expect(200)).body.game;
+    assert.equal(screen.content?.textEn, 'Question');
+    assert.equal(screen.content.state, 'ANSWERING');
+    assert.equal(Boolean(screen.content.options), showOptions);
+    if (showOptions) assert.equal(screen.content.options.length, 2);
+    assert.equal(screen.content.timer, undefined);
+    assert.equal(JSON.stringify(screen).includes('isCorrect'), false);
+    assert.equal(JSON.stringify(screen).includes('explanation'), false);
+    assert.equal(getPlayerGame(db, room.id, 'en', 'unused'), null);
+  } finally { db.close(); }
 });

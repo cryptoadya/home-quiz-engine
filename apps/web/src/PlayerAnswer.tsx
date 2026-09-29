@@ -3,9 +3,12 @@ import { useState } from 'react';
 import { CountdownDisplay, useRemainingSeconds } from './Countdown';
 import type { PlayerQuestion, Submission, Mapping } from './lobby';
 
-export function PlayerAnswer({ question, roomId, token, language }: {
+export type PlayerDraft = { selection: string[]; mapping: Mapping; activeLeft: string | null };
+type DraftProps = { draft?: PlayerDraft; onDraftChange?: (draft: PlayerDraft) => void; onAccepted?: () => void };
+
+export function PlayerAnswer({ question, roomId, token, language, draft, onDraftChange, onAccepted }: {
   question: PlayerQuestion; roomId: string; token: string; language: 'ru' | 'en';
-}) {
+} & DraftProps) {
   const seconds = useRemainingSeconds(question.timer);
   async function submitAnswer(answer: AnswerDraft): Promise<Submission> {
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/answers`, {
@@ -14,21 +17,26 @@ export function PlayerAnswer({ question, roomId, token, language }: {
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.code === 'DEADLINE_REACHED' ? 'DEADLINE_REACHED' : 'Submission failed');
+    if (body.submitted) onAccepted?.();
     return body;
   }
-  return <PlayerAnswerContent question={question} language={language} seconds={seconds} onSubmit={submitAnswer} />;
+  return <PlayerAnswerContent question={question} language={language} seconds={seconds} onSubmit={submitAnswer} draft={draft} onDraftChange={onDraftChange} />;
 }
 
 export type AnswerDraft = { optionId: string } | { optionIds: string[] } | { mapping: Mapping };
 
 // Presentation and draft interaction are independent of transport and clock ownership.
-export function PlayerAnswerContent({ question, language, seconds, onSubmit }: {
+export function PlayerAnswerContent({ question, language, seconds, onSubmit, draft, onDraftChange }: {
   question: Omit<PlayerQuestion, 'timer'>; language: 'ru' | 'en'; seconds: number;
   onSubmit: (answer: AnswerDraft) => Promise<Submission>;
-}) {
-  const [mapping, setMapping] = useState<Mapping>([]);
-  const [activeLeft, setActiveLeft] = useState<string | null>(null);
-  const [selection, setSelection] = useState<string[]>([]);
+} & DraftProps) {
+  const [localDraft, setLocalDraft] = useState<PlayerDraft>({ selection: [], mapping: [], activeLeft: null });
+  const { mapping, activeLeft, selection } = draft ?? localDraft;
+  const changeDraft = (changes: Partial<PlayerDraft>) => {
+    const next = { ...(draft ?? localDraft), ...changes };
+    if (onDraftChange) onDraftChange(next);
+    else setLocalDraft(next);
+  };
   const [accepted, setAccepted] = useState<Submission>({ submitted: false });
   const [busy, setBusy] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
@@ -66,9 +74,9 @@ export function PlayerAnswerContent({ question, language, seconds, onSubmit }: {
         <legend>{ru ? 'Нажмите слева, затем справа' : 'Tap a left item, then a right item'}</legend>
         <div className="matching-columns">
           <div>{question.leftItems?.map((item, index) => <button type="button" key={item.id} disabled={locked} aria-pressed={activeLeft === item.id} data-paired={pairs.some(pair => pair.leftId === item.id) || undefined}
-            onClick={() => setActiveLeft(item.id)}>{index + 1}. <MatchingItemContent item={item} /></button>)}</div>
+            onClick={() => changeDraft({ activeLeft: item.id })}>{index + 1}. <MatchingItemContent item={item} /></button>)}</div>
           <div>{question.rightItems?.map(item => { const pair = pairs.find(pair => pair.rightId === item.id); return <button type="button" key={item.id}
-            data-paired={Boolean(pair) || undefined} disabled={locked || !activeLeft} onClick={() => { setMapping(current => [...current.filter(pair => pair.leftId !== activeLeft && pair.rightId !== item.id), { leftId: activeLeft!, rightId: item.id }]); setActiveLeft(null); }}>
+            data-paired={Boolean(pair) || undefined} disabled={locked || !activeLeft} onClick={() => { changeDraft({ mapping: [...mapping.filter(pair => pair.leftId !== activeLeft && pair.rightId !== item.id), { leftId: activeLeft!, rightId: item.id }], activeLeft: null }); }}>
             <MatchingItemContent item={item} />{pair ? ` (${question.leftItems!.findIndex(left => left.id === pair.leftId) + 1})` : ''}
           </button>; })}</div>
         </div>
@@ -77,7 +85,7 @@ export function PlayerAnswerContent({ question, language, seconds, onSubmit }: {
         <legend>{multiple ? (ru ? 'Выберите несколько вариантов' : 'Choose multiple options') : (ru ? 'Выберите один вариант' : 'Choose one option')}</legend>
         {question.options.map(option => <label key={option.id} data-selected={selected.includes(option.id) || undefined}>
           <input type={multiple ? "checkbox" : "radio"} name="answer" value={option.id} checked={selected.includes(option.id)}
-            disabled={locked} onChange={() => setSelection(current => multiple ? (current.includes(option.id) ? current.filter(id => id !== option.id) : [...current, option.id]) : [option.id])} />
+            disabled={locked} onChange={() => changeDraft({ selection: multiple ? (selection.includes(option.id) ? selection.filter(id => id !== option.id) : [...selection, option.id]) : [option.id] })} />
           {option.text}
         </label>)}
       </fieldset>}

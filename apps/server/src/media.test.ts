@@ -451,6 +451,13 @@ test('pre-timer order gates answering, rejects stale completion, and freezes acr
     pauseGame(f.db, room.id, () => 3000);
     assert.equal(finish(media[0].id, first, 4000), false);
     assert.equal(state(5000).content.media[0].playback.positionSeconds, 2);
+    const pausedScreen = getSurfaceState(f.db, room.id, 'screen', 5000)!.game as any;
+    assert.equal(pausedScreen.state, 'PAUSED');
+    assert.equal(pausedScreen.content.questionId, question.id);
+    assert.equal(pausedScreen.content.media.length, 3);
+    assert.equal(pausedScreen.content.media[0].playback.positionSeconds, 2);
+    assert.equal(pausedScreen.content.media[0].playback.playing, false);
+    assert.equal(JSON.stringify(pausedScreen).includes('isCorrect'), false);
     resumeGame(f.db, room.id, () => 10000);
     assert.equal(state(10000).media[0].playback.positionSeconds, 2);
     assert.equal(finish(media[0].id, first, 11000), false);

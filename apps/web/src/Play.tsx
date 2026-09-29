@@ -1,7 +1,7 @@
 import { ThemeSurface } from './themes/ThemeSurface';
 import { ThemeDecoration } from './themes/ThemeDecoration';
 import { PlayerRevealContent } from './PlayerReveal';
-import { PlayerAnswer } from './PlayerAnswer';
+import { PlayerAnswer, type PlayerDraft } from './PlayerAnswer';
 import { useLobby, type Room, type PlayerQuestion, type PlayerReveal } from './lobby';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -29,6 +29,7 @@ function PlayerRoom({ code }: { code: string }) {
   const [busy, setBusy] = useState(Boolean(code));
   const [retry, setRetry] = useState(0);
   const identityRevision = useRef(0);
+  const [answerDraft, setAnswerDraft] = useState<{ owner: string; questionId: string; value: PlayerDraft } | null>(null);
 
   useEffect(() => {
     if (!code) return;
@@ -139,6 +140,16 @@ function PlayerRoom({ code }: { code: string }) {
   const ru = identity?.player.language === 'ru';
   const currentRoom = live?.room ?? identity?.room;
   const isActive = !removed && identity?.active && currentRoom?.closedAt === null;
+  const draftOwner = JSON.stringify([identity?.room.id, identity?.player.id, token]);
+  const draftQuestion = identity?.game;
+  // Null game during pause/refetch is temporary: keep the current question's draft.
+  // Discard it at authoritative identity, participation, submission and game boundaries.
+  const validDraft = answerDraft && isActive && answerDraft.owner === draftOwner
+    && ['ANSWERING', 'PAUSED'].includes(currentRoom?.state ?? '')
+    && (!draftQuestion || (draftQuestion.questionId === answerDraft.questionId
+      && !draftQuestion.excluded && !draftQuestion.submission?.submitted));
+  if (answerDraft && !validDraft) setAnswerDraft(null);
+  const emptyDraft: PlayerDraft = { selection: [], mapping: [], activeLeft: null };
   return <ThemeSurface themeId={(currentRoom ?? room)?.themeId} className="player" data-phase={currentRoom?.closedAt ? 'CLOSED' : currentRoom?.state} data-excluded={identity?.game?.excluded || undefined}>
     <h1>Player<ThemeDecoration kind="player" /></h1>
     {error && <p role="alert">{error}</p>}
@@ -159,8 +170,11 @@ function PlayerRoom({ code }: { code: string }) {
       </header>
       {removed && <p className="state-notice excluded" role="status">{ru ? 'Ведущий удалил вас из игры.' : 'The host removed you from the game.'}</p>}
       {!removed && (isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
-        {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game?.excluded && currentRoom?.state === 'ANSWERING' ? <p className="state-notice excluded" role="status">{ru ? 'Этот вопрос продолжен без вас' : 'This question continued without you'}</p> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={identity.game.questionId} question={identity.game}
-          token={token} roomId={identity.room.id} language={identity.player.language} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
+        {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game?.excluded && currentRoom?.state === 'ANSWERING' ? <p className="state-notice excluded" role="status">{ru ? 'Этот вопрос продолжен без вас' : 'This question continued without you'}</p> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={JSON.stringify([draftOwner, identity.game.questionId])} question={identity.game}
+          token={token} roomId={identity.room.id} language={identity.player.language}
+          draft={validDraft ? answerDraft.value : emptyDraft}
+          onDraftChange={value => setAnswerDraft({ owner: draftOwner, questionId: identity.game!.questionId, value })}
+          onAccepted={() => setAnswerDraft(previous => previous?.owner === draftOwner && previous.questionId === identity.game!.questionId ? null : previous)} /> : <p role="status">{ru ? 'Загрузка вопроса…' : 'Loading question…'}</p>}
         {error && <button onClick={() => setRetry(value => value + 1)}>Retry</button>}
       </section> : <p className="state-notice player-waiting" role="status">{isActive
         ? (currentRoom?.state === 'PAUSED' ? (ru ? 'Пауза' : 'Paused') : currentRoom?.state === 'ROUND_INTRO'

@@ -232,3 +232,87 @@ for (const language of ['ru', 'en']) test(`excluded Player ${language} has no co
   await waitFor(() => assert.ok(view.getByRole('radio')));
   assert.equal((view.getByRole('radio') as HTMLInputElement).disabled, false);
 });
+
+for (const kind of ['single', 'multiple', 'yes-no', 'matching']) test(`${kind} unsent draft survives Pause and Wait/Resume`, async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let phase = 'ANSWERING';
+  const game = { state: 'ANSWERING', questionId: 'q', text: 'Pick', submission: { submitted: false },
+    ...(kind === 'multiple' ? { type: 'multiple_choice' } : kind === 'matching' ? { type: 'matching',
+      leftItems: [{ id: 'l1', kind: 'text', text: 'Apple' }, { id: 'l2', kind: 'text', text: 'Pear' }],
+      rightItems: [{ id: 'r1', kind: 'text', text: 'Red' }, { id: 'r2', kind: 'text', text: 'Green' }] } : {}),
+    options: [{ id: 'a', text: kind === 'yes-no' ? 'Yes' : 'First' }, { id: 'b', text: kind === 'yes-no' ? 'No' : 'Second' }], timer: timer(Date.now(), 30000) };
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: phase }, active: true, player: { id: 'p', name: 'Alex', language: 'en' }, game: phase === 'ANSWERING' ? game : null });
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Pick')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
+  if (kind === 'matching') {
+    fireEvent.click(view.getByRole('button', { name: '1. Apple' }));
+    fireEvent.click(view.getByRole('button', { name: 'Red' }));
+  } else {
+    fireEvent.click(view.getByLabelText(game.options[1].text));
+    if (kind === 'multiple') fireEvent.click(view.getByLabelText('First'));
+  }
+  for (let cycle = 0; cycle < 2; cycle++) {
+    phase = 'PAUSED';
+    await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
+    assert.ok(view.getByText('Paused'));
+    assert.equal(view.queryByText('Pick'), null);
+    phase = 'ANSWERING';
+    await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
+    await waitFor(() => assert.ok(view.getByText('Pick')));
+    if (kind === 'matching') {
+      assert.ok(view.getByText('Apple → Red'));
+      assert.equal((view.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled, true);
+    } else {
+      assert.equal((view.getByLabelText(game.options[1].text) as HTMLInputElement).checked, true);
+      assert.equal((view.getByLabelText(game.options[0].text) as HTMLInputElement).checked, kind === 'multiple');
+    }
+  }
+});
+
+for (const boundary of ['next question', 'accepted Submit', 'excluded', 'closed', 'finished', 'identity']) test(`draft clears after ${boundary}`, async () => {
+  const live = socket();
+  dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' }));
+  let phase = 'ANSWERING', questionId = 'q', playerId = 'p';
+  let excluded = false, closedAt: string | null = null;
+  globalThis.fetch = async url => String(url).endsWith('/answers') ? Response.json({ submitted: true, optionId: 'a' }) : Response.json({
+    room: { ...room, state: phase, closedAt }, active: true, player: { id: playerId, name: 'Alex', language: 'en' },
+    game: phase === 'ANSWERING' ? { state: 'ANSWERING', questionId, excluded, text: 'Pick', options: [{ id: 'a', text: 'Apple' }], submission: { submitted: false }, timer: timer(Date.now(), 30000) } : null });
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByRole('radio')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
+  fireEvent.click(view.getByRole('radio'));
+  const refresh = async () => { await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase, closedAt } }); }); };
+  if (boundary === 'accepted Submit') {
+    fireEvent.click(view.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => assert.ok(view.getByText('Answer submitted')));
+  }
+  phase = 'PAUSED'; await refresh();
+  if (boundary === 'next question') questionId = 'q2';
+  if (boundary === 'identity') playerId = 'other';
+  if (boundary === 'excluded') { excluded = true; phase = 'ANSWERING'; await refresh(); assert.ok(view.getByText('This question continued without you')); }
+  if (boundary === 'closed') { closedAt = 'now'; await refresh(); }
+  if (boundary === 'finished') { phase = 'FINAL_RESULTS'; await refresh(); }
+  // Re-present an editable projection with the same option IDs to detect retained draft state.
+  excluded = false; closedAt = null; phase = 'ANSWERING'; await refresh();
+  await waitFor(() => assert.ok(view.getByRole('radio')));
+  assert.equal((view.getByRole('radio') as HTMLInputElement).checked, false);
+});
+
+for (const state of ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL']) test(`Screen renders text-only paused ${state} under bilingual Pause`, async () => {
+  socket();
+  globalThis.fetch = async () => Response.json({ ...paused, game: { ...paused.game, pausedFromState: state, content: {
+    ...question, questionId: 'q', state, showOptionsOnScreen: true,
+    options: [{ textRu: 'Ответ', textEn: 'Answer', ...(state === 'ANSWER_REVEAL' ? { isCorrect: true } : {}) }],
+    ...(state === 'ANSWER_REVEAL' ? { explanationRu: 'Почему', explanationEn: 'Because' } : {}),
+  } } });
+  const view = show('/screen/room');
+  await waitFor(() => assert.ok(view.getByText('Question text')));
+  assert.ok(view.getByText('Вопрос'));
+  assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
+  assert.ok(view.getByText('Answer'));
+  assert.equal(Boolean(view.queryByText('Верный ответ / Correct answer')), state === 'ANSWER_REVEAL');
+  assert.equal(Boolean(view.queryByText('Because')), state === 'ANSWER_REVEAL');
+  assert.equal(view.queryByRole('timer'), null);
+});

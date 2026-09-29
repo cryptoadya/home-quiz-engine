@@ -90,8 +90,14 @@ for (const offset of [-10000, 0, 1]) test(`disconnect transaction at deadline ${
       assert.equal(state.state, 'PAUSED'); assert.equal(state.pause_reason, 'player_disconnect');
       assert.equal(state.paused_player_id, f.identities[0].player.id); assert.equal(state.paused_remaining_ms, 10000);
       const host = getSurfaceState(db, f.room.id, 'host')!.game!;
-      assert.deepEqual(host, { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 10000, reason: 'player_disconnect', disconnectedPlayer: { id: f.identities[0].player.id, name: 'Alice', present: false } });
-      assert.deepEqual(getSurfaceState(db, f.room.id, 'screen')!.game, { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 10000 });
+      assert.ok(host && 'content' in host && host.content);
+      const { content: hostContent, ...hostPause } = host as any;
+      assert.equal(hostContent.state, 'ANSWERING');
+      assert.deepEqual(hostPause, { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 10000, reason: 'player_disconnect', disconnectedPlayer: { id: f.identities[0].player.id, name: 'Alice', present: false } });
+      const { content: screenContent, ...screenPause } = getSurfaceState(db, f.room.id, 'screen')!.game as any;
+      assert.equal(screenContent.state, 'ANSWERING');
+      assert.equal(JSON.stringify(screenContent).includes('isCorrect'), false);
+      assert.deepEqual(screenPause, { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 10000 });
       assert.deepEqual(Object.keys(getSurfaceState(db, f.room.id, 'player')!), ['room']);
       manager.sync(f.room.id); now = deadline + 100000; jobs[0]();
       assert.deepEqual(row(db, f.room.id), state);

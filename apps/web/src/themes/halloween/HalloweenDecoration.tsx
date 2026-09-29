@@ -1,13 +1,13 @@
 // Literal module-relative URLs let Vite bundle local assets. Only rendered images
 // are requested by the browser; no illustration is a global CSS background.
 const artwork = {
-  lobby: { src: new URL('./assets/halloween_banner_haunted_house.png', import.meta.url).href, width: 1672, height: 941 },
-  round: { src: new URL('./assets/halloween_pumpkin_cluster.png', import.meta.url).href, width: 1254, height: 1254 },
-  winner: { src: new URL('./assets/halloween_winner_trophy.png', import.meta.url).href, width: 1254, height: 1254 },
-  waiting: { src: new URL('./assets/halloween_spooky_candle_scene.png', import.meta.url).href, width: 1448, height: 1086 },
-  player: { src: new URL('./assets/halloween_ghost_mascot.png', import.meta.url).href, width: 1254, height: 1254 },
-  leftWeb: { src: new URL('./assets/halloween_corner_web_top_left.png', import.meta.url).href, width: 1254, height: 1254 },
-  rightWeb: { src: new URL('./assets/halloween_corner_web_top_right.png', import.meta.url).href, width: 1254, height: 1254 },
+  lobby: { src: new URL('./assets/halloween_banner_haunted_house.webp', import.meta.url).href, width: 1672, height: 941 },
+  round: { src: new URL('./assets/halloween_pumpkin_cluster.webp', import.meta.url).href, width: 512, height: 512 },
+  winner: { src: new URL('./assets/halloween_winner_trophy.webp', import.meta.url).href, width: 640, height: 640 },
+  waiting: { src: new URL('./assets/halloween_spooky_candle_scene.webp', import.meta.url).href, width: 640, height: 480 },
+  player: { src: new URL('./assets/halloween_ghost_mascot.webp', import.meta.url).href, width: 128, height: 128 },
+  leftWeb: { src: new URL('./assets/halloween_corner_web_top_left.webp', import.meta.url).href, width: 192, height: 192 },
+  rightWeb: { src: new URL('./assets/halloween_corner_web_top_right.webp', import.meta.url).href, width: 192, height: 192 },
 };
 
 export type DecorationKind = 'lobby' | 'round' | 'winner' | 'waiting' | 'player' | 'corners';

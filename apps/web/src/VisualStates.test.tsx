@@ -1,15 +1,38 @@
 import './test-dom';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { BoundaryContent, RoundIntroContent } from './GameContent';
 import { ThemeSurface } from './themes/ThemeSurface';
+import { HalloweenDecoration, type DecorationKind } from './themes/halloween/HalloweenDecoration';
 import { PlayerAnswerContent } from './PlayerAnswer';
 import { PlayerRevealContent } from './PlayerReveal';
 import type { PlayerReveal } from './lobby';
 
 afterEach(cleanup);
+
+test('Halloween artwork uses transparent lossless WebP with matching intrinsic dimensions', () => {
+  for (const kind of ['lobby', 'round', 'winner', 'waiting', 'player', 'corners'] as DecorationKind[]) {
+    const view = render(createElement(HalloweenDecoration, { kind }));
+    for (const image of view.container.querySelectorAll('img')) {
+      assert.match(image.src, /\.webp$/);
+      const file = readFileSync(new URL(image.src));
+      assert.equal(file.toString('ascii', 0, 4), 'RIFF');
+      assert.equal(file.toString('ascii', 8, 16), 'WEBPVP8L');
+      assert.equal(file[20], 0x2f);
+      // The lossless WebP header stores dimensions minus one and an alpha flag.
+      const header = file.readUInt32LE(21);
+      assert.equal(image.width, (header & 0x3fff) + 1);
+      assert.equal(image.height, ((header >>> 14) & 0x3fff) + 1);
+      assert.equal((header >>> 28) & 1, 1);
+      assert.equal(image.alt, '');
+      assert.equal(image.getAttribute('aria-hidden'), 'true');
+    }
+    view.unmount();
+  }
+});
 const question = { state: 'ANSWERING' as const, questionId: 'q', text: 'Pick one', options: [{ id: 'a', text: 'Alpha' }, { id: 'b', text: 'Beta' }], submission: { submitted: false as const } };
 
 test('selection stays unmistakable after acknowledgement and restored submission', async () => {

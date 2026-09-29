@@ -27,6 +27,7 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
         ? { room: themedRoom, player, active: true } : { room: themedRoom, players: [player] });
       const view = show(path);
       await waitFor(() => assert.ok(view.getByText('Party')));
+      await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
       const main = view.getByRole('main');
       assert.equal(main.dataset.theme, themeId === 'halloween' ? 'halloween' : 'default');
       assert.equal(main.style.getPropertyValue('--theme-text'), resolveTheme(themeId).tokens.text);
@@ -109,6 +110,7 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
       globalThis.fetch = async () => Response.json(path.startsWith('/play') ? { room: { ...room, themeId, state }, player, active: true, game: playerGame() } : { room: { ...room, themeId, state }, players: [player] });
       const view = show(path);
       await waitFor(() => assert.ok(view.getByText('Party')));
+      await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
       for (const phase of phases) {
         state = phase;
         await act(async () => { live.emit('lobby:state', { room: { ...room, themeId, state }, players: [player], game: phase === 'LOBBY' ? null : { ...content, state: phase, ...(phase === 'PAUSED' ? { pausedFromState: 'QUESTION', remainingMs: null } : {}) } }); });

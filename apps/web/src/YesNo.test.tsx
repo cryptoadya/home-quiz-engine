@@ -45,6 +45,7 @@ test('Player mixed Single Choice and Yes / No flow resets selection, submits, re
   view.unmount();
   const reloaded = show();
   await waitFor(() => assert.ok(reloaded.getByText('Answer submitted')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   assert.equal((reloaded.getByLabelText('Yes') as HTMLInputElement).checked, true);
   assert.equal((reloaded.getByLabelText('No') as HTMLInputElement).disabled, true);
   game = { ...game, state: 'ANSWER_REVEAL', correctOptionId: 'yes', result: { outcome: 'correct', points: 4 } };

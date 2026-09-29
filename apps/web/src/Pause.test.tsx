@@ -64,7 +64,9 @@ for (const audience of ['host', 'screen']) test(`${audience} pause removes count
   let snapshot: unknown = { room: { ...room, state: 'ANSWERING' }, game: { ...question, state: 'ANSWERING', timer: timer(0, 12000) } };
   globalThis.fetch = async () => Response.json(snapshot);
   t.mock.timers.enable({ apis: ['setInterval'] });
-  let view = show(`/${audience}/room`);
+  // Flush the HTTP render and countdown interval effect before advancing the clock.
+  let view!: ReturnType<typeof show>;
+  await act(async () => { view = show(`/${audience}/room`); });
   await waitFor(() => assert.equal(view.getByRole('timer').textContent, '12'));
   elapsed = 2000;
   await act(async () => { t.mock.timers.tick(2000); });
@@ -100,6 +102,8 @@ for (const language of ['ru', 'en']) for (const reload of [false, true]) test(`P
   globalThis.fetch = async () => Response.json(identity());
   let view = show('/play/ABCDE');
   await waitFor(() => assert.equal(view.getByRole('timer').textContent, '12'));
+  // HTTP-rendered content can appear before the passive socket effect subscribes.
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   phase = 'PAUSED';
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
   const label = language === 'ru' ? 'Пауза' : 'Paused';
@@ -149,6 +153,7 @@ test('Player authenticates every socket reconnect, exposes subscription failure 
   globalThis.fetch = async () => Response.json({ room: paused.room, active: true, player: { id: 'a', name: 'Alice', language: 'en' }, game: null });
   const view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText('Paused')));
+  await waitFor(() => assert.equal(live.listenerCount('connect'), 1));
   const subscriptions: unknown[] = [];
   live.on('lobby:subscribe', input => subscriptions.push(input));
   await act(async () => { live.emit('connect'); live.emit('lobby:error', { error: 'Invalid player reconnect token.' }); });
@@ -167,6 +172,7 @@ test('accepted Player answer survives socket disconnect without displaying an in
     game: { state: 'ANSWERING', questionId: 'q', text: 'Pick', options: [{ id: 'a', text: 'Apple' }], submission: { submitted: true, optionId: 'a' }, timer: timer(Date.now(), 30000) } });
   const view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByRole('radio')));
+  await waitFor(() => assert.equal(live.listenerCount('disconnect'), 1));
   await act(async () => { live.emit('disconnect'); });
   assert.equal(view.queryByText('Paused'), null);
   assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
@@ -217,6 +223,7 @@ for (const language of ['ru', 'en']) test(`excluded Player ${language} has no co
     game: { state: 'ANSWERING', questionId: excluded ? 'q1' : 'q2', excluded, text: 'Pick', options: excluded ? [] : [{ id: 'a', text: 'Apple' }], submission: { submitted: false }, timer: timer(Date.now(), 10000) } });
   const view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Этот вопрос продолжен без вас' : 'This question continued without you')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   assert.equal(view.queryByRole('radio'), null); assert.equal(view.queryByRole('timer'), null);
   assert.equal(view.queryByRole('button', { name: /Submit|Отправить/ }), null);
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'QUESTION' } }); });

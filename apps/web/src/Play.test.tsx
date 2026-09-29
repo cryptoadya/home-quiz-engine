@@ -1,10 +1,13 @@
 import { dom } from './test-dom';
 import assert from 'node:assert/strict';
-import { after, afterEach, test } from 'node:test';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { after, afterEach, beforeEach, mock, test } from 'node:test';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from './App';
+import { EventEmitter } from 'node:events';
+import type { Socket } from 'socket.io-client';
+import { lobbyTransport } from './lobby';
 
 const room = { id: 'room', code: 'ABCDE', quizId: 'quiz', quizTitle: 'Party', state: 'LOBBY', createdAt: 'now', closedAt: null };
 const player = { id: 'player', name: 'Alex', language: 'en', joinedAt: 'now' };
@@ -15,7 +18,11 @@ const originalFormData = globalThis.FormData;
 globalThis.FormData = dom.window.FormData;
 after(() => { globalThis.FormData = originalFormData; });
 function show(path: string) { return render(createElement(MemoryRouter, { initialEntries: [path] }, createElement(App))); }
-afterEach(() => { cleanup(); dom.window.localStorage.clear(); globalThis.fetch = originalFetch; });
+beforeEach(() => {
+  // HTTP-focused tests must not open real sockets or schedule network retries.
+  mock.method(lobbyTransport, 'connect', () => Object.assign(new EventEmitter(), { connect() {}, disconnect() {} }) as unknown as Socket);
+});
+afterEach(() => { cleanup(); mock.restoreAll(); dom.window.localStorage.clear(); globalThis.fetch = originalFetch; });
 
 test('/play finds a room, offers RU/EN, saves identity and enters the waiting state', async () => {
   globalThis.fetch = async (url, init) => {
@@ -191,4 +198,31 @@ for (const themeId of ['default', 'halloween']) test(`gameplay header keeps iden
   assert.equal(dom.window.localStorage.getItem(key), saved);
   assert.match(header.textContent!, /ABCDE/);
   assert.match(header.textContent!, /Alex/);
+});
+
+for (const outcome of ['revoked', 'network-error'] as const) test(`unmounted reconnect ${outcome} cannot clear a newer identity or start a code lookup`, async () => {
+  dom.window.localStorage.setItem(key, saved);
+  let resolve!: (response: Response) => void;
+  let reject!: (cause: Error) => void;
+  globalThis.fetch = () => new Promise((done, fail) => { resolve = done; reject = fail; });
+  const old = show('/play/ABCDE');
+  old.unmount();
+  const replacement = JSON.stringify({ roomId: 'new-room', token: 'new-secret' });
+  dom.window.localStorage.setItem(key, replacement);
+  const requests: string[] = [];
+  globalThis.fetch = async url => {
+    requests.push(String(url));
+    return Response.json({ room: { ...room, id: 'new-room' }, player: { ...player, name: 'Sam' }, active: true });
+  };
+  const current = show('/play/ABCDE');
+  await waitFor(() => assert.ok(current.getByText('Sam')));
+  await act(async () => {
+    if (outcome === 'revoked') resolve(Response.json({ error: 'Revoked' }, { status: 401 }));
+    else reject(new Error('Late network error'));
+  });
+  assert.deepEqual(requests, ['/api/rooms/new-room/reconnect']);
+  assert.equal(dom.window.localStorage.getItem(key), replacement);
+  assert.ok(current.getByText('Sam'));
+  assert.equal(current.queryByRole('alert'), null);
+  assert.equal(current.queryByLabelText('Name'), null);
 });

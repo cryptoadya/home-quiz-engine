@@ -23,6 +23,28 @@ function socket() {
 }
 function save() { dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' })); }
 
+test('Player cleanup removes socket listeners and ignores an in-flight live refresh after remount', async () => {
+  const live = socket(); save();
+  const disconnect = mock.method(live, 'disconnect');
+  globalThis.fetch = async () => Response.json(identity);
+  const old = show('/play/ABCDE');
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
+  let finish!: (response: Response) => void;
+  globalThis.fetch = () => new Promise(resolve => { finish = resolve; });
+  await act(async () => { live.emit('lobby:state', { room }); });
+  old.unmount();
+  assert.deepEqual(live.eventNames(), []);
+  assert.equal(disconnect.mock.callCount(), 1);
+  globalThis.fetch = async () => Response.json({ ...identity, game: { ...question, text: 'Current question' } });
+  const current = show('/play/ABCDE');
+  await waitFor(() => assert.ok(current.getByText('Current question')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
+  await act(async () => { finish(Response.json(identity)); });
+  assert.equal(current.queryByText('First question'), null);
+  assert.ok(current.getByText('Current question'));
+  assert.equal(current.queryByRole('alert'), null);
+});
+
 for (const phase of ['ANSWERING', 'ANSWER_REVEAL']) test(`Player invalidates ${phase} content before a newer question authenticated refetch completes`, async () => {
   const live = socket(); save();
   const game = phase === 'ANSWER_REVEAL' ? { ...question, state: phase, correctOptionId: 'a', result: { outcome: 'correct', points: 1 } } : question;
@@ -30,14 +52,16 @@ for (const phase of ['ANSWERING', 'ANSWER_REVEAL']) test(`Player invalidates ${p
   const view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText('First question')));
   await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
-  let resolve: (response: Response) => void = () => {};
-  globalThis.fetch = () => new Promise(done => { resolve = done; });
+  const pending: ((response: Response) => void)[] = [];
+  globalThis.fetch = () => new Promise(done => { pending.push(done); });
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'QUESTION' } }); });
   await act(async () => { live.emit('lobby:state', { room }); });
   assert.ok(!view.queryByText('First question'), 'previous question must disappear');
   assert.ok(!view.queryByRole('radio'), 'previous answer controls must disappear');
   assert.ok(!view.queryByText('Correct! +1'), 'previous reveal must disappear');
-  await act(async () => { resolve(Response.json({ ...identity, game: { ...question, questionId: 'q2', text: 'Second question', submission: { submitted: false } } })); });
+  assert.equal(pending.length, 2);
+  await act(async () => { pending[1](Response.json({ ...identity, game: { ...question, questionId: 'q2', text: 'Second question', submission: { submitted: false } } })); });
+  await act(async () => { pending[0](Response.json({ ...identity, room: { ...room, state: 'QUESTION' }, game: null })); });
   assert.ok(view.getByText('Second question'));
   assert.equal((view.getByRole('radio') as HTMLInputElement).disabled, false);
 });
@@ -67,7 +91,7 @@ test('Player stale authenticated HTTP cannot restore an old answer after Pause a
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'PAUSED' } }); });
   await act(async () => { live.emit('lobby:state', { room }); });
   await act(async () => { pending[2](Response.json({ ...identity, game: { ...question, text: 'Restored question', timer: { ...timer, remainingMs: 12000 } } })); });
-  await act(async () => { pending[0](Response.json(identity)); });
+  await act(async () => { pending[0](Response.json(identity)); pending[1](Response.json({ ...identity, room: { ...room, state: 'PAUSED' }, game: null })); });
   assert.ok(view.getByText('Restored question'));
   assert.ok(!view.queryByText('First question'), 'previous question must disappear');
   assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
@@ -226,7 +250,8 @@ test('Kicked Player loses active answer controls and stale reconnect cannot rest
   globalThis.fetch = async () => Response.json(identity);
   const view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText('Answer submitted')));
-  let resolve: (response: Response) => void = () => {};
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
+  let resolve!: (response: Response) => void;
   globalThis.fetch = () => new Promise(done => { resolve = done; });
   await act(async () => live.emit('lobby:state', { room }));
   await act(async () => live.emit('player:removed', { roomId: room.id }));

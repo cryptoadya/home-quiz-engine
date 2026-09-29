@@ -51,13 +51,17 @@ test('Matching editor creates, autosaves bilingual sides, reorders, deletes, rel
     fireEvent.change(view.getByLabelText('Pair 1 left EN'), { target: { value: 'Cat' } });
     fireEvent.change(view.getByLabelText('Pair 1 right RU'), { target: { value: 'Животное' } });
     fireEvent.change(view.getByLabelText('Pair 1 right EN'), { target: { value: 'Animal' } });
+    await waitFor(() => assert.equal((view.getByRole('button', { name: 'Move pair 1 down' }) as HTMLButtonElement).disabled, false));
     fireEvent.click(view.getByRole('button', { name: 'Move pair 1 down' }));
     await waitFor(() => assert.equal((view.getByLabelText('Pair 2 left EN') as HTMLInputElement).value, 'Cat'));
     assert.equal(saved, true);
     assert.deepEqual(pairs[1].left, { kind: 'text', textRu: 'Кот', textEn: 'Cat' });
     assert.deepEqual(pairs[1].right, { kind: 'text', textRu: 'Животное', textEn: 'Animal' });
+    // Updated pair fields can render before the preceding action clears busy.
+    await waitFor(() => assert.equal((view.getByRole('button', { name: 'Add pair' }) as HTMLButtonElement).disabled, false));
     fireEvent.click(view.getByRole('button', { name: 'Add pair' }));
     await waitFor(() => assert.ok(view.getByLabelText('Pair 3 left RU')));
+    await waitFor(() => assert.equal((view.getByRole('button', { name: 'Delete pair 1' }) as HTMLButtonElement).disabled, false));
     fireEvent.click(view.getByRole('button', { name: 'Delete pair 1' }));
     await waitFor(() => assert.ok(!view.queryByLabelText('Pair 3 left RU')));
     view.unmount();

@@ -193,6 +193,7 @@ for (const language of ['ru', 'en']) test(`Player ${language} leaves waiting on 
   globalThis.fetch = async () => Response.json({ room, player: { ...player, language }, active: true });
   let view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Ожидайте ведущего…' : 'Waiting for the host…')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   const started = { ...room, state: 'ROUND_INTRO' };
   await act(async () => { live.emit('lobby:state', { room: started }); });
   assert.ok(view.getByText(language === 'ru' ? 'Раунд начинается…' : 'Round is starting…'));
@@ -270,6 +271,7 @@ for (const language of ['ru', 'en']) test(`Player ${language} receives Question 
   globalThis.fetch = async () => Response.json({ room: { ...room, state: phase }, player: { ...player, language }, active: true });
   let view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Раунд начинается…' : 'Round is starting…')));
+  await waitFor(() => assert.equal(live.listenerCount('lobby:state'), 1));
   phase = 'QUESTION';
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
   assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question'));

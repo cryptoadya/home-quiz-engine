@@ -195,7 +195,8 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
           const type = event.target.value as Question['type'];
           void (async () => {
             let confirmed: Question | undefined;
-            const obsoleteOwner = `${questionOwner(selected.id)}/${selected.type === 'matching' ? 'pairs' : 'options'}`;
+            const obsoleteOwner = selected.type === 'matching' && type !== 'matching' ? `${questionOwner(selected.id)}/pairs`
+              : selected.type !== 'matching' && type === 'matching' ? `${questionOwner(selected.id)}/options` : undefined;
             const saved = await afterSaves(async () => {
               const question = await api<Question>(`${base}/${selected.id}`, json('PUT', { ...fields, type }));
               confirmed = question;

@@ -620,6 +620,20 @@ test('failed type switch retains existing child DELETE failure', async () => {
   assert.ok(!e.view.queryByText('Quiz list opened'));
 });
 
+test('non-structural type switch does not clear a retained option DELETE failure', async () => {
+  const e = await editor();
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete option 1' }));
+  await waitFor(() => assert.equal(e.deletions.length, 1));
+  await act(async () => e.deletions[0].reply.resolve(Response.json({ error: 'Delete failed' }, { status: 500 })));
+  fireEvent.change(e.view.getByLabelText('Question type'), { target: { value: 'multiple_choice' } });
+  await e.reply(0, true, { ...e.question, type: 'multiple_choice' });
+  await waitFor(() => assert.equal((e.view.getByLabelText('Question type') as HTMLSelectElement).value, 'multiple_choice'));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
+  fireEvent.click(e.view.getByRole('button', { name: '← Quiz list' }));
+  await act(async () => {});
+  assert.ok(!e.view.queryByText('Quiz list opened'));
+});
+
 test('question owner discard retains another question in the same queue', async () => {
   let saves!: ReturnType<typeof useEditorSave>;
   let barrier!: NonNullable<ReturnType<typeof useSaveBarrier>>;

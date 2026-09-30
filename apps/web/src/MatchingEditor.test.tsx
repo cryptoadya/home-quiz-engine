@@ -113,3 +113,44 @@ test('confirmed type survives failed child load and later autosave uses the new 
     assert.equal(pairLoads, 2);
   } finally { globalThis.fetch = original; }
 });
+
+for (const [from, to] of [
+  ['single_choice', 'multiple_choice'],
+  ['multiple_choice', 'single_choice'],
+  ['single_choice', 'yes_no'],
+] as const) test(`${from} to ${to} persists a pending retained option edit through reload`, async () => {
+  const question = { id: 'q', roundId: 'round', type: from as typeof from | typeof to, textRu: '', textEn: '', points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, position: 0 };
+  const options = [
+    { id: 'o1', questionId: 'q', textRu: 'Первый', textEn: 'First', isCorrect: true, position: 0 },
+    { id: 'o2', questionId: 'q', textRu: 'Второй', textEn: 'Second', isCorrect: false, position: 1 },
+  ];
+  const writes: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    const path = String(url);
+    const method = init?.method ?? 'GET';
+    if (path.endsWith('/questions')) return Response.json([question]);
+    if (path.endsWith('/options')) return Response.json(options);
+    if (method === 'PUT' && path.endsWith('/options/o1')) {
+      writes.push('option');
+      Object.assign(options[0], JSON.parse(String(init?.body)));
+      return Response.json(options[0]);
+    }
+    if (method === 'PUT' && path.endsWith('/questions/q')) {
+      writes.push('type');
+      Object.assign(question, JSON.parse(String(init?.body)));
+      return Response.json(question);
+    }
+    throw Error(`Unexpected ${method} ${path}`);
+  };
+  const view = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
+  await waitFor(() => assert.ok(view.getByLabelText('Option 1 EN')));
+  fireEvent.change(view.getByLabelText('Option 1 EN'), { target: { value: 'Edited first' } });
+  fireEvent.change(view.getByLabelText('Question type'), { target: { value: to } });
+  await waitFor(() => assert.equal((view.getByLabelText('Question type') as HTMLSelectElement).value, to));
+  await waitFor(() => assert.equal((view.getByLabelText('Option 1 EN') as HTMLInputElement).value, 'Edited first'));
+  assert.deepEqual(writes, ['option', 'type']);
+  assert.equal(options[0].textEn, 'Edited first');
+  view.unmount();
+  const reload = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
+  await waitFor(() => assert.equal((reload.getByLabelText('Option 1 EN') as HTMLInputElement).value, 'Edited first'));
+});

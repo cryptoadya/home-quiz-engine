@@ -3,6 +3,8 @@ import type { QuestionMedia } from './lobby';
 
 export function PlayableMedia({ media, onEnded, localControls = false }: { localControls?: boolean; media: QuestionMedia; onEnded?: (mediaId: string, revision: number, duration: number) => void }) {
   const ref = useRef<HTMLMediaElement>(null);
+  const completion = useRef({ revision: media.playback?.revision, started: false, reported: false });
+  if (completion.current.revision !== media.playback?.revision) completion.current = { revision: media.playback?.revision, started: false, reported: false };
   const endedCallback = useRef(onEnded);
   endedCallback.current = onEnded;
   const [error, setError] = useState('');
@@ -11,10 +13,9 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
     const playback = media.playback;
     const receivedAt = performance.now();
     let active = true;
-    let reported = false;
     function completed() {
-      if (!active || reported || !playback?.playing || !Number.isFinite(element.duration) || element.duration <= 0) return;
-      reported = true;
+      if (!active || !playback?.playing || completion.current.revision !== playback.revision || !completion.current.started || completion.current.reported || !Number.isFinite(element.duration) || element.duration <= 0) return;
+      completion.current.reported = true;
       endedCallback.current?.(media.mediaId, playback.revision, element.duration);
     }
     function synchronize() {
@@ -26,7 +27,7 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
       if (playback.playing && (!Number.isFinite(element.duration) || target < element.duration)) {
         // Pause peers before starting this element, regardless of React effect order.
         element.parentElement?.querySelectorAll<HTMLMediaElement>('audio, video').forEach(peer => { if (peer !== element) peer.pause(); });
-        void element.play().then(() => { if (active) setError(''); }).catch(() => {
+        void element.play().then(() => { if (active && completion.current.revision === playback.revision) { completion.current.started = true; setError(''); } }).catch(() => {
           if (active) setError('Воспроизведение заблокировано браузером / Browser blocked playback. Allow autoplay for this Screen, then retry Play on Host.');
         });
       } else { element.pause(); if (playback.playing && target >= element.duration) completed(); }
@@ -38,6 +39,6 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
   }, [media.mediaUrl, media.playback]);
   const props = { src: media.mediaUrl, preload: 'metadata', 'aria-label': media.name, controls: localControls, onPlay: () => { if (localControls) ref.current?.parentElement?.querySelectorAll<HTMLMediaElement>('audio, video').forEach(peer => { if (peer !== ref.current) peer.pause(); }); }, onError: () => setError('Медиа недоступно / Media unavailable') };
   return <>{media.kind === 'video'
-    ? <video {...props} ref={ref as Ref<HTMLVideoElement>} playsInline className="question-video" />
-    : <audio {...props} ref={ref as Ref<HTMLAudioElement>} />}{error && <p role="alert">{error}</p>}</>;
+    ? <video key={media.playback?.revision} {...props} ref={ref as Ref<HTMLVideoElement>} playsInline className="question-video" />
+    : <audio key={media.playback?.revision} {...props} ref={ref as Ref<HTMLAudioElement>} />}{error && <p role="alert">{error}</p>}</>;
 }

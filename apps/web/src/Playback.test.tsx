@@ -90,32 +90,98 @@ test('Screen restores an elapsed finished item without implicitly replaying it',
   try {
     const view = render(createElement(QuestionContent, { question }));
     const element = view.container.querySelector('audio')!;
-    Object.defineProperty(element, 'duration', { get: () => 5 });
-    Object.defineProperty(element, 'readyState', { get: () => 1 });
+    Object.defineProperty(element, 'duration', { configurable: true, get: () => 5 });
+    Object.defineProperty(element, 'readyState', { configurable: true, get: () => 1 });
     fireEvent.loadedMetadata(element);
     assert.equal(plays, 0);
     assert.equal(element.currentTime, 0); // Finished audio needs no EOF seek.
   } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; }
 });
 
-test('pre-timer Screen reports ended revision and elapsed reload; Host restricts controls to the current item', async () => {
+test('blocked pre-timer autoplay and projected EOF cannot advance after reload', async () => {
   const proto = window.HTMLMediaElement.prototype;
-  const oldPause = proto.pause; proto.pause = function () {};
-  const completions: unknown[] = [];
-  const question: CurrentQuestion = { state: 'QUESTION', questionId: 'q', preTimer: { mediaId: 'a', number: 1, total: 2 }, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: ['a', 'b'].map(mediaId => ({ mediaId, kind: 'audio', name: mediaId, mediaUrl: `/media/${mediaId}`, playback: { playing: mediaId === 'a', positionSeconds: 10, serverNow: 0, revision: 3 } })) };
+  const oldPlay = proto.play, oldPause = proto.pause;
+  proto.play = function () { return Promise.reject(new Error('blocked')); };
+  proto.pause = function () {};
+  const completions: unknown[][] = [];
+  const question = (positionSeconds: number, revision = 3): CurrentQuestion => ({ state: 'QUESTION', questionId: 'q', preTimer: { mediaId: 'a', number: 1, total: 2 }, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: ['a', 'b'].map(mediaId => ({ mediaId, kind: 'audio', name: mediaId, mediaUrl: `/media/${mediaId}`, playback: { playing: mediaId === 'a', positionSeconds, serverNow: 0, revision } })) });
   try {
-    const view = render(createElement(QuestionContent, { question, onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    let view = render(createElement(QuestionContent, { question: question(0), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
     assert.ok(view.getByText(/Before timer.*1.*2/));
     const element = view.container.querySelector('audio')!;
     Object.defineProperty(element, 'duration', { get: () => 5 });
     Object.defineProperty(element, 'readyState', { get: () => 1 });
     fireEvent.loadedMetadata(element);
-    await waitFor(() => assert.deepEqual(completions, [['a', 3, 5]]));
-    fireEvent.ended(element);
-    assert.equal(completions.length, 1);
+    await waitFor(() => assert.ok(view.getByRole('alert')));
+    view.rerender(createElement(QuestionContent, { question: question(8), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    fireEvent.loadedMetadata(view.container.querySelector('audio')!);
+    assert.equal(completions.length, 0);
     view.unmount();
-    const host = render(createElement(QuestionContent, { question, host: true }));
+    view = render(createElement(QuestionContent, { question: question(8), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    const reloaded = view.container.querySelector('audio')!;
+    Object.defineProperty(reloaded, 'duration', { configurable: true, get: () => 5 });
+    Object.defineProperty(reloaded, 'readyState', { configurable: true, get: () => 1 });
+    fireEvent.loadedMetadata(reloaded);
+    assert.equal(completions.length, 0);
+    view.unmount();
+    const host = render(createElement(QuestionContent, { question: question(8), host: true }));
     assert.equal((host.getByRole('button', { name: 'Play b' }) as HTMLButtonElement).disabled, true);
     assert.equal((host.getByRole('button', { name: 'Play a' }) as HTMLButtonElement).disabled, false);
-  } finally { proto.pause = oldPause; }
+  } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; }
+});
+
+test('Host Play retry permits one natural completion, and a later EOF projection cannot duplicate it', async () => {
+  const proto = window.HTMLMediaElement.prototype;
+  const oldPlay = proto.play, oldPause = proto.pause;
+  let plays = 0;
+  proto.play = function () { plays++; return plays === 1 ? Promise.reject(new Error('blocked')) : Promise.resolve(); };
+  proto.pause = function () {};
+  const completions: unknown[][] = [];
+  const question = (revision: number, positionSeconds: number): CurrentQuestion => ({ state: 'QUESTION', questionId: 'q', preTimer: { mediaId: 'a', number: 1, total: 1 }, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: [{ mediaId: 'a', kind: 'audio', name: 'a', mediaUrl: '/a', playback: { playing: true, positionSeconds, serverNow: 0, revision } }] });
+  try {
+    const view = render(createElement(QuestionContent, { question: question(3, 0), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    let element = view.container.querySelector('audio')!;
+    Object.defineProperty(element, 'duration', { configurable: true, get: () => 5 });
+    Object.defineProperty(element, 'readyState', { configurable: true, get: () => 1 });
+    fireEvent.loadedMetadata(element);
+    await waitFor(() => assert.ok(view.getByRole('alert')));
+    view.rerender(createElement(QuestionContent, { question: question(4, 0), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    element = view.container.querySelector('audio')!;
+    Object.defineProperty(element, 'duration', { configurable: true, get: () => 5 });
+    Object.defineProperty(element, 'readyState', { configurable: true, get: () => 1 });
+    fireEvent.loadedMetadata(element);
+    await waitFor(() => assert.equal(plays, 2));
+    fireEvent.ended(element);
+    assert.deepEqual([...completions], [['a', 4, 5]]);
+    view.rerender(createElement(QuestionContent, { question: question(4, 8), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    fireEvent.loadedMetadata(element);
+    fireEvent.ended(element);
+    assert.equal(completions.length, 1);
+  } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; }
+});
+
+test('new playback revision ignores stale ended and completes after successful autoplay', async () => {
+  const proto = window.HTMLMediaElement.prototype;
+  const oldPlay = proto.play, oldPause = proto.pause;
+  proto.play = function () { return Promise.resolve(); };
+  proto.pause = function () {};
+  const completions: unknown[][] = [];
+  const question = (revision: number): CurrentQuestion => ({ state: 'QUESTION', questionId: 'q', preTimer: { mediaId: 'a', number: 1, total: 1 }, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: [{ mediaId: 'a', kind: 'audio', name: 'a', mediaUrl: '/a', playback: { playing: true, positionSeconds: 0, serverNow: 0, revision } }] });
+  try {
+    const view = render(createElement(QuestionContent, { question: question(1), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    const stale = view.container.querySelector('audio')!;
+    Object.defineProperty(stale, 'duration', { configurable: true, get: () => 5 });
+    Object.defineProperty(stale, 'readyState', { configurable: true, get: () => 1 });
+    fireEvent.loadedMetadata(stale);
+    view.rerender(createElement(QuestionContent, { question: question(2), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
+    const current = view.container.querySelector('audio')!;
+    Object.defineProperty(current, 'duration', { configurable: true, get: () => 5 });
+    Object.defineProperty(current, 'readyState', { configurable: true, get: () => 1 });
+    fireEvent.loadedMetadata(current);
+    await Promise.resolve();
+    fireEvent.ended(stale);
+    assert.deepEqual(completions, []);
+    fireEvent.ended(current);
+    assert.deepEqual(completions, [['a', 2, 5]]);
+  } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; }
 });

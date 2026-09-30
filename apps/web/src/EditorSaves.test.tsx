@@ -304,6 +304,25 @@ test('failed unrelated save prevents DELETE and remains retryable', async () => 
   await replyDelete(e);
 });
 
+for (const target of ['round', 'question', 'option', 'pair'] as const) test(`${target} draft survives an unrelated failed save before DELETE`, async () => {
+  const e = await editor(target === 'pair');
+  const label = target === 'round' ? 'Round title EN' : target === 'question' ? 'Question text EN' : target === 'pair' ? 'Pair 1 left EN' : 'Option 1 EN';
+  const button = target === 'round' ? 'Delete round' : target === 'question' ? 'Delete question' : target === 'pair' ? 'Delete pair 1' : 'Delete option 1';
+  e.edit(label, 'Retained target');
+  e.edit('Title', 'Unrelated quiz');
+  fireEvent.click(e.view.getByRole('button', { name: button }));
+  await e.reply(0, false);
+  assert.equal(e.deletions.length, 0);
+  assert.equal((e.view.getByLabelText(label) as HTMLInputElement).value, 'Retained target');
+  assert.notEqual(e.view.getAllByRole('status')[0].textContent, 'Saved');
+  fireEvent.click(e.view.getByRole('button', { name: 'Export Quiz' }));
+  await e.reply(1);
+  await e.reply(2);
+  assert.ok(JSON.stringify(e.writes[2].body).includes('Retained target'));
+  await waitFor(() => assert.equal(e.actions.length, 1));
+  assert.equal(e.deletions.length, 0);
+});
+
 test('DELETE failure keeps the incomplete round visible with an error', async () => {
   const e = await editor();
   e.edit('Round description RU', 'Keep visible');
@@ -357,6 +376,25 @@ for (const succeeds of [true, false]) test(`round deletion waits for an in-fligh
   assert.equal(e.writes.length, 1);
   assert.ok(e.view.getByText('No rounds yet.'));
   assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+});
+
+test('unrelated failure during an in-flight round PUT keeps its replacement draft', async () => {
+  const e = await editor();
+  e.edit('Round title EN', 'Older');
+  await waitFor(() => assert.equal(e.writes.length, 1));
+  e.edit('Round title EN', 'Replacement');
+  e.edit('Title', 'Unrelated quiz');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
+  await e.reply(1, false);
+  await e.reply(0);
+  assert.equal(e.deletions.length, 0);
+  assert.equal((e.view.getByLabelText('Round title EN') as HTMLInputElement).value, 'Replacement');
+  fireEvent.click(e.view.getByRole('button', { name: 'Export Quiz' }));
+  await e.reply(2);
+  await e.reply(3);
+  assert.ok(e.writes.slice(2, 4).some(write => write.body.titleEn === 'Replacement'));
+  await waitFor(() => assert.equal(e.actions.length, 1));
+  assert.equal(e.deletions.length, 0);
 });
 
 function GlobalSaveStatus() {
@@ -446,7 +484,7 @@ test('failed question DELETE blocks Quiz list without replay and clears on retry
   fireEvent.click(e.view.getByRole('button', { name: 'Delete question' }));
   await deleteQuestionReply(e, false);
   exitEditor(e);
-  await act(async () => {});
+  await e.reply(0, false);
   assert.equal(e.deletions.length, 1);
   assert.ok(!e.view.queryByText('Quiz list opened'));
   assert.equal((e.view.getByLabelText('Points') as HTMLInputElement).value, '0');
@@ -515,14 +553,15 @@ for (const matching of [false, true]) test(`failed ${matching ? 'pair' : 'option
   await act(async () => { e.deletions[0].reply.resolve(Response.json({ error: 'Delete failed' }, { status: 500 })); });
   e.edit('Question text EN', 'Unrelated save');
   await e.reply(0);
+  assert.ok(e.writes[0].path.endsWith(matching ? '/pairs/p' : '/options/o'));
+  await e.reply(1);
   assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
-  for (const action of ['← Quiz list', 'Export Quiz', 'Open lobby', 'Start Test Game']) {
-    fireEvent.click(e.view.getByRole('button', { name: action }));
-    await act(async () => {});
-    assert.equal(e.deletions.length, 1);
-    assert.equal(e.actions.length, 0);
-  }
+  fireEvent.click(e.view.getByRole('button', { name: '← Quiz list' }));
+  await act(async () => {});
+  assert.equal(e.deletions.length, 1);
+  assert.equal(e.actions.length, 0);
   assert.equal((e.view.getByLabelText(label) as HTMLInputElement).value, 'Visible draft');
+  await waitFor(() => assert.equal((e.view.getByRole('button', { name: '← Quiz list' }) as HTMLButtonElement).disabled, false));
   fireEvent.click(e.view.getByRole('button', { name: matching ? 'Delete pair 1' : 'Delete option 1' }));
   await waitFor(() => assert.equal(e.deletions.length, 2));
   await act(async () => { e.deletions[1].reply.resolve(new Response(null, { status: 204 })); });

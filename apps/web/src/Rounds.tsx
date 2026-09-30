@@ -119,18 +119,19 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
     const failureKey = `delete:round:${round.id}`;
     setBusy(true);
     try {
-      if (barrier) barrier.discard(round.id);
-      else saves.discard(round.id);
-      await (barrier?.flush(failureKey) ?? saves.flush(failureKey));
-      await saves.perform(async () => {
-        await api<void>(`${base}/${round.id}`, { method: 'DELETE' });
-        onPersistedChange?.();
-        const next = rounds.filter((item) => item.id !== round.id);
-        setRounds(next);
-        setSelectedId(next[0]?.id ?? null);
-        incomplete.current = false;
-        setError('');
-      }, failureKey);
+      const release = await (barrier?.flushExcept(round.id, failureKey) ?? saves.flushExcept(round.id, failureKey));
+      try {
+        await saves.perform(async () => {
+          await api<void>(`${base}/${round.id}`, { method: 'DELETE' });
+          (barrier ?? saves).discard(round.id);
+          onPersistedChange?.();
+          const next = rounds.filter((item) => item.id !== round.id);
+          setRounds(next);
+          setSelectedId(next[0]?.id ?? null);
+          incomplete.current = false;
+          setError('');
+        }, failureKey, true);
+      } finally { release(); }
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }

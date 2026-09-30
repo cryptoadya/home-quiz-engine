@@ -89,11 +89,17 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   async function afterSaves(action: () => Promise<void>, discardOwner?: string, failureKey?: string) {
     setBusy(true);
     try {
+      let release: (() => void) | undefined;
       if (discardOwner) {
-        (barrier ?? saves).discard(discardOwner);
-        await (barrier ?? saves).flush(failureKey);
+        release = await (barrier ?? saves).flushExcept(discardOwner, failureKey);
       }
-      await saves.perform(async () => { await action(); onPersistedChange?.(); }, failureKey); setError('');
+      try {
+        await saves.perform(async () => {
+          await action();
+          if (discardOwner) (barrier ?? saves).discard(discardOwner);
+          onPersistedChange?.();
+        }, failureKey, Boolean(discardOwner)); setError('');
+      } finally { release?.(); }
     }
     catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }

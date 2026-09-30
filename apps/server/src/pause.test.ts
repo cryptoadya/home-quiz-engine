@@ -52,6 +52,7 @@ for (const state of ['ROUND_INTRO', 'QUESTION', 'ANSWER_REVEAL', 'ROUND_END', 'L
     const db = initializeDatabase(':memory:');
     try {
       const { api, root, room, question, options, identities, broadcasts } = await setup(db);
+      if (state === 'LEADERBOARD') db.exec('UPDATE rounds SET show_leaderboard_after = 1');
       await api.post(`${root}/start`).expect(200);
       if (state !== 'ROUND_INTRO') await api.post(`${root}/start-round`).expect(200);
       if (!['ROUND_INTRO', 'QUESTION'].includes(state)) {
@@ -63,6 +64,7 @@ for (const state of ['ROUND_INTRO', 'QUESTION', 'ANSWER_REVEAL', 'ROUND_END', 'L
       const answers = db.prepare('SELECT * FROM player_answers').all();
       const scores = db.prepare('SELECT * FROM question_scores').all();
       const count = broadcasts.length;
+      const beforeProjections = Object.fromEntries((['host', 'screen'] as const).map(audience => [audience, getSurfaceState(db, room.id, audience)!.game]));
       assert.equal((await api.post(`${root}/pause`).expect(200)).body.state, 'PAUSED');
       assert.equal(broadcasts.length, count + 1);
       assert.equal(session(db).paused_from_state, state);
@@ -71,13 +73,14 @@ for (const state of ['ROUND_INTRO', 'QUESTION', 'ANSWER_REVEAL', 'ROUND_END', 'L
       for (const audience of ['host', 'screen'] as const) {
         const projection = (await api.get(`${root}/game/${audience}`).expect(200)).body.game;
         const { content, ...metadata } = projection;
-        assert.equal(Boolean(content), ['QUESTION', 'ANSWER_REVEAL'].includes(state));
-        if (content) {
-          assert.equal(content.textEn, 'Question');
-          assert.equal(content.state, state);
-          if (state === 'ANSWER_REVEAL') assert.equal(content.options.filter((option: { isCorrect?: boolean }) => option.isCorrect).length, 1);
-          else if (audience === 'screen') assert.equal(JSON.stringify(content).includes('isCorrect'), false);
-        }
+        if (state === 'ANSWER_REVEAL') {
+          const { timer: pausedTimer, ...pausedContent } = content;
+          const { timer: activeTimer, ...activeContent } = beforeProjections[audience];
+          assert.deepEqual(pausedContent, activeContent);
+          assert.equal(pausedTimer.expired, true);
+        } else assert.deepEqual(content, beforeProjections[audience]);
+        assert.equal(content.state, state);
+        if (audience === 'screen' && state !== 'ANSWER_REVEAL') assert.equal(JSON.stringify(content).includes('isCorrect'), false);
         assert.deepEqual(metadata, { state: 'PAUSED', pausedFromState: state, remainingMs: null, ...(audience === 'host' ? { reason: 'manual', disconnectedPlayer: null } : {}) });
       }
       for (const action of ['pause', 'start', 'start-round', 'start-question', 'next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner']) await api.post(`${root}/${action}`).expect(409);
@@ -371,6 +374,11 @@ for (const showOptions of [false, true]) test(`text-only paused Answering preser
     assert.equal(screen.content.timer, undefined);
     assert.equal(JSON.stringify(screen).includes('isCorrect'), false);
     assert.equal(JSON.stringify(screen).includes('explanation'), false);
+    const host = (await api.get(`${root}/game/host`).expect(200)).body.game;
+    assert.equal(host.content.state, 'ANSWERING');
+    assert.equal(host.content.textEn, 'Question');
+    assert.equal(host.content.options.filter((option: { isCorrect?: boolean }) => option.isCorrect).length, 1);
+    assert.equal(host.content.timer, undefined);
     assert.equal(getPlayerGame(db, room.id, 'en', 'unused'), null);
   } finally { db.close(); }
 });

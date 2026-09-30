@@ -11,6 +11,7 @@ export function Screen() {
   const { roomId } = useParams();
   const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
   const local = needsLanAddress(window.location.origin);
+  const content = state?.game?.state === 'PAUSED' ? state.game.content : state?.game;
   return <ThemeSurface themeId={state?.room.themeId} className="screen-lobby" data-phase={state?.room.closedAt ? 'CLOSED' : state?.room.state}>
     <ThemeDecoration kind="corners" />
     <header className="screen-header">
@@ -25,7 +26,7 @@ export function Screen() {
     {!state && !error && <p>Загрузка / Loading…</p>}
     {state && <>
       {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state !== 'LOBBY'
-        ? <section className="game-content">{state.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} />}{state.game && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <BoundaryContent game={state.game as import('./lobby').GameBoundary} />}{state.game?.state === 'ROUND_INTRO' && <RoundIntroContent round={state.game} />}{(state.game?.state === 'QUESTION' || state.game?.state === 'ANSWERING' || state.game?.state === 'ANSWER_REVEAL') && <QuestionContent question={state.game} onMediaEnded={(id, revision, duration) => reportMediaEnded(state.game && 'questionId' in state.game ? state.game.questionId! : '', id, revision, duration)} />}{state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}</section> : <>
+        ? <section className="game-content">{content && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(content.state) && <BoundaryContent game={content as import('./lobby').GameBoundary} />}{content?.state === 'ROUND_INTRO' && <RoundIntroContent round={content} />}{content && (content.state === 'QUESTION' || content.state === 'ANSWERING' || content.state === 'ANSWER_REVEAL') && <QuestionContent question={content} onMediaEnded={state.game?.state === 'PAUSED' ? undefined : (id, revision, duration) => reportMediaEnded(content.questionId ?? '', id, revision, duration)} />}{state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}</section> : <>
         <div className="screen-join">
         <ThemeDecoration kind="lobby" />
         <div className="screen-join-panel">

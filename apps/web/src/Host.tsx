@@ -100,7 +100,9 @@ export function Host() {
         <button onClick={() => void start('pause')} disabled={busy}>Pause</button>}
       {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
         <p className="state-notice paused">Game paused.</p>
+        {state?.game?.state === 'PAUSED' && state.game.content?.state === 'ROUND_INTRO' && <><RoundIntroContent round={state.game.content} /><p>Questions: {state.game.content.questionCount}</p></>}
         {state?.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} host mediaBusy />}
+        {state?.game?.state === 'PAUSED' && state.game.content && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(state.game.content.state) && <BoundaryContent game={state.game.content as import('./lobby').GameBoundary} />}
         {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <>
           <p>{state.game.disconnectedPlayer?.name} disconnected.</p>
           <p role="status">{state.game.disconnectedPlayer?.present ? `${state.game.disconnectedPlayer.name} is back — Host can resume with Wait for Player.` : 'Waiting for Player to reconnect…'}</p>

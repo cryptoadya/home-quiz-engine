@@ -316,3 +316,41 @@ for (const state of ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL']) test(`Screen ren
   assert.equal(Boolean(view.queryByText('Because')), state === 'ANSWER_REVEAL');
   assert.equal(view.queryByRole('timer'), null);
 });
+
+for (const audience of ['host', 'screen'] as const) {
+  test(`${audience} keeps Round Intro title, descriptions and art under Pause`, async () => {
+    socket();
+    const content = { state: 'ROUND_INTRO', roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: 'Описание', descriptionEn: 'Description', artUrl: '/round-art.png' };
+    globalThis.fetch = async () => Response.json({ ...paused, game: { ...paused.game, pausedFromState: 'ROUND_INTRO', remainingMs: null, content } });
+    const view = show(`/${audience}/room`);
+    await waitFor(() => assert.ok(view.getByText('Description')));
+    assert.ok(view.getByText('Round'));
+    assert.ok(view.getByText('Описание'));
+    assert.equal(view.getByRole('img', { name: 'Round art' }).getAttribute('src'), '/round-art.png');
+    if (audience === 'host') {
+      assert.ok(view.getByText('Game paused.'));
+      assert.equal(view.queryByRole('button', { name: 'Start Round' }), null);
+      assert.ok(view.getByRole('button', { name: 'Resume' }));
+    } else assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
+  });
+
+  for (const state of ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'] as const) {
+    test(`${audience} keeps ${state} content under Pause without progression`, async () => {
+      socket();
+      const content = { state, roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', nextAction: 'show-winner', leaderboard: state === 'ROUND_END' ? undefined : [{ playerId: 'p', displayName: 'Alice', totalPoints: 7, rank: 1 }] };
+      globalThis.fetch = async () => Response.json({ ...paused, game: { ...paused.game, pausedFromState: state, remainingMs: null, content } });
+      const view = show(`/${audience}/room`);
+      await waitFor(() => assert.ok(view.getByText(state === 'ROUND_END' ? 'Раунд завершён / Round complete' : state === 'LEADERBOARD' ? 'Таблица лидеров / Leaderboard' : 'Финальные результаты / Final results')));
+      if (state === 'ROUND_END') assert.ok(view.getByText('Round'));
+      else {
+        assert.ok(view.getByRole('table'));
+        assert.ok(view.getByText('Alice'));
+        assert.ok(view.getByText('7'));
+      }
+      if (audience === 'host') {
+        assert.ok(view.getByText('Game paused.'));
+        assert.equal(view.queryByRole('button', { name: 'Show Winner' }), null);
+      } else assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
+    });
+  }
+}

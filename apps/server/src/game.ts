@@ -62,8 +62,7 @@ function projectGame(db: DatabaseSync, roomId: string, audience: Audience, now: 
   if (room.closedAt || audience === 'player') return null;
   if (room.state === 'PAUSED') {
     const row = db.prepare('SELECT paused_from_state, paused_remaining_ms, pause_reason, paused_player_id FROM game_sessions WHERE id = ?').get(roomId)!;
-    const content = ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL'].includes(String(row.paused_from_state))
-      ? projectActiveGame(db, roomId, audience, now, String(row.paused_from_state)) : null;
+    const content = projectActiveGame(db, roomId, audience, now, String(row.paused_from_state));
     return { ...(content ? { content } : {}), state: 'PAUSED' as const, pausedFromState: String(row.paused_from_state), remainingMs: row.paused_remaining_ms as number | null,
       ...(audience === 'host' ? { reason: row.pause_reason as 'manual' | 'player_disconnect',
         disconnectedPlayer: row.paused_player_id === null ? null : {

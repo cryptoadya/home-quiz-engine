@@ -1,7 +1,7 @@
 import { QuizPreview } from './QuizPreview';
 import type { Quiz } from './Admin';
 import { MediaImage } from './MediaImage';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEditorSave, useSaveBarrier } from './EditorSaves';
 
 export type Question = {
@@ -43,11 +43,52 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [childLoadFailed, setChildLoadFailed] = useState(false);
+  const answerDataVersion = useRef(0);
+  const answerDataLoaded = useRef(false);
+  const selectedAnswer = useRef<{ id: string; type: Question['type'] } | null>(null);
   const saves = useEditorSave();
   const barrier = useSaveBarrier();
   const questionOwner = (id: string) => `${roundId}/questions/${id}`;
   const { status } = saves;
   const [error, setError] = useState('');
+  const selected = questions.find((item) => item.id === selectedId);
+  const visibleOptions = selected ? options.filter(item => item.questionId === selected.id) : [];
+  const visiblePairs = selected ? pairs.filter(item => item.questionId === selected.id) : [];
+  selectedAnswer.current = selected ? { id: selected.id, type: selected.type } : null;
+
+  function invalidateAnswerData() { answerDataVersion.current += 1; }
+  function isCurrentAnswer(question: Question, version: number) {
+    return answerDataVersion.current === version && selectedAnswer.current?.id === question.id && selectedAnswer.current.type === question.type;
+  }
+  async function loadAnswerData(question: Question) {
+    const version = ++answerDataVersion.current;
+    answerDataLoaded.current = false;
+    try {
+      if (question.type === 'matching') {
+        const items = await api<Pair[]>(`${base}/${question.id}/pairs`);
+        if (!isCurrentAnswer(question, version)) return;
+        setPairs(items);
+      } else {
+        const items = await api<Option[]>(`${base}/${question.id}/options`);
+        if (!isCurrentAnswer(question, version)) return;
+        setOptions(items);
+      }
+      answerDataLoaded.current = true;
+      setChildLoadFailed(false); setError('');
+    } catch (cause) {
+      if (!isCurrentAnswer(question, version)) return;
+      setChildLoadFailed(true); setError((cause as Error).message);
+    }
+  }
+  function commitChildChange(question: Question, apply: () => void) {
+    const needsReload = !answerDataLoaded.current;
+    invalidateAnswerData();
+    if (selectedAnswer.current?.id !== question.id || selectedAnswer.current.type !== question.type) return;
+    apply();
+    setChildLoadFailed(false);
+    if (needsReload) void loadAnswerData(question);
+    else answerDataLoaded.current = true;
+  }
 
   useEffect(() => {
     let active = true;
@@ -59,17 +100,10 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   }, [base]);
 
   useEffect(() => {
-    if (!selectedId) { setOptions([]); setPairs([]); setChildLoadFailed(false); return; }
-    let active = true;
-    setOptions([]); setPairs([]);
-    if (questions.find(question => question.id === selectedId)?.type === 'matching') {
-      api<Pair[]>(`${base}/${selectedId}/pairs`).then(items => { if (active) { setPairs(items); setChildLoadFailed(false); } })
-        .catch((cause: Error) => { if (active) { setError(cause.message); setChildLoadFailed(true); } });
-      return () => { active = false; };
-    }
-    api<Option[]>(`${base}/${selectedId}/options`).then((items) => { if (active) { setOptions(items); setChildLoadFailed(false); } })
-      .catch((cause: Error) => { if (active) { setError(cause.message); setChildLoadFailed(true); } });
-    return () => { active = false; };
+    invalidateAnswerData();
+    setOptions([]); setPairs([]); setChildLoadFailed(false);
+    if (selected) void loadAnswerData(selected);
+    return () => invalidateAnswerData();
   }, [base, selectedId]);
 
   useEffect(() => {
@@ -81,15 +115,8 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   }, [previewOpen, quizId]);
 
   async function selectQuestion(id: string) {
-    try { await saves.flush(); setSelectedId(id); setError(''); }
+    try { await saves.flush(); invalidateAnswerData(); setSelectedId(id); setChildLoadFailed(false); setError(''); }
     catch (cause) { setError((cause as Error).message); }
-  }
-  async function loadAnswerData(question: Question) {
-    try {
-      if (question.type === 'matching') setPairs(await api<Pair[]>(`${base}/${question.id}/pairs`));
-      else setOptions(await api<Option[]>(`${base}/${question.id}/options`));
-      setChildLoadFailed(false); setError('');
-    } catch (cause) { setChildLoadFailed(true); setError((cause as Error).message); }
   }
   function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields, owner: string) {
     saves.schedule(key, async () => { await api(path, json('PUT', body)); onPersistedChange?.(); }, undefined, owner);
@@ -114,16 +141,17 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     finally { setBusy(false); }
   }
 
-  const selected = questions.find((item) => item.id === selectedId);
   function editQuestion(question: Question, changes: QuestionFields) {
     setQuestions((items) => items.map((item) => item.id === question.id ? { ...item, ...changes } : item));
     schedule(question.id, `${base}/${question.id}`, changes, questionOwner(question.id));
   }
   function editOption(option: Option, changes: OptionFields) {
+    invalidateAnswerData(); answerDataLoaded.current = true;
     setOptions((items) => items.map((item) => item.id === option.id ? { ...item, ...changes } : item));
     schedule(option.id, `${base}/${option.questionId}/options/${option.id}`, changes, `${questionOwner(option.questionId)}/options/${option.id}`);
   }
   function editPair(pair: Pair, side: 'left' | 'right', value: Side) {
+    invalidateAnswerData(); answerDataLoaded.current = true;
     const changes = { left: pair.left, right: pair.right, [side]: value };
     setPairs(items => items.map(item => item.id === pair.id ? { ...item, ...changes } : item));
     schedule(pair.id, `${base}/${pair.questionId}/pairs/${pair.id}`, changes, `${questionOwner(pair.questionId)}/pairs/${pair.id}`);
@@ -131,9 +159,10 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   function movePair(index: number, direction: -1 | 1) {
     if (!selected) return;
     void afterSaves(async () => {
-      const next = [...pairs];
+      const next = [...visiblePairs];
       [next[index], next[index + direction]] = [next[index + direction], next[index]];
-      setPairs(await api<Pair[]>(`${base}/${selected.id}/pairs/order`, json('PUT', { ids: next.map(item => item.id) })));
+      const ordered = await api<Pair[]>(`${base}/${selected.id}/pairs/order`, json('PUT', { ids: next.map(item => item.id) }));
+      commitChildChange(selected, () => setPairs(ordered));
     });
   }
   function moveQuestion(index: number, direction: -1 | 1) {
@@ -146,9 +175,10 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   function moveOption(index: number, direction: -1 | 1) {
     if (!selected) return;
     void afterSaves(async () => {
-      const next = [...options];
+      const next = [...visibleOptions];
       [next[index], next[index + direction]] = [next[index + direction], next[index]];
-      setOptions(await api<Option[]>(`${base}/${selected.id}/options/order`, json('PUT', { ids: next.map((item) => item.id) })));
+      const ordered = await api<Option[]>(`${base}/${selected.id}/options/order`, json('PUT', { ids: next.map((item) => item.id) }));
+      commitChildChange(selected, () => setOptions(ordered));
     });
   }
   const fields: QuestionFields | null = selected ? {
@@ -187,7 +217,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         </div>
       </li>)}</ol>}
       {selected && <button onClick={() => setPreviewOpen(open => !open)} aria-expanded={previewOpen}>Preview question</button>}
-      {selected && previewOpen && <QuizPreview key={selected.id} quizId={quizId} quiz={quiz} question={selected} options={options} pairs={pairs} media={media}
+      {selected && previewOpen && <QuizPreview key={selected.id} quizId={quizId} quiz={quiz} question={selected} options={visibleOptions} pairs={visiblePairs} media={media}
         roundNumber={roundNumber} questionNumber={questions.indexOf(selected) + 1} questionCount={questions.length} onClose={() => setPreviewOpen(false)} />}
       {selected && fields && <div className="question-editor fields">
         <h4>{selected.type === 'matching' ? 'Matching' : selected.type === 'yes_no' ? 'Yes / No' : selected.type === 'multiple_choice' ? 'Multiple Choice' : 'Single Choice'} question</h4>
@@ -201,6 +231,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
               const question = await api<Question>(`${base}/${selected.id}`, json('PUT', { ...fields, type }));
               confirmed = question;
               setQuestions(items => items.map(item => item.id === question.id ? question : item));
+              invalidateAnswerData(); answerDataLoaded.current = false;
               setOptions([]); setPairs([]); setChildLoadFailed(false);
             }, obsoleteOwner);
             if (saved && confirmed) await loadAnswerData(confirmed);
@@ -211,7 +242,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         <label>Question text EN<textarea maxLength={5000} value={selected.textEn} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textEn: event.target.value })} /></label>
         <label>Explanation RU (after Reveal)<textarea maxLength={5000} value={selected.explanationRu ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationRu: event.target.value })} /></label>
         <label>Explanation EN (after Reveal)<textarea maxLength={5000} value={selected.explanationEn ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationEn: event.target.value })} /></label>
-        {(selected.textRu.length > 1000 || selected.textEn.length > 1000 || options.some(option => option.textRu.length > 200 || option.textEn.length > 200)) && <p role="status">Long text may be hard to read on phones or TV. Check Preview; text is not truncated.</p>}
+        {(selected.textRu.length > 1000 || selected.textEn.length > 1000 || visibleOptions.some(option => option.textRu.length > 200 || option.textEn.length > 200)) && <p role="status">Long text may be hard to read on phones or TV. Check Preview; text is not truncated.</p>}
         <label>Points<input type="number" min="1" step="1" value={selected.points} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, points: Number(event.target.value) })} /></label>
         <label>Answer time<select value={selected.answerTimeSeconds === null ? 'default' : 'custom'} disabled={busy}
           onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: event.target.value === 'default' ? null : 30 })}>
@@ -241,7 +272,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         {selected.type === 'matching' ? <>
           <h4>Matching pairs</h4>
           <p>At least 2 complete pairs. Each side uses bilingual text or an uploaded image. Switching to an option type clears pairs; switching back creates blank pairs.</p>
-          {pairs.map((pair, index) => <div className="option-editor" key={pair.id}>
+          {visiblePairs.map((pair, index) => <div className="option-editor" key={pair.id}>
             <h5>Pair {index + 1}</h5>
             {(['left', 'right'] as const).map(side => <div key={side}>
               <label>Pair {index + 1} {side} kind<select value={pair[side].kind} disabled={busy} onChange={event => {
@@ -265,16 +296,16 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
             </div>)}
             <div className="round-order">
               <button aria-label={`Move pair ${index + 1} up`} disabled={busy || index === 0} onClick={() => movePair(index, -1)}>↑</button>
-              <button aria-label={`Move pair ${index + 1} down`} disabled={busy || index === pairs.length - 1} onClick={() => movePair(index, 1)}>↓</button>
+              <button aria-label={`Move pair ${index + 1} down`} disabled={busy || index === visiblePairs.length - 1} onClick={() => movePair(index, 1)}>↓</button>
               <button aria-label={`Delete pair ${index + 1}`} disabled={busy} onClick={() => void afterSaves(async () => {
                 await api<void>(`${base}/${selected.id}/pairs/${pair.id}`, { method: 'DELETE' });
-                setPairs(items => items.filter(item => item.id !== pair.id));
+                commitChildChange(selected, () => setPairs(items => items.filter(item => item.id !== pair.id)));
               }, `${questionOwner(selected.id)}/pairs/${pair.id}`, `delete:pair:${roundId}:${selected.id}:${pair.id}`)}>Delete</button>
             </div>
           </div>)}
           <button disabled={busy} onClick={() => void afterSaves(async () => {
             const pair = await api<Pair>(`${base}/${selected.id}/pairs`, { method: 'POST' });
-            setPairs(items => [...items, pair]);
+            commitChildChange(selected, () => setPairs(items => [...items, pair]));
           })}>Add pair</button>
         </> : <>
         <p>Switching to Matching clears answer options and creates two blank pairs.</p>
@@ -284,12 +315,13 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
           <label className="checkbox"><input type="checkbox" checked={selected.showCorrectCount ?? true} disabled={busy}
             onChange={event => editQuestion(selected, { ...fields, showCorrectCount: event.target.checked })} /> Show correct-option count to Player</label>
         </>}
-        {options.map((option, index) => <div className="option-editor" key={option.id}>
+        {visibleOptions.map((option, index) => <div className="option-editor" key={option.id}>
           <label className="checkbox"><input type={selected.type === 'multiple_choice' ? 'checkbox' : 'radio'} name={`correct-${selected.id}`} checked={option.isCorrect} disabled={busy}
             onChange={event => {
               if (selected.type === 'multiple_choice') { editOption(option, { textRu: option.textRu, textEn: option.textEn, isCorrect: event.target.checked }); return; }
               void afterSaves(async () => {
-                setOptions(await api<Option[]>(`${base}/${selected.id}/options/${option.id}/correct`, { method: 'PUT' }));
+                const corrected = await api<Option[]>(`${base}/${selected.id}/options/${option.id}/correct`, { method: 'PUT' });
+                commitChildChange(selected, () => setOptions(corrected));
               });
             }} /> Correct answer, option {index + 1}</label>
           <label>Option {index + 1} RU<input maxLength={500} value={option.textRu} disabled={busy}
@@ -298,17 +330,17 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
             onChange={(event) => editOption(option, { textRu: option.textRu, textEn: event.target.value, isCorrect: option.isCorrect })} /></label>
           {selected.type !== 'yes_no' && <div className="round-order">
             <button className="subtle" aria-label={`Move option ${index + 1} up`} disabled={busy || index === 0} onClick={() => moveOption(index, -1)}>↑</button>
-            <button className="subtle" aria-label={`Move option ${index + 1} down`} disabled={busy || index === options.length - 1} onClick={() => moveOption(index, 1)}>↓</button>
+            <button className="subtle" aria-label={`Move option ${index + 1} down`} disabled={busy || index === visibleOptions.length - 1} onClick={() => moveOption(index, 1)}>↓</button>
             <button className="subtle danger" aria-label={`Delete option ${index + 1}`} disabled={busy}
               onClick={() => void afterSaves(async () => {
                 await api<void>(`${base}/${selected.id}/options/${option.id}`, { method: 'DELETE' });
-                setOptions((items) => items.filter((item) => item.id !== option.id));
+                commitChildChange(selected, () => setOptions((items) => items.filter((item) => item.id !== option.id)));
               }, `${questionOwner(selected.id)}/options/${option.id}`, `delete:option:${roundId}:${selected.id}:${option.id}`)}>Delete</button>
           </div>}
         </div>)}
-        {selected.type !== 'yes_no' && <button disabled={busy || options.length >= 10} onClick={() => void afterSaves(async () => {
+        {selected.type !== 'yes_no' && <button disabled={busy || visibleOptions.length >= 10} onClick={() => void afterSaves(async () => {
           const option = await api<Option>(`${base}/${selected.id}/options`, { method: 'POST' });
-          setOptions((items) => [...items, option]);
+          commitChildChange(selected, () => setOptions((items) => [...items, option]));
         })}>Add option</button>}
         </>}
         <button className="subtle danger" disabled={busy} onClick={() => {

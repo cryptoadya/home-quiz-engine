@@ -15,6 +15,10 @@ class SaveQueue {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   snapshot = () => this.state;
   get unsaved() { return this.pending.size > 0 || Boolean(this.running) || this.operations.size > 0 || this.operationFailures.size > 0; }
+  hasWorkExcept(failureKey?: string) {
+    return this.pending.size > 0 || Boolean(this.running) || this.operations.size > 0 ||
+      [...this.operationFailures.keys()].some(key => key !== failureKey);
+  }
   private publish(status: string, error = '') {
     const failure = this.operationFailures.values().next().value;
     this.state = failure ? { status: 'Save failed', error: failure.message } : { status, error };
@@ -61,13 +65,13 @@ class SaveQueue {
       throw cause;
     });
   };
-  flush = async (): Promise<void> => {
+  flush = async (retryFailureKey?: string): Promise<void> => {
     const results = await Promise.allSettled([this.drain(), ...this.operations]);
     const failed = results.find(result => result.status === 'rejected');
     if (failed?.status === 'rejected') throw failed.reason;
-    const failure = this.operationFailures.values().next().value;
+    const failure = [...this.operationFailures].find(([key]) => key !== retryFailureKey)?.[1];
     if (failure) throw failure;
-    if (this.unsaved) await this.flush();
+    if (this.hasWorkExcept(retryFailureKey)) await this.flush(retryFailureKey);
   };
   private drain = (): Promise<void> => {
     clearTimeout(this.timer);
@@ -119,13 +123,13 @@ class SaveBarrier {
     if (queues.some(queue => queue.snapshot().status === 'Save failed')) return 'Save failed';
     return queues.some(queue => queue.unsaved) ? 'Saving...' : 'Saved';
   };
-  flush = async () => {
+  flush = async (retryFailureKey?: string) => {
     do {
-      const results = await Promise.allSettled([...this.queues].map(queue => queue.flush()));
+      const results = await Promise.allSettled([...this.queues].map(queue => queue.flush(retryFailureKey)));
       const failed = results.find(result => result.status === 'rejected');
       if (failed?.status === 'rejected') throw failed.reason;
       // Recheck all queues, including edits made while another queue was saving.
-    } while ([...this.queues].some(queue => queue.unsaved));
+    } while ([...this.queues].some(queue => queue.hasWorkExcept(retryFailureKey)));
   };
 }
 

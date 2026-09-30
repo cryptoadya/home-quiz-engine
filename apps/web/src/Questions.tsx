@@ -86,14 +86,14 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields, owner: string) {
     saves.schedule(key, async () => { await api(path, json('PUT', body)); onPersistedChange?.(); }, undefined, owner);
   }
-  async function afterSaves(action: () => Promise<void>, discardOwner?: string) {
+  async function afterSaves(action: () => Promise<void>, discardOwner?: string, failureKey?: string) {
     setBusy(true);
     try {
       if (discardOwner) {
         (barrier ?? saves).discard(discardOwner);
-        await (barrier ?? saves).flush();
+        await (barrier ?? saves).flush(failureKey);
       }
-      await saves.perform(async () => { await action(); onPersistedChange?.(); }); setError('');
+      await saves.perform(async () => { await action(); onPersistedChange?.(); }, failureKey); setError('');
     }
     catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
@@ -248,7 +248,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
               <button aria-label={`Delete pair ${index + 1}`} disabled={busy} onClick={() => void afterSaves(async () => {
                 await api<void>(`${base}/${selected.id}/pairs/${pair.id}`, { method: 'DELETE' });
                 setPairs(items => items.filter(item => item.id !== pair.id));
-              }, `${questionOwner(selected.id)}/pairs/${pair.id}`)}>Delete</button>
+              }, `${questionOwner(selected.id)}/pairs/${pair.id}`, `delete:pair:${roundId}:${selected.id}:${pair.id}`)}>Delete</button>
             </div>
           </div>)}
           <button disabled={busy} onClick={() => void afterSaves(async () => {
@@ -282,7 +282,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
               onClick={() => void afterSaves(async () => {
                 await api<void>(`${base}/${selected.id}/options/${option.id}`, { method: 'DELETE' });
                 setOptions((items) => items.filter((item) => item.id !== option.id));
-              }, `${questionOwner(selected.id)}/options/${option.id}`)}>Delete</button>
+              }, `${questionOwner(selected.id)}/options/${option.id}`, `delete:option:${roundId}:${selected.id}:${option.id}`)}>Delete</button>
           </div>}
         </div>)}
         {selected.type !== 'yes_no' && <button disabled={busy || options.length >= 10} onClick={() => void afterSaves(async () => {
@@ -296,7 +296,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
             await api<void>(`${base}/${selected.id}`, { method: 'DELETE' });
             const next = questions.filter((item) => item.id !== selected.id);
             setQuestions(next); setSelectedId(next[0]?.id ?? null);
-          }, questionOwner(selected.id));
+          }, questionOwner(selected.id), `delete:question:${roundId}:${selected.id}`);
         }}>Delete question</button>
       </div>}
     </>}

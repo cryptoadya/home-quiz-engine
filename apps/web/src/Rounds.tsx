@@ -116,11 +116,12 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
 
   async function remove(round: Round) {
     if (!window.confirm(`Delete “${round.titleEn}”? This cannot be undone.`)) return;
+    const failureKey = `delete:round:${round.id}`;
     setBusy(true);
     try {
       if (barrier) barrier.discard(round.id);
       else saves.discard(round.id);
-      await (barrier?.flush() ?? saves.flush());
+      await (barrier?.flush(failureKey) ?? saves.flush(failureKey));
       await saves.perform(async () => {
         await api<void>(`${base}/${round.id}`, { method: 'DELETE' });
         onPersistedChange?.();
@@ -129,7 +130,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
         setSelectedId(next[0]?.id ?? null);
         incomplete.current = false;
         setError('');
-      });
+      }, failureKey);
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }

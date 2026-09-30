@@ -25,9 +25,16 @@ async function editor(matching = false, secondRound = false) {
   const actions: string[] = [];
   const deletions: { path: string; reply: ReturnType<typeof deferred<Response>> }[] = [];
   window.confirm = () => true;
+  const mediaMutations: { method: string; reply: ReturnType<typeof deferred<Response>> }[] = [];
+  const mediaItem = { id: 'm', name: 'picture.gif', kind: 'image', mimeType: 'image/gif', sizeBytes: 100 };
   let validations = 0;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.includes('/media') && (init?.method === 'POST' || init?.method === 'DELETE')) {
+      const reply = deferred<Response>();
+      mediaMutations.push({ method: init.method, reply });
+      return reply.promise;
+    }
     if (init?.method === 'DELETE') {
       const reply = deferred<Response>();
       deletions.push({ path, reply });
@@ -47,7 +54,7 @@ async function editor(matching = false, secondRound = false) {
     if (path.endsWith('/questions')) return Response.json([question]);
     if (path.endsWith('/options')) return Response.json([option]);
     if (path.endsWith('/pairs')) return Response.json([pair]);
-    if (path.endsWith('/media')) return Response.json([]);
+    if (path.endsWith('/media')) return Response.json([mediaItem]);
     return Response.json(quiz);
   };
   URL.createObjectURL = () => 'blob:test'; URL.revokeObjectURL = () => {};
@@ -62,7 +69,7 @@ async function editor(matching = false, secondRound = false) {
     await waitFor(() => assert.ok(writes[index]), { timeout: 2000 });
     await act(async () => { writes[index].reply.resolve(Response.json(ok ? {} : { error: 'Offline' }, { status: ok ? 200 : 500 })); });
   };
-  return { view, writes, actions, deletions, edit, reply, validations: () => validations };
+  return { view, writes, actions, deletions, mediaMutations, mediaItem, edit, reply, validations: () => validations };
 }
 
 for (const matching of [false, true]) test(`failed first PUT retains later ${matching ? 'pair' : 'option'} edits and retry saves both`, async () => {
@@ -374,4 +381,167 @@ test('targeted discard preserves a different round draft in the same queue', asy
   });
   assert.deepEqual(persisted, ['r2']);
   assert.equal(view.getByTestId('global-save-status').textContent, 'Saved');
+});
+
+async function deleteQuestionReply(e: Awaited<ReturnType<typeof editor>>, ok = true) {
+  await waitFor(() => assert.equal(e.deletions.length, 1));
+  assert.equal(e.deletions[0].path, '/api/quizzes/q/rounds/r/questions/a');
+  await act(async () => { e.deletions[0].reply.resolve(ok ? new Response(null, { status: 204 }) : Response.json({ error: 'Delete failed' }, { status: 500 })); });
+}
+
+for (const matching of [false, true]) test(`question deletion discards failed points and pending ${matching ? 'pair' : 'option'} edits`, async () => {
+  const e = await editor(matching);
+  e.edit('Points', '0');
+  e.edit(matching ? 'Pair 1 left EN' : 'Option 1 EN', 'Discard child');
+  await e.reply(0, false);
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete question' }));
+  await deleteQuestionReply(e);
+  assert.equal(e.writes.length, 1);
+  assert.ok(e.view.getByText('No questions yet.'));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+});
+
+test('failed question DELETE keeps the question visible and reports failure', async () => {
+  const e = await editor();
+  e.edit('Points', '0');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete question' }));
+  await deleteQuestionReply(e, false);
+  assert.ok(e.view.getByLabelText('Points'));
+  assert.ok(e.view.getAllByRole('alert').some(node => node.textContent?.includes('Delete failed')));
+});
+
+for (const succeeds of [true, false]) test(`question deletion waits for target PUT (${succeeds}) without replaying replacement`, async () => {
+  const e = await editor();
+  e.edit('Question text EN', 'In flight');
+  await waitFor(() => assert.equal(e.writes.length, 1));
+  e.edit('Question text EN', 'Discard replacement');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete question' }));
+  assert.equal(e.deletions.length, 0);
+  await e.reply(0, succeeds);
+  await deleteQuestionReply(e);
+  assert.equal(e.writes.length, 1);
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+});
+
+test('question deletion waits for quiz and round settings and preserves their failures', async () => {
+  const e = await editor();
+  e.edit('Points', '0'); e.edit('Title', 'Keep quiz'); e.edit('Round title EN', 'Keep round');
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete question' }));
+  await e.reply(0, false); await e.reply(1);
+  assert.equal(e.deletions.length, 0);
+  assert.ok(e.writes.every(write => !write.path.includes('/questions/')));
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete question' }));
+  await e.reply(2);
+  assert.equal(e.writes[2].body.title, 'Keep quiz');
+  await deleteQuestionReply(e);
+});
+
+for (const matching of [false, true]) test(`deleting a ${matching ? 'pair' : 'option'} discards only its own failed edit`, async () => {
+  const e = await editor(matching);
+  e.edit(matching ? 'Pair 1 left EN' : 'Option 1 EN', 'Discard');
+  await e.reply(0, false);
+  e.edit('Question text EN', 'Keep question');
+  fireEvent.click(e.view.getByRole('button', { name: matching ? 'Delete pair 1' : 'Delete option 1' }));
+  await e.reply(1);
+  assert.equal(e.writes[1].body.textEn, 'Keep question');
+  await waitFor(() => assert.equal(e.deletions.length, 1));
+  assert.ok(e.deletions[0].path.endsWith(matching ? '/pairs/p' : '/options/o'));
+  await act(async () => { e.deletions[0].reply.resolve(new Response(null, { status: 204 })); });
+  assert.equal(e.writes.length, 2);
+  assert.ok(!e.view.queryByLabelText(matching ? 'Pair 1 left EN' : 'Option 1 EN'));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+});
+
+test('question owner discard retains another question in the same queue', async () => {
+  let saves!: ReturnType<typeof useEditorSave>;
+  let barrier!: NonNullable<ReturnType<typeof useSaveBarrier>>;
+  const persisted: string[] = [];
+  function Drafts() { saves = useEditorSave(); barrier = useSaveBarrier()!; return <GlobalSaveStatus />; }
+  const view = render(<EditorSaves><Drafts /></EditorSaves>);
+  await act(async () => {
+    saves.schedule('a', async () => { persisted.push('a'); }, 'Invalid target', 'r/questions/a');
+    saves.schedule('o', async () => { persisted.push('o'); }, undefined, 'r/questions/a/options/o');
+    saves.schedule('b', async () => { persisted.push('b'); throw new Error('Other question failed'); }, undefined, 'r/questions/b');
+    barrier.discard('r/questions/a');
+    await assert.rejects(barrier.flush(), /Other question failed/);
+  });
+  assert.deepEqual(persisted, ['b']);
+  assert.equal(view.getByTestId('global-save-status').textContent, 'Save failed');
+  await act(async () => {
+    saves.schedule('b', async () => { persisted.push('b retry'); }, undefined, 'r/questions/b');
+    await barrier.flush();
+  });
+  assert.deepEqual(persisted, ['b', 'b retry']);
+});
+
+async function startMedia(e: Awaited<ReturnType<typeof editor>>, mutation: 'upload' | 'delete') {
+  if (e.view.queryByRole('button', { name: 'Manage media' })) fireEvent.click(e.view.getByRole('button', { name: 'Manage media' }));
+  await waitFor(() => assert.ok(e.view.getByText('picture.gif')));
+  if (mutation === 'upload') {
+    fireEvent.change(e.view.getByLabelText('Media file'), { target: { files: [new File(['GIF89a'], 'picture.gif', { type: 'image/gif' })] } });
+    fireEvent.click(e.view.getByRole('button', { name: 'Upload media' }));
+  } else fireEvent.click(e.view.getByRole('button', { name: 'Delete media picture.gif' }));
+}
+async function replyMedia(e: Awaited<ReturnType<typeof editor>>, index: number, ok = true) {
+  await waitFor(() => assert.ok(e.mediaMutations[index]));
+  await act(async () => { e.mediaMutations[index].reply.resolve(ok
+    ? e.mediaMutations[index].method === 'POST' ? Response.json({ ...e.mediaItem, id: 'uploaded' }) : new Response(null, { status: 204 })
+    : Response.json({ error: 'Media unavailable' }, { status: 500 })); });
+}
+
+for (const mutation of ['upload', 'delete'] as const) {
+  for (const action of ['Export Quiz', 'Open lobby', 'Start Test Game', '← Quiz list']) test(`${action} waits for media ${mutation} and locks further mutations`, async () => {
+    const e = await editor();
+    const initial = e.validations();
+    await startMedia(e, mutation);
+    await waitFor(() => assert.equal(e.mediaMutations.length, 1));
+    fireEvent.click(e.view.getByRole('button', { name: action }));
+    await act(async () => {});
+    assert.equal(e.actions.length, 0);
+    assert.ok(!e.view.queryByText('Quiz list opened'));
+    assert.ok(!e.view.queryByText('Lobby opened'));
+    assert.ok(e.view.getByRole('button', { name: 'Upload media' }).matches(':disabled'));
+    assert.notEqual(e.view.getAllByRole('status')[0].textContent, 'Saved');
+    await replyMedia(e, 0);
+    await waitFor(() => action === '← Quiz list' ? assert.ok(e.view.getByText('Quiz list opened')) : assert.equal(e.actions.length, 1));
+    assert.ok(e.validations() > initial);
+    if (action === 'Export Quiz') assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+  });
+  test(`failed media ${mutation} blocks repeated Quiz list attempts without replay until explicit retry succeeds`, async () => {
+    const e = await editor();
+    const initial = e.validations();
+    await startMedia(e, mutation);
+    exitEditor(e);
+    await replyMedia(e, 0, false);
+    assert.ok(e.view.getByRole('heading', { name: 'Edit quiz' }));
+    assert.ok(e.view.getAllByRole('alert').some(node => node.textContent?.includes('Media unavailable')));
+    exitEditor(e);
+    await act(async () => {});
+    assert.ok(!e.view.queryByText('Quiz list opened'));
+    assert.equal(e.mediaMutations.length, 1);
+    assert.equal(e.validations(), initial);
+    assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
+    await startMedia(e, mutation);
+    await replyMedia(e, 1);
+    assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+    assert.ok(e.validations() > initial);
+    exitEditor(e);
+    await waitFor(() => assert.ok(e.view.getByText('Quiz list opened')));
+  });
+}
+
+for (const action of ['Export Quiz', 'Open lobby', 'Start Test Game', '← Quiz list']) test(`${action} prevents starting media mutations while waiting for other saves`, async () => {
+  const e = await editor();
+  fireEvent.click(e.view.getByRole('button', { name: 'Manage media' }));
+  await waitFor(() => assert.ok(e.view.getByText('picture.gif')));
+  fireEvent.change(e.view.getByLabelText('Media file'), { target: { files: [new File(['GIF89a'], 'picture.gif')] } });
+  e.edit('Title', 'Pending settings');
+  fireEvent.click(e.view.getByRole('button', { name: action }));
+  const upload = e.view.getByRole('button', { name: 'Upload media' });
+  const remove = e.view.getByRole('button', { name: 'Delete media picture.gif' });
+  assert.ok(upload.matches(':disabled') && remove.matches(':disabled'));
+  fireEvent.click(upload); fireEvent.click(remove);
+  assert.equal(e.mediaMutations.length, 0);
+  await e.reply(0);
+  await waitFor(() => action === '← Quiz list' ? assert.ok(e.view.getByText('Quiz list opened')) : assert.equal(e.actions.length, 1));
 });

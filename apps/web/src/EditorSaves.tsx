@@ -7,15 +7,17 @@ class SaveQueue {
   private pending = new Map<string, Edit>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private operations = new Set<Promise<void>>();
+  private operationFailures = new Map<string, Error>();
   private running: Promise<void> | undefined;
   private activeEdit: Edit | undefined;
   private listeners = new Set<() => void>();
   private state: SaveState = { status: 'Saved', error: '' };
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   snapshot = () => this.state;
-  get unsaved() { return this.pending.size > 0 || Boolean(this.running) || this.operations.size > 0; }
+  get unsaved() { return this.pending.size > 0 || Boolean(this.running) || this.operations.size > 0 || this.operationFailures.size > 0; }
   private publish(status: string, error = '') {
-    this.state = { status, error };
+    const failure = this.operationFailures.values().next().value;
+    this.state = failure ? { status: 'Save failed', error: failure.message } : { status, error };
     this.listeners.forEach(listener => listener());
   }
   schedule(key: string, persist: Edit['persist'], blocked?: string, owner?: string) {
@@ -25,16 +27,17 @@ class SaveQueue {
     if (!blocked) this.timer = setTimeout(() => { void this.flush().catch(() => {}); }, 400);
   }
   discard = (owner: string) => {
+    const belongsToOwner = (edit: Edit) => edit.owner === owner || edit.owner?.startsWith(`${owner}/`);
     let discarded = false;
     for (const [key, edit] of this.pending) {
-      if (edit.owner !== owner) continue;
+      if (!belongsToOwner(edit)) continue;
       edit.discarded = true;
       this.pending.delete(key);
       discarded = true;
     }
     // A sent PUT cannot be undone. Keep waiting for it, but do not retry or
     // require success for work whose owner is about to be deleted.
-    if (this.activeEdit?.owner === owner) this.activeEdit.discarded = true;
+    if (this.activeEdit && belongsToOwner(this.activeEdit)) this.activeEdit.discarded = true;
     if (!this.pending.size) {
       clearTimeout(this.timer);
       if (discarded) this.publish(this.unsaved ? 'Saving...' : 'Saved');
@@ -42,15 +45,18 @@ class SaveQueue {
   };
   // Immediate mutations commit their UI only on success. Track them without
   // replaying failed POST/DELETE requests as if they were pending draft edits.
-  perform = (action: () => Promise<void>): Promise<void> => {
+  // A failure key keeps the barrier blocked until that explicit operation succeeds.
+  perform = (action: () => Promise<void>, failureKey?: string): Promise<void> => {
     const operation = this.drain().then(action);
     this.operations.add(operation);
     this.publish('Saving...');
     return operation.then(() => {
       this.operations.delete(operation);
-      if (!this.unsaved) this.publish('Saved');
+      if (failureKey) this.operationFailures.delete(failureKey);
+      this.publish(this.unsaved ? 'Saving...' : 'Saved');
     }, cause => {
       this.operations.delete(operation);
+      if (failureKey) this.operationFailures.set(failureKey, cause as Error);
       this.publish('Save failed', (cause as Error).message);
       throw cause;
     });
@@ -59,6 +65,8 @@ class SaveQueue {
     const results = await Promise.allSettled([this.drain(), ...this.operations]);
     const failed = results.find(result => result.status === 'rejected');
     if (failed?.status === 'rejected') throw failed.reason;
+    const failure = this.operationFailures.values().next().value;
+    if (failure) throw failure;
     if (this.unsaved) await this.flush();
   };
   private drain = (): Promise<void> => {

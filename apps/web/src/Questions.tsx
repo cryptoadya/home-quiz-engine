@@ -2,7 +2,7 @@ import { QuizPreview } from './QuizPreview';
 import type { Quiz } from './Admin';
 import { MediaImage } from './MediaImage';
 import { useEffect, useState } from 'react';
-import { useEditorSave } from './EditorSaves';
+import { useEditorSave, useSaveBarrier } from './EditorSaves';
 
 export type Question = {
   id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
@@ -42,7 +42,9 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const saves = useEditorSave(roundId);
+  const saves = useEditorSave();
+  const barrier = useSaveBarrier();
+  const questionOwner = (id: string) => `${roundId}/questions/${id}`;
   const { status } = saves;
   const [error, setError] = useState('');
 
@@ -81,12 +83,18 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     try { await saves.flush(); setSelectedId(id); setError(''); }
     catch (cause) { setError((cause as Error).message); }
   }
-  function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields) {
-    saves.schedule(key, async () => { await api(path, json('PUT', body)); onPersistedChange?.(); });
+  function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields, owner: string) {
+    saves.schedule(key, async () => { await api(path, json('PUT', body)); onPersistedChange?.(); }, undefined, owner);
   }
-  async function afterSaves(action: () => Promise<void>) {
+  async function afterSaves(action: () => Promise<void>, discardOwner?: string) {
     setBusy(true);
-    try { await saves.perform(async () => { await action(); onPersistedChange?.(); }); setError(''); }
+    try {
+      if (discardOwner) {
+        (barrier ?? saves).discard(discardOwner);
+        await (barrier ?? saves).flush();
+      }
+      await saves.perform(async () => { await action(); onPersistedChange?.(); }); setError('');
+    }
     catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
@@ -94,16 +102,16 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const selected = questions.find((item) => item.id === selectedId);
   function editQuestion(question: Question, changes: QuestionFields) {
     setQuestions((items) => items.map((item) => item.id === question.id ? { ...item, ...changes } : item));
-    schedule(question.id, `${base}/${question.id}`, changes);
+    schedule(question.id, `${base}/${question.id}`, changes, questionOwner(question.id));
   }
   function editOption(option: Option, changes: OptionFields) {
     setOptions((items) => items.map((item) => item.id === option.id ? { ...item, ...changes } : item));
-    schedule(option.id, `${base}/${option.questionId}/options/${option.id}`, changes);
+    schedule(option.id, `${base}/${option.questionId}/options/${option.id}`, changes, `${questionOwner(option.questionId)}/options/${option.id}`);
   }
   function editPair(pair: Pair, side: 'left' | 'right', value: Side) {
     const changes = { left: pair.left, right: pair.right, [side]: value };
     setPairs(items => items.map(item => item.id === pair.id ? { ...item, ...changes } : item));
-    schedule(pair.id, `${base}/${pair.questionId}/pairs/${pair.id}`, changes);
+    schedule(pair.id, `${base}/${pair.questionId}/pairs/${pair.id}`, changes, `${questionOwner(pair.questionId)}/pairs/${pair.id}`);
   }
   function movePair(index: number, direction: -1 | 1) {
     if (!selected) return;
@@ -240,7 +248,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
               <button aria-label={`Delete pair ${index + 1}`} disabled={busy} onClick={() => void afterSaves(async () => {
                 await api<void>(`${base}/${selected.id}/pairs/${pair.id}`, { method: 'DELETE' });
                 setPairs(items => items.filter(item => item.id !== pair.id));
-              })}>Delete</button>
+              }, `${questionOwner(selected.id)}/pairs/${pair.id}`)}>Delete</button>
             </div>
           </div>)}
           <button disabled={busy} onClick={() => void afterSaves(async () => {
@@ -274,7 +282,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
               onClick={() => void afterSaves(async () => {
                 await api<void>(`${base}/${selected.id}/options/${option.id}`, { method: 'DELETE' });
                 setOptions((items) => items.filter((item) => item.id !== option.id));
-              })}>Delete</button>
+              }, `${questionOwner(selected.id)}/options/${option.id}`)}>Delete</button>
           </div>}
         </div>)}
         {selected.type !== 'yes_no' && <button disabled={busy || options.length >= 10} onClick={() => void afterSaves(async () => {
@@ -288,7 +296,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
             await api<void>(`${base}/${selected.id}`, { method: 'DELETE' });
             const next = questions.filter((item) => item.id !== selected.id);
             setQuestions(next); setSelectedId(next[0]?.id ?? null);
-          });
+          }, questionOwner(selected.id));
         }}>Delete question</button>
       </div>}
     </>}

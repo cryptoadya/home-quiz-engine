@@ -274,7 +274,7 @@ function QuizEditorContent() {
       <label>Default answer time (seconds)<input type="number" min="1" max="3600" step="1" value={quiz.defaultAnswerTimeSeconds} onChange={(event) => change({ ...settings, defaultAnswerTimeSeconds: Number(event.target.value) })} /></label>
       <label className="checkbox"><input type="checkbox" checked={quiz.shuffleAnswers} onChange={(event) => change({ ...settings, shuffleAnswers: event.target.checked })} /> Shuffle answers</label>
     </div>
-    <MediaManager key={quiz.id} quizId={quiz.id} onPersistedChange={refreshValidation} />
+    <MediaManager key={quiz.id} quizId={quiz.id} disabled={opening || exporting || exiting} onPersistedChange={refreshValidation} />
     <Rounds quiz={quiz} quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
     </fieldset>
   </ThemeSurface>;

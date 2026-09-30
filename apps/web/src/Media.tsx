@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useEditorSave } from './EditorSaves';
 
 type Media = { id: string; name: string; kind: 'image' | 'audio' | 'video'; mimeType: string; sizeBytes: number };
-export function MediaManager({ quizId, onPersistedChange }: { quizId: string; onPersistedChange: () => void }) {
+export function MediaManager({ quizId, onPersistedChange, disabled = false }: { quizId: string; onPersistedChange: () => void; disabled?: boolean }) {
+  const saves = useEditorSave();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Media[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -27,23 +29,28 @@ export function MediaManager({ quizId, onPersistedChange }: { quizId: string; on
     return () => { active = false; };
   }, [quizId, open]);
   async function upload() {
-    if (!file) return;
+    if (!file || busy || disabled) return;
     setBusy(true); setError(''); setStatus('Uploading...');
     try {
-      const data = new FormData(); data.append('file', file);
-      const media = await request(base, { method: 'POST', body: data });
-      setItems(items => [...items, media]); setStatus(`Uploaded ${media.name}.`);
-      onPersistedChange();
+      await saves.perform(async () => {
+        const data = new FormData(); data.append('file', file);
+        const media = await request(base, { method: 'POST', body: data });
+        setItems(items => [...items, media]); setStatus(`Uploaded ${media.name}.`);
+        onPersistedChange();
+      }, 'upload');
     } catch (cause) { setError((cause as Error).message); setStatus('Upload failed.'); }
     finally { setBusy(false); }
   }
   async function remove(media: Media) {
+    if (busy || disabled) return;
     if (!window.confirm(`Delete “${media.name}”? Questions referencing it will be invalid until fixed. Started games keep their frozen copy.`)) return;
     setBusy(true); setError(''); setStatus('Deleting...');
     try {
-      await request(`${base}/${media.id}`, { method: 'DELETE' });
-      setItems(items => items.filter(item => item.id !== media.id)); setStatus(`Deleted ${media.name}.`);
-      onPersistedChange();
+      await saves.perform(async () => {
+        await request(`${base}/${media.id}`, { method: 'DELETE' });
+        setItems(items => items.filter(item => item.id !== media.id)); setStatus(`Deleted ${media.name}.`);
+        onPersistedChange();
+      }, `delete:${media.id}`);
     } catch (cause) { setError((cause as Error).message); setStatus('Delete failed.'); }
     finally { setBusy(false); }
   }
@@ -52,15 +59,15 @@ export function MediaManager({ quizId, onPersistedChange }: { quizId: string; on
     <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide media' : 'Manage media'}</button>
     {open && <>
       <p>Images/GIF up to 20 MB · Audio up to 100 MB · Video up to 500 MB</p>
-      <label className="upload-field">Media file<input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp3,.wav,.ogg,.mp4,.webm" disabled={busy}
+      <label className="upload-field">Media file<input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp3,.wav,.ogg,.mp4,.webm" disabled={busy || disabled}
         onChange={event => setFile(event.target.files?.[0] ?? null)} /></label>
-      <button type="button" disabled={busy || !file} onClick={() => void upload()}>Upload media</button>
+      <button type="button" disabled={busy || disabled || !file} onClick={() => void upload()}>Upload media</button>
       {status && <p role="status" aria-live="polite">{status}</p>}
-      {error && <p role="alert" className="error">{error}</p>}
+      {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
       {!busy && !error && items.length === 0 && <p className="empty-state">No media uploaded.</p>}
       <ul className="quiz-list">{items.map(media => <li key={media.id}>
         <div><strong>{media.name}</strong><p>{media.kind} · {media.mimeType} · {(media.sizeBytes / 1024 / 1024).toFixed(2)} MB</p></div>
-        <button type="button" className="subtle danger" disabled={busy} aria-label={`Delete media ${media.name}`} onClick={() => void remove(media)}>Delete</button>
+        <button type="button" className="subtle danger" disabled={busy || disabled} aria-label={`Delete media ${media.name}`} onClick={() => void remove(media)}>Delete</button>
       </li>)}</ul>
     </>}
   </section>;

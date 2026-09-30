@@ -21,6 +21,18 @@ export type LobbyState = { room: Room; game?: RoundIntro | CurrentQuestion | Gam
 type Audience = 'host' | 'screen' | 'player';
 export const lobbyTransport = { connect: () => io({ autoConnect: false }) };
 
+type MediaCompletion = { roomId: string; questionId: string; mediaId: string; revision: number; duration: number };
+// Survives a Screen component remount while this browser page is open.
+const pendingMediaCompletions = new Map<string, MediaCompletion>();
+const completionKey = ({ roomId, questionId, mediaId, revision }: MediaCompletion) => `${roomId}:${questionId}:${mediaId}:${revision}`;
+function completionIsCurrent(completion: MediaCompletion, snapshot: LobbyState) {
+  if (snapshot.room.closedAt || snapshot.room.state !== 'QUESTION' && snapshot.room.state !== 'ANSWERING' && snapshot.room.state !== 'ANSWER_REVEAL') return false;
+  const game = snapshot.game;
+  if (!game || !('questionId' in game) || game.questionId !== completion.questionId) return false;
+  const media = game.media?.find(item => item.mediaId === completion.mediaId);
+  return media?.playback?.playing === true && media.playback.revision === completion.revision;
+}
+
 export function useLobby(roomId: string | undefined, audience: Audience, token?: string | null) {
   const [state, setState] = useState<LobbyState | null>(null);
   const [error, setError] = useState('');
@@ -28,9 +40,37 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
   const [connected, setConnected] = useState(false);
   const revision = useRef(0);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
-  const reportMediaEnded = useCallback((questionId: string, mediaId: string, playbackRevision: number, duration: number) => {
-    if (audience === 'screen' && socketRef.current?.connected) socketRef.current.emit('media:ended', { roomId, questionId, mediaId, revision: playbackRevision, duration });
+  const subscribed = useRef(false);
+  const inFlight = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const clearInFlight = useCallback(() => {
+    for (const timeout of inFlight.current.values()) clearTimeout(timeout);
+    inFlight.current.clear();
+  }, []);
+  const sendPending = useCallback(() => {
+    const socket = socketRef.current;
+    if (audience !== 'screen' || !subscribed.current || !socket?.connected) return;
+    for (const [key, completion] of pendingMediaCompletions) {
+      if (completion.roomId !== roomId || inFlight.current.has(key)) continue;
+      const timeout = setTimeout(() => {
+        if (inFlight.current.get(key) !== timeout) return;
+        inFlight.current.delete(key);
+        sendPending();
+      }, 3000);
+      inFlight.current.set(key, timeout);
+      socket.emit('media:ended', completion, (_result: { accepted: boolean }) => {
+        if (inFlight.current.get(key) !== timeout) return;
+        clearTimeout(timeout);
+        inFlight.current.delete(key);
+        pendingMediaCompletions.delete(key);
+      });
+    }
   }, [roomId, audience]);
+  const reportMediaEnded = useCallback((questionId: string, mediaId: string, playbackRevision: number, duration: number) => {
+    if (audience !== 'screen' || !roomId) return;
+    const completion = { roomId, questionId, mediaId, revision: playbackRevision, duration };
+    if (!pendingMediaCompletions.has(completionKey(completion))) pendingMediaCompletions.set(completionKey(completion), completion);
+    sendPending();
+  }, [roomId, audience, sendPending]);
   const refresh = useCallback(async () => {
     const expected = ++revision.current;
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomId!)}/game/${audience}`, { cache: 'no-store' });
@@ -41,6 +81,7 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
   }, [roomId, audience]);
   useEffect(() => {
     setState(null); setError(''); setConnected(false); setRemoved(false);
+    subscribed.current = false;
     if (!roomId || (audience === 'player' && !token)) return;
     const initialRevision = ++revision.current;
     let active = true;
@@ -58,22 +99,35 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
     const socket = lobbyTransport.connect();
     socketRef.current = socket;
     socket.on('connect', () => {
+      subscribed.current = false;
       // The subscription returns a fresh SQLite snapshot on EVERY connection;
       // no event history or client cache is used for recovery.
       socket.emit('lobby:subscribe', { roomId, audience, ...(audience === 'player' ? { token } : {}) });
     });
     socket.on('lobby:state', (snapshot: LobbyState) => {
       if (!active || snapshot.room.id !== roomId) return;
+      if (audience === 'screen') {
+        for (const [key, completion] of pendingMediaCompletions) {
+          if (completion.roomId === roomId && !completionIsCurrent(completion, snapshot)) {
+            pendingMediaCompletions.delete(key);
+            const timeout = inFlight.current.get(key);
+            if (timeout) clearTimeout(timeout);
+            inFlight.current.delete(key);
+          }
+        }
+        subscribed.current = true;
+        sendPending();
+      }
       revision.current++;
       receivedSnapshot = true;
       setState(snapshot); setError(''); setConnected(true);
     });
     socket.on('player:removed', (body: { roomId: string }) => { if (body.roomId === roomId) { revision.current++; setRemoved(true); setState(null); } });
-    socket.on('lobby:error', (body: { error: string }) => { setError(body.error); setConnected(false); });
-    socket.on('disconnect', () => setConnected(false));
-    socket.on('connect_error', () => setConnected(false));
+    socket.on('lobby:error', (body: { error: string }) => { subscribed.current = false; clearInFlight(); setError(body.error); setConnected(false); });
+    socket.on('disconnect', () => { subscribed.current = false; clearInFlight(); setConnected(false); });
+    socket.on('connect_error', () => { subscribed.current = false; clearInFlight(); setConnected(false); });
     socket.connect();
-    return () => { revision.current++; active = false; socket.removeAllListeners(); socket.disconnect(); };
-  }, [roomId, audience, token]);
+    return () => { revision.current++; active = false; subscribed.current = false; clearInFlight(); socket.removeAllListeners(); socket.disconnect(); socketRef.current = null; };
+  }, [roomId, audience, token, clearInFlight, sendPending]);
   return { state, refresh, error, connected, removed, reportMediaEnded };
 }

@@ -549,11 +549,14 @@ test('completion socket accepts only the subscribed Screen room and current play
     assert.deepEqual(await ended({ ...event, questionId: 'foreign' }), { accepted: false });
     assert.deepEqual(await ended({ ...event, revision: 0 }), { accepted: false });
     assert.deepEqual(await ended({ ...event, duration: -1 }), { accepted: false });
+    await f.app.post(`/api/rooms/${room.id}/media/${item.id}/restart`).send({ questionId: question.id }).expect(200);
+    assert.deepEqual(await ended(), { accepted: false }, 'completion from before Host Restart must not advance');
+    const restarted = { ...event, revision: f.db.prepare('SELECT revision FROM media_playback WHERE session_id = ? AND question_id = ? AND media_id = ?').get(room.id, question.id, item.id)!.revision };
     const broadcast = once(socket, 'lobby:state');
-    assert.deepEqual(await ended(), { accepted: true });
+    assert.deepEqual(await ended(restarted), { accepted: true });
     assert.equal((await broadcast)[0].game.state, 'ANSWERING');
     const before = f.db.prepare('SELECT answer_deadline_at FROM game_sessions WHERE id = ?').get(room.id);
-    assert.deepEqual(await ended(), { accepted: false });
+    assert.deepEqual(await ended(restarted), { accepted: false });
     assert.deepEqual(f.db.prepare('SELECT answer_deadline_at FROM game_sessions WHERE id = ?').get(room.id), before);
     assert.equal(runtime.deadlines !== undefined, true);
   } finally { socket.disconnect(); await new Promise<void>(resolve => runtime.io.close(() => resolve())); f.close(); }

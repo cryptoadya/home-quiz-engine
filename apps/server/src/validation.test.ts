@@ -90,3 +90,21 @@ test('readiness reports legacy field errors in round, question, and option order
     assert.equal(response.body.problems.at(-1).roundId, roundB);
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('readiness reports oversized persisted round descriptions with round identity', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'home-quiz-round-readiness-'));
+  const db = initializeDatabase(join(directory, 'quiz.sqlite'));
+  const app = request(createApp(db));
+  try {
+    const quizId = (await app.post('/api/quizzes')).body.id;
+    const roundId = (await app.post(`/api/quizzes/${quizId}/rounds`)).body.id;
+    for (const language of ['RU', 'EN'] as const) {
+      db.prepare('UPDATE rounds SET description_ru = ?, description_en = ? WHERE id = ?').run(
+        'р'.repeat(language === 'RU' ? 5001 : 5000), 'e'.repeat(language === 'EN' ? 5001 : 5000), roundId);
+      const validation = (await app.get(`/api/quizzes/${quizId}/validation`).expect(200)).body;
+      assert.equal(validation.ready, false);
+      assert.ok(validation.problems.some((problem: { code: string; message: string; roundId?: string }) =>
+        problem.code === `ROUND_DESCRIPTION_${language}_TOO_LONG` && problem.roundId === roundId && /5000/.test(problem.message)));
+    }
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});

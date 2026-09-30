@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Quiz } from './Admin';
 import { MediaImage } from './MediaImage';
 import { Questions } from './Questions';
+import { ROUND_DESCRIPTION_MAX_LENGTH } from '../../server/src/round-description';
 
 export type Round = {
   id: string;
@@ -160,8 +161,8 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
       {selected && fields && <div className="fields">
         <label>Round title RU<input value={selected.titleRu} maxLength={100} disabled={busy} onChange={(event) => change(selected, { ...fields, titleRu: event.target.value })} /></label>
         <label>Round title EN<input value={selected.titleEn} maxLength={100} disabled={busy} onChange={(event) => change(selected, { ...fields, titleEn: event.target.value })} /></label>
-        <label>Round description RU<textarea value={selected.descriptionRu} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionRu: event.target.value })} /></label>
-        <label>Round description EN<textarea value={selected.descriptionEn} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionEn: event.target.value })} /></label>
+        <label>Round description RU<textarea value={selected.descriptionRu} maxLength={ROUND_DESCRIPTION_MAX_LENGTH} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionRu: event.target.value })} /></label>
+        <label>Round description EN<textarea value={selected.descriptionEn} maxLength={ROUND_DESCRIPTION_MAX_LENGTH} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionEn: event.target.value })} /></label>
         <button disabled={busy} onClick={() => void api<{ id: string; name: string; kind: string }[]>(`/api/quizzes/${quizId}/media`).then(setArtMedia).catch(cause => setError(cause.message))}>Load / refresh round art</button>
         <label>Round art<select disabled={busy} value={selected.artMediaId ?? ''} onChange={event => change(selected, { ...fields, artMediaId: event.target.value || null })}>
           <option value="">None</option>

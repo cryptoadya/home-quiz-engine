@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { listOptions, listQuestions } from './questions.js';
 import { getQuiz } from './quizzes.js';
 import { listRounds } from './rounds.js';
+import { ROUND_DESCRIPTION_MAX_LENGTH, roundDescriptionTooLong } from './round-description.js';
 
 export type ValidationProblem = {
   code: string;
@@ -40,6 +41,11 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
     if (round.artMediaId && (getMedia(db, quizId, round.artMediaId)?.kind !== 'image' || !mediaAvailable(db, quizId, round.artMediaId))) add('ROUND_ART_MISSING', 'Round art needs an available quiz-owned image', roundLocation);
     if (Boolean(round.descriptionRu.trim()) !== Boolean(round.descriptionEn.trim())) {
       add('ROUND_DESCRIPTION_INCOMPLETE', `Round “${roundName}” needs its description in both languages`, roundLocation);
+    }
+    for (const [language, value] of [['RU', round.descriptionRu], ['EN', round.descriptionEn]] as const) {
+      if (roundDescriptionTooLong(value)) {
+        add(`ROUND_DESCRIPTION_${language}_TOO_LONG`, `Round “${roundName}” ${language} description exceeds ${ROUND_DESCRIPTION_MAX_LENGTH} characters`, roundLocation);
+      }
     }
 
     const questions = listQuestions(db, round.id);

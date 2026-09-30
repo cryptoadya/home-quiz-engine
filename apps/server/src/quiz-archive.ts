@@ -41,7 +41,7 @@ function validateManifest(value: unknown): QuizArchiveManifest {
     fields(r, [...(Object.hasOwn(r, 'artMediaId') ? ['artMediaId'] : []), 'id', 'titleRu', 'titleEn', 'descriptionRu', 'descriptionEn', 'showLeaderboardAfter', 'position', 'questions']);
     identity(r.id);
     checked(validateRoundChanges({ titleRu: r.titleRu, titleEn: r.titleEn, descriptionRu: r.descriptionRu, descriptionEn: r.descriptionEn, showLeaderboardAfter: r.showLeaderboardAfter, artMediaId: r.artMediaId }));
-    if (String(r.descriptionRu).length > 5000 || String(r.descriptionEn).length > 5000 || !Array.isArray(r.questions)) invalid('Invalid round content.');
+    if (!Array.isArray(r.questions)) invalid('Invalid round content.');
     questions += r.questions.length;
     if (questions > archiveLimits.questions) invalid('Too many questions.');
     for (const question of r.questions) {

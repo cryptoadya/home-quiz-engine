@@ -123,6 +123,26 @@ test('portable HTTP export → delete source → import → edit/launch: all typ
   } finally { f.close(); }
 });
 
+test('ready quiz exports and archive imports 5000-character round descriptions; 5001 is rejected', async () => {
+  const f = fixture();
+  try {
+    const id = await seed(f);
+    const roundId = readEditableQuizTree(f.db, id).rounds[0].id;
+    f.db.prepare('UPDATE rounds SET description_ru = ?, description_en = ? WHERE id = ?').run('р'.repeat(5000), 'e'.repeat(5000), roundId);
+    assert.equal((await f.app.get(`/api/quizzes/${id}/validation`).expect(200)).body.ready, true);
+    const archive = await exportQuizArchive(f.db, id);
+    let entries: Map<string, Buffer>;
+    try { entries = await unzip(archive.path); } finally { archive.cleanup(); }
+    const imported = await f.app.post('/api/quizzes/import').attach('file', await zipBytes([...entries]), 'valid.zip').expect(201);
+    assert.equal(readEditableQuizTree(f.db, imported.body.id).rounds[0].descriptionRu.length, 5000);
+    const manifest = JSON.parse(entries.get('manifest.json')!.toString());
+    manifest.quiz.rounds[0].descriptionEn += 'x';
+    entries.set('manifest.json', Buffer.from(JSON.stringify(manifest)));
+    const rejected = await f.app.post('/api/quizzes/import').attach('file', await zipBytes([...entries]), 'invalid.zip').expect(400);
+    assert.match(rejected.body.error, /description.*5000/i);
+  } finally { f.close(); }
+});
+
 test('long uploaded media names keep validated extensions through export and import', async () => {
   const f = fixture();
   try {

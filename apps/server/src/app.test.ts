@@ -127,3 +127,23 @@ test('rounds support bilingual edits, persistent ordering, scoped access, and ca
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('round PUT accepts 5000 description characters and rejects 5001 in either language', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'home-quiz-round-limit-'));
+  const db = initializeDatabase(join(directory, 'quiz.sqlite'));
+  const app = request(createApp(db));
+  try {
+    const quizId = (await app.post('/api/quizzes')).body.id;
+    const roundId = (await app.post(`/api/quizzes/${quizId}/rounds`)).body.id;
+    const url = `/api/quizzes/${quizId}/rounds/${roundId}`;
+    const changes = { titleRu: 'Раунд', titleEn: 'Round', descriptionRu: 'р'.repeat(5000), descriptionEn: 'e'.repeat(5000), showLeaderboardAfter: false };
+    const accepted = await app.put(url).send(changes).expect(200);
+    assert.equal(accepted.body.descriptionRu.length, 5000);
+    assert.equal(accepted.body.descriptionEn.length, 5000);
+    for (const field of ['descriptionRu', 'descriptionEn'] as const) {
+      const rejected = await app.put(url).send({ ...changes, [field]: 'x'.repeat(5001) }).expect(400);
+      assert.match(rejected.body.error, /description.*5000/i);
+      assert.equal((await app.get(`/api/quizzes/${quizId}/rounds`)).body[0][field].length, 5000);
+    }
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});

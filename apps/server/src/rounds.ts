@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { ROUND_DESCRIPTION_MAX_LENGTH, roundDescriptionTooLong } from './round-description.js';
 
 export type Round = {
   id: string;
@@ -65,6 +66,9 @@ export function validateRoundChanges(value: unknown): { changes: RoundChanges } 
   if (typeof input.descriptionRu !== 'string' || typeof input.descriptionEn !== 'string' ||
       Boolean(input.descriptionRu.trim()) !== Boolean(input.descriptionEn.trim())) {
     return { error: 'Provide both RU and EN descriptions, or leave both empty.' };
+  }
+  if (roundDescriptionTooLong(input.descriptionRu) || roundDescriptionTooLong(input.descriptionEn)) {
+    return { error: `RU and EN descriptions must each be at most ${ROUND_DESCRIPTION_MAX_LENGTH} characters.` };
   }
   if (typeof input.showLeaderboardAfter !== 'boolean') return { error: 'showLeaderboardAfter must be a boolean.' };
   return { changes: { artMediaId: input.artMediaId as string | null | undefined,

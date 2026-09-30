@@ -15,6 +15,11 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done; });
   return { promise, resolve };
 }
+test('round description editors cap both languages at 5000 characters', async () => {
+  const e = await editor();
+  assert.equal(e.view.getByLabelText('Round description RU').getAttribute('maxlength'), '5000');
+  assert.equal(e.view.getByLabelText('Round description EN').getAttribute('maxlength'), '5000');
+});
 async function editor(matching = false, secondRound = false) {
   const quiz = { id: 'q', title: 'Quiz', themeId: 'default', defaultAnswerTimeSeconds: 30, shuffleAnswers: false };
   const round = { id: 'r', quizId: 'q', titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '', showLeaderboardAfter: false, position: 0 };

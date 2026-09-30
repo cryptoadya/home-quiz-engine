@@ -38,7 +38,7 @@ test('tap-to-pair requires completeness, permits reassignment, retries and locks
   } finally { globalThis.fetch = original; }
 });
 test('Matching bilingual Host/Screen content and localized Reveal show correct mapping and personal result', () => {
-  const base = { state: 'ANSWERING' as const, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Match', leftItems, rightItems };
+  const base = { state: 'ANSWERING' as const, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Match', leftItems, rightItems, showOptionsOnScreen: true };
   const screen = render(createElement(QuestionContent, { question: base }));
   assert.ok(screen.getByText('Apple', { exact: false })); assert.equal(screen.queryByText('Верные пары / Correct pairs'), null); screen.unmount();
   const host = render(createElement(QuestionContent, { host: true, question: { ...base, correctMapping: mapping } }));
@@ -47,4 +47,23 @@ test('Matching bilingual Host/Screen content and localized Reveal show correct m
   assert.ok(reveal.getByText('Incorrect')); assert.ok(reveal.getByText('Apple → Red')); reveal.unmount();
   const ru = render(createElement(PlayerRevealContent, { language: 'ru', question: { ...question(), leftItems: leftItems.map(item => ({ id: item.id, kind: item.kind, text: item.textRu })), rightItems: rightItems.map(item => ({ id: item.id, kind: item.kind, text: item.textRu })), state: 'ANSWER_REVEAL', correctMapping: mapping, result: { outcome: 'correct', points: 5 } } }));
   assert.ok(ru.getByText('Верно! +5')); assert.ok(ru.getByText('Слева 0 → Справа 0'));
+});
+
+test('Screen hides Matching sides before Reveal when option display is off, including paused content', () => {
+  const base = { roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Match', leftItems, rightItems, showOptionsOnScreen: false };
+  for (const state of ['QUESTION', 'ANSWERING'] as const) {
+    const content = { ...base, state };
+    const screen = render(createElement(QuestionContent, { question: content }));
+    assert.ok(screen.getByText('Match')); assert.equal(screen.queryByText('Apple'), null);
+    screen.unmount();
+    const paused = render(createElement(QuestionContent, { question: content }));
+    assert.equal(paused.queryByText('Apple'), null); paused.unmount();
+    const host = render(createElement(QuestionContent, { host: true, question: content }));
+    assert.ok(host.getByText('Apple', { exact: false })); host.unmount();
+    const shown = render(createElement(QuestionContent, { question: { ...content, showOptionsOnScreen: true } }));
+    assert.ok(shown.getByText('Apple', { exact: false })); shown.unmount();
+  }
+  const reveal = render(createElement(QuestionContent, { question: { ...base, state: 'ANSWER_REVEAL', correctMapping: mapping } }));
+  assert.ok(reveal.getByText('Верные пары / Correct pairs'));
+  assert.ok(reveal.getByText('Apple', { exact: false }));
 });

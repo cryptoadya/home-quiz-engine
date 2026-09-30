@@ -72,6 +72,17 @@ function uploadFormat(name: string, mime: string) {
   if (!format || format.mime !== canonicalMime) throw new MediaValidationError('Unsupported extension or MIME type.');
   return format;
 }
+function storedDisplayName(name: string): string {
+  const normalized = name.normalize('NFKC');
+  const extension = extname(normalized);
+  const basename = normalized.slice(0, -extension.length).replace(/[^\p{L}\p{N} ._()-]/gu, '_');
+  const suffix = extension.replace(/[^\p{L}\p{N} ._()-]/gu, '_');
+  const limit = 160 - suffix.length;
+  let clipped = basename.slice(0, limit);
+  // Keep the JavaScript string-length bound without cutting a Unicode surrogate pair.
+  if (/[\uD800-\uDBFF]$/.test(clipped)) clipped = clipped.slice(0, -1);
+  return `${clipped || '_'}${suffix}`;
+}
 export function uploadFailure(error: unknown): { status: number; error: string } {
   if (error instanceof MediaValidationError) return { status: 400, error: error.message };
   if (error instanceof multer.MulterError) return { status: error.code === 'LIMIT_FILE_SIZE' ? 413 : 400, error: error.message };
@@ -99,7 +110,7 @@ export async function persistUpload(db: DatabaseSync, quizId: string, file: Expr
     await validateMediaFile(file.path, file.originalname, file.mimetype, file.size);
     // Quiz could have been deleted while asynchronous signature detection was running.
     if (!db.prepare('SELECT id FROM quizzes WHERE id = ?').get(quizId)) throw new MediaValidationError('Quiz no longer exists.');
-    const media: Media = { id: randomUUID(), quizId, name: file.originalname.normalize('NFKC').replace(/[^\p{L}\p{N} ._()-]/gu, '_').slice(0, 160),
+    const media: Media = { id: randomUUID(), quizId, name: storedDisplayName(file.originalname),
       kind: format.kind, mimeType: format.mime, sizeBytes: file.size, createdAt: new Date().toISOString() };
     mkdirSync(mediaDirectory(db, quizId), { recursive: true });
     stored = mediaFile(db, quizId, media.id);

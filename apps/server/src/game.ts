@@ -45,7 +45,8 @@ function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience,
       return media ? [{ mediaId: media.id, name: media.name, mediaUrl: `/api/rooms/${roomId}/media/${media.id}/content`, ...(media.kind === 'image' ? {} : { kind: media.kind, playBeforeTimer: ref.playBeforeTimer, playback: projectMediaPlayback(db, roomId, question.id, media.id, now) }) }] : [];
     }) };
   const matching = question.type === 'matching' ? matchingContent(roomId, question, snapshot.shuffleAnswers) : undefined;
-  const matchingProjection = matching ? { type: 'matching' as const, leftItems: matching.leftItems, rightItems: matching.rightItems,
+  const matchingProjection = matching ? { type: 'matching' as const,
+    ...(audience === 'host' || question.showOptionsOnScreen || reveal ? { leftItems: matching.leftItems, rightItems: matching.rightItems } : {}),
     ...(audience === 'host' || reveal ? { correctMapping: matching.correctMapping } : {}) } : {};
   if (audience === 'host') return { ...common, ...matchingProjection, points: question.points,
     answerTimeSeconds: effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds),

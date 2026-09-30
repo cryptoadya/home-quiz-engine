@@ -2,13 +2,14 @@ import { createContext, useContext, useEffect, useState, useSyncExternalStore, t
 
 type Edit = { persist: () => Promise<unknown>; blocked?: string; owner?: string; discarded?: boolean };
 type SaveState = { status: string; error: string };
-const ownedBy = (edit: Edit, owner: string) => edit.owner === owner || edit.owner?.startsWith(`${owner}/`);
+const ownerWithin = (value: string | undefined, owner: string) => value === owner || value?.startsWith(`${owner}/`) === true;
+const ownedBy = (edit: Edit, owner: string) => ownerWithin(edit.owner, owner);
 
 class SaveQueue {
   private pending = new Map<string, Edit>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private operations = new Set<Promise<void>>();
-  private operationFailures = new Map<string, Error>();
+  private operationFailures = new Map<string, { error: Error; owner?: string }>();
   private running: Promise<void> | undefined;
   private activeEdit: Edit | undefined;
   private drainFailureEdit: Edit | undefined;
@@ -22,11 +23,11 @@ class SaveQueue {
   get unsaved() { return this.pending.size > 0 || Boolean(this.running) || this.operations.size > 0 || this.operationFailures.size > 0; }
   hasWorkExcept(failureKey?: string, owner?: string) {
     return [...this.pending.values()].some(edit => !owner || !ownedBy(edit, owner)) || Boolean(this.running) || this.operations.size > 0 ||
-      [...this.operationFailures.keys()].some(key => key !== failureKey);
+      [...this.operationFailures].some(([key, failure]) => key !== failureKey && (!owner || !ownerWithin(failure.owner, owner)));
   }
   private publish(status: string, error = '') {
     const failure = this.operationFailures.values().next().value;
-    this.state = failure ? { status: 'Save failed', error: failure.message } : { status, error };
+    this.state = failure ? { status: 'Save failed', error: failure.error.message } : { status, error };
     this.listeners.forEach(listener => listener());
   }
   schedule(key: string, persist: Edit['persist'], blocked?: string, owner?: string) {
@@ -37,6 +38,12 @@ class SaveQueue {
   }
   discard = (owner: string) => {
     let discarded = false;
+    for (const [key, failure] of this.operationFailures) {
+      if (ownerWithin(failure.owner, owner)) {
+        this.operationFailures.delete(key);
+        discarded = true;
+      }
+    }
     for (const [key, edit] of this.pending) {
       if (!ownedBy(edit, owner)) continue;
       edit.discarded = true;
@@ -46,15 +53,13 @@ class SaveQueue {
     // A sent PUT cannot be undone. Keep waiting for it, but do not retry or
     // require success for work whose owner is about to be deleted.
     if (this.activeEdit && ownedBy(this.activeEdit, owner)) this.activeEdit.discarded = true;
-    if (!this.pending.size) {
-      clearTimeout(this.timer);
-      if (discarded) this.publish(this.unsaved ? 'Saving...' : 'Saved');
-    }
+    if (!this.pending.size) clearTimeout(this.timer);
+    if (discarded) this.publish(this.unsaved ? 'Saving...' : 'Saved');
   };
   // Immediate mutations commit their UI only on success. Track them without
   // replaying failed POST/DELETE requests as if they were pending draft edits.
   // A failure key keeps the barrier blocked until that explicit operation succeeds.
-  perform = (action: () => Promise<void>, failureKey?: string, alreadyFlushed = false): Promise<void> => {
+  perform = (action: () => Promise<void>, failureKey?: string, alreadyFlushed = false, owner?: string): Promise<void> => {
     const operation = (alreadyFlushed ? Promise.resolve() : this.drain()).then(action);
     this.operations.add(operation);
     this.publish('Saving...');
@@ -64,7 +69,7 @@ class SaveQueue {
       this.publish(this.unsaved ? 'Saving...' : 'Saved');
     }, cause => {
       this.operations.delete(operation);
-      if (failureKey) this.operationFailures.set(failureKey, cause as Error);
+      if (failureKey) this.operationFailures.set(failureKey, { error: cause as Error, owner });
       this.publish('Save failed', (cause as Error).message);
       throw cause;
     });
@@ -93,8 +98,8 @@ class SaveQueue {
     const failed = results.find((result, index) => result.status === 'rejected' &&
       !(index === 0 && owner && this.drainFailureEdit && ownedBy(this.drainFailureEdit, owner)));
     if (failed?.status === 'rejected') throw failed.reason;
-    const failure = [...this.operationFailures].find(([key]) => key !== retryFailureKey)?.[1];
-    if (failure) throw failure;
+    const failure = [...this.operationFailures].find(([key, failure]) => key !== retryFailureKey && (!owner || !ownerWithin(failure.owner, owner)))?.[1];
+    if (failure) throw failure.error;
     if (!owner && this.exclusionDone) await this.exclusionDone;
     if (this.hasWorkExcept(retryFailureKey, owner)) await this.flushWork(retryFailureKey, owner);
   };

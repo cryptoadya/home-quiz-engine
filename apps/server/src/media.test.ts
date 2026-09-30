@@ -152,7 +152,7 @@ test('Matching image references enforce image kind/ownership, remap on duplicate
   const f = fixture();
   try {
     const { quiz, base, changes } = await ready(f.app);
-    await f.app.put(base).send({ ...changes, type: 'matching' }).expect(200);
+    await f.app.put(base).send({ ...changes, type: 'matching', showOptionsOnScreen: true }).expect(200);
     const pairs = (await f.app.get(`${base}/pairs`)).body;
     const media = (await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', png, { filename: 'x.png', contentType: 'image/png' })).body;
     const left = { kind: 'image', mediaId: media.id }; const right = { kind: 'text', textRu: 'Ответ', textEn: 'Answer' };

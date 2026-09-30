@@ -65,11 +65,11 @@ async function editor(matching = false, secondRound = false) {
     createElement(Route, { path: '/host/:roomId', element: createElement('p', null, 'Lobby opened') }))));
   await waitFor(() => assert.ok(view.getByLabelText(matching ? 'Pair 1 left EN' : 'Option 1 EN')));
   const edit = (label: string, value: string) => fireEvent.change(view.getByLabelText(label, { exact: true }), { target: { value } });
-  const reply = async (index: number, ok = true) => {
+  const reply = async (index: number, ok = true, body: Record<string, unknown> = {}) => {
     await waitFor(() => assert.ok(writes[index]), { timeout: 2000 });
-    await act(async () => { writes[index].reply.resolve(Response.json(ok ? {} : { error: 'Offline' }, { status: ok ? 200 : 500 })); });
+    await act(async () => { writes[index].reply.resolve(Response.json(ok ? body : { error: 'Offline' }, { status: ok ? 200 : 500 })); });
   };
-  return { view, writes, actions, deletions, mediaMutations, mediaItem, edit, reply, validations: () => validations };
+  return { view, writes, actions, deletions, mediaMutations, mediaItem, question, edit, reply, validations: () => validations };
 }
 
 for (const matching of [false, true]) test(`failed first PUT retains later ${matching ? 'pair' : 'option'} edits and retry saves both`, async () => {
@@ -566,6 +566,58 @@ for (const matching of [false, true]) test(`failed ${matching ? 'pair' : 'option
   await waitFor(() => assert.equal(e.deletions.length, 2));
   await act(async () => { e.deletions[1].reply.resolve(new Response(null, { status: 204 })); });
   assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved');
+});
+
+for (const matching of [false, true]) test(`successful type conversion clears obsolete ${matching ? 'pair' : 'option'} DELETE failure`, async () => {
+  const e = await editor(matching);
+  fireEvent.click(e.view.getByRole('button', { name: matching ? 'Delete pair 1' : 'Delete option 1' }));
+  await waitFor(() => assert.equal(e.deletions.length, 1));
+  await act(async () => e.deletions[0].reply.resolve(Response.json({ error: 'Delete failed' }, { status: 500 })));
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
+  fireEvent.change(e.view.getByLabelText('Question type'), { target: { value: matching ? 'single_choice' : 'matching' } });
+  await e.reply(0, true, { ...e.question, type: matching ? 'single_choice' : 'matching' });
+  await waitFor(() => assert.equal((e.view.getByLabelText('Question type') as HTMLSelectElement).value, matching ? 'single_choice' : 'matching'));
+  await waitFor(() => assert.equal(e.view.getAllByRole('status')[0].textContent, 'Saved'));
+  fireEvent.click(e.view.getByRole('button', { name: '← Quiz list' }));
+  await waitFor(() => assert.ok(e.view.getByText('Quiz list opened')));
+});
+
+test('unrelated media failure blocks answer-structure conversion', async () => {
+  const e = await editor();
+  await startMedia(e, 'delete');
+  await replyMedia(e, 0, false);
+  fireEvent.change(e.view.getByLabelText('Question type'), { target: { value: 'matching' } });
+  await act(async () => {});
+  assert.equal(e.writes.length, 0);
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
+});
+
+test('clearing removed option failures preserves unrelated operation failures', async () => {
+  let saves!: ReturnType<typeof useEditorSave>;
+  let barrier!: NonNullable<ReturnType<typeof useSaveBarrier>>;
+  function Status() { saves = useEditorSave(); barrier = useSaveBarrier()!; return <GlobalSaveStatus />; }
+  const view = render(<EditorSaves><Status /></EditorSaves>);
+  await act(async () => {
+    await assert.rejects(saves.perform(async () => { throw new Error('Option delete failed'); }, 'option', false, 'r/questions/a/options/o'));
+    await assert.rejects(saves.perform(async () => { throw new Error('Media delete failed'); }, 'media'));
+    saves.discard('r/questions/a/options');
+  });
+  assert.equal(view.getByTestId('global-save-status').textContent, 'Save failed');
+  await assert.rejects(barrier.flush(), /Media delete failed/);
+});
+
+test('failed type switch retains existing child DELETE failure', async () => {
+  const e = await editor();
+  fireEvent.click(e.view.getByRole('button', { name: 'Delete option 1' }));
+  await waitFor(() => assert.equal(e.deletions.length, 1));
+  await act(async () => e.deletions[0].reply.resolve(Response.json({ error: 'Delete failed' }, { status: 500 })));
+  fireEvent.change(e.view.getByLabelText('Question type'), { target: { value: 'matching' } });
+  await e.reply(0, false);
+  assert.equal((e.view.getByLabelText('Question type') as HTMLSelectElement).value, 'single_choice');
+  assert.equal(e.view.getAllByRole('status')[0].textContent, 'Save failed');
+  fireEvent.click(e.view.getByRole('button', { name: '← Quiz list' }));
+  await act(async () => {});
+  assert.ok(!e.view.queryByText('Quiz list opened'));
 });
 
 test('question owner discard retains another question in the same queue', async () => {

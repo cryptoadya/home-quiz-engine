@@ -15,14 +15,14 @@ import { getGameSnapshot } from './snapshot.js';
 import { getPlayerGame, getSurfaceState, startQuestion } from './game.js';
 import { submitAnswer } from './answers.js';
 import { completeQuestion } from './reveal.js';
-import { autoPauseForDisconnectedPlayer, continueWithoutPlayer, waitForPlayer } from './pause.js';
+import { autoPauseForDisconnectedPlayer, continueWithoutPlayer, pauseGame, resumeGame, waitForPlayer } from './pause.js';
 
-async function fixture(db: ReturnType<typeof initializeDatabase>, mixed = false) {
+async function fixture(db: ReturnType<typeof initializeDatabase>, mixed = false, showOptionsOnScreen = true) {
   const quiz = createQuiz(db), round = createRound(db, quiz.id);
   const types = mixed ? ['matching', 'matching', 'single_choice', 'yes_no', 'multiple_choice'] as const : ['matching'] as const;
   for (const type of types) {
     const q = createQuestion(db, round.id, type);
-    updateQuestion(db, round.id, q.id, { type, textRu: 'Вопрос', textEn: 'Question', points: 5, answerTimeSeconds: 30, showOptionsOnScreen: true });
+    updateQuestion(db, round.id, q.id, { type, textRu: 'Вопрос', textEn: 'Question', points: 5, answerTimeSeconds: 30, showOptionsOnScreen });
     if (type === 'matching') {
       createPair(db, q.id);
       listPairs(db, q.id).forEach((pair, i) => updatePair(db, q.id, pair.id, { left: { kind: 'text', textRu: `Слева ${i}`, textEn: `Left ${i}` }, right: { kind: 'text', textRu: `Справа ${i}`, textEn: `Right ${i}` } }));
@@ -44,6 +44,35 @@ async function fixture(db: ReturnType<typeof initializeDatabase>, mixed = false)
   const answer = { token: players[0].token, questionId: q.id, mapping: content.correctMapping };
   return { room, players, root, snapshot, q, content, answer };
 }
+
+for (const visible of [false, true]) test(`Matching Screen option visibility follows setting through Question, Answering, Pause and Reveal (${visible})`, async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const f = await fixture(db, false, visible);
+    const screen = () => (getSurfaceState(db, f.room.id, 'screen', 2000) as any).game;
+    const host = () => (getSurfaceState(db, f.room.id, 'host', 2000) as any).game;
+    const check = (game: any, expected: boolean) => {
+      assert.equal(game.textEn, 'Question'); assert.ok(Array.isArray(game.media));
+      assert.equal('leftItems' in game, expected); assert.equal('rightItems' in game, expected);
+      assert.equal(game.correctMapping, undefined);
+    };
+    assert.ok(host().leftItems.length > 0);
+    check(screen(), visible);
+    assert.ok('room' in pauseGame(db, f.room.id, () => 2000));
+    check(screen().content, visible); assert.ok(host().content.leftItems.length > 0);
+    assert.ok('room' in resumeGame(db, f.room.id, () => 2000));
+    db.prepare("UPDATE game_sessions SET state = 'QUESTION', answer_started_at = NULL, answer_deadline_at = NULL WHERE id = ?").run(f.room.id);
+    check(screen(), visible);
+    assert.ok('room' in pauseGame(db, f.room.id, () => 2000));
+    check(screen().content, visible);
+    assert.ok('room' in resumeGame(db, f.room.id, () => 2000));
+    assert.ok('room' in startQuestion(db, f.room.id, 2000));
+    assert.equal(completeQuestion(db, f.room.id, () => 33000), true);
+    assert.equal(screen().leftItems.length, 3); assert.deepEqual(screen().correctMapping, f.content.correctMapping);
+    assert.ok('room' in pauseGame(db, f.room.id, () => 33000));
+    assert.equal(screen().content.leftItems.length, 3); assert.deepEqual(screen().content.correctMapping, f.content.correctMapping);
+  } finally { db.close(); }
+});
 
 for (const mode of ['exact', 'partial', 'wrong'] as const) test(`Matching ${mode} scoring is all-or-nothing`, async () => {
   const db = initializeDatabase(':memory:');

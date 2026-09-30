@@ -42,6 +42,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [childLoadFailed, setChildLoadFailed] = useState(false);
   const saves = useEditorSave();
   const barrier = useSaveBarrier();
   const questionOwner = (id: string) => `${roundId}/questions/${id}`;
@@ -58,16 +59,16 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   }, [base]);
 
   useEffect(() => {
-    if (!selectedId) { setOptions([]); setPairs([]); return; }
+    if (!selectedId) { setOptions([]); setPairs([]); setChildLoadFailed(false); return; }
     let active = true;
     setOptions([]); setPairs([]);
     if (questions.find(question => question.id === selectedId)?.type === 'matching') {
-      api<Pair[]>(`${base}/${selectedId}/pairs`).then(items => { if (active) setPairs(items); })
-        .catch((cause: Error) => { if (active) setError(cause.message); });
+      api<Pair[]>(`${base}/${selectedId}/pairs`).then(items => { if (active) { setPairs(items); setChildLoadFailed(false); } })
+        .catch((cause: Error) => { if (active) { setError(cause.message); setChildLoadFailed(true); } });
       return () => { active = false; };
     }
-    api<Option[]>(`${base}/${selectedId}/options`).then((items) => { if (active) setOptions(items); })
-      .catch((cause: Error) => { if (active) setError(cause.message); });
+    api<Option[]>(`${base}/${selectedId}/options`).then((items) => { if (active) { setOptions(items); setChildLoadFailed(false); } })
+      .catch((cause: Error) => { if (active) { setError(cause.message); setChildLoadFailed(true); } });
     return () => { active = false; };
   }, [base, selectedId]);
 
@@ -83,10 +84,17 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     try { await saves.flush(); setSelectedId(id); setError(''); }
     catch (cause) { setError((cause as Error).message); }
   }
+  async function loadAnswerData(question: Question) {
+    try {
+      if (question.type === 'matching') setPairs(await api<Pair[]>(`${base}/${question.id}/pairs`));
+      else setOptions(await api<Option[]>(`${base}/${question.id}/options`));
+      setChildLoadFailed(false); setError('');
+    } catch (cause) { setChildLoadFailed(true); setError((cause as Error).message); }
+  }
   function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields, owner: string) {
     saves.schedule(key, async () => { await api(path, json('PUT', body)); onPersistedChange?.(); }, undefined, owner);
   }
-  async function afterSaves(action: () => Promise<void>, discardOwner?: string, failureKey?: string) {
+  async function afterSaves(action: () => Promise<void>, discardOwner?: string, failureKey?: string): Promise<boolean> {
     setBusy(true);
     try {
       let release: (() => void) | undefined;
@@ -98,10 +106,11 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
           await action();
           if (discardOwner) (barrier ?? saves).discard(discardOwner);
           onPersistedChange?.();
-        }, failureKey, Boolean(discardOwner)); setError('');
+        }, failureKey, Boolean(discardOwner), discardOwner); setError('');
+        return true;
       } finally { release?.(); }
     }
-    catch (cause) { setError((cause as Error).message); }
+    catch (cause) { setError((cause as Error).message); return false; }
     finally { setBusy(false); }
   }
 
@@ -184,15 +193,20 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         <h4>{selected.type === 'matching' ? 'Matching' : selected.type === 'yes_no' ? 'Yes / No' : selected.type === 'multiple_choice' ? 'Multiple Choice' : 'Single Choice'} question</h4>
         <label>Question type<select value={selected.type} disabled={busy} onChange={event => {
           const type = event.target.value as Question['type'];
-          void afterSaves(async () => {
-            const question = await api<Question>(`${base}/${selected.id}`, json('PUT', { ...fields, type }));
-            const nextPairs = type === 'matching' ? await api<Pair[]>(`${base}/${selected.id}/pairs`) : [];
-            const nextOptions = type !== 'matching' ? await api<Option[]>(`${base}/${selected.id}/options`) : [];
-            setQuestions(items => items.map(item => item.id === question.id ? question : item));
-            setOptions(nextOptions); setPairs(nextPairs);
-          });
+          void (async () => {
+            let confirmed: Question | undefined;
+            const obsoleteOwner = `${questionOwner(selected.id)}/${selected.type === 'matching' ? 'pairs' : 'options'}`;
+            const saved = await afterSaves(async () => {
+              const question = await api<Question>(`${base}/${selected.id}`, json('PUT', { ...fields, type }));
+              confirmed = question;
+              setQuestions(items => items.map(item => item.id === question.id ? question : item));
+              setOptions([]); setPairs([]); setChildLoadFailed(false);
+            }, obsoleteOwner);
+            if (saved && confirmed) await loadAnswerData(confirmed);
+          })();
         }}><option value="single_choice">Single Choice</option><option value="yes_no">Yes / No</option><option value="multiple_choice">Multiple Choice</option><option value="matching">Matching</option></select></label>
         <label>Question text RU<textarea maxLength={5000} value={selected.textRu} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textRu: event.target.value })} /></label>
+        {childLoadFailed && <button disabled={busy} onClick={() => void loadAnswerData(selected)}>Retry answer data</button>}
         <label>Question text EN<textarea maxLength={5000} value={selected.textEn} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textEn: event.target.value })} /></label>
         <label>Explanation RU (after Reveal)<textarea maxLength={5000} value={selected.explanationRu ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationRu: event.target.value })} /></label>
         <label>Explanation EN (after Reveal)<textarea maxLength={5000} value={selected.explanationEn ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationEn: event.target.value })} /></label>

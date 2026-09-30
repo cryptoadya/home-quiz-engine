@@ -123,6 +123,35 @@ test('portable HTTP export → delete source → import → edit/launch: all typ
   } finally { f.close(); }
 });
 
+test('long uploaded media names keep validated extensions through export and import', async () => {
+  const f = fixture();
+  try {
+    const quiz = createQuiz(f.db);
+    const samples = [
+      { name: `${'a'.repeat(180)}.mp3`, fixture: 'sample.mp3', mime: 'audio/mpeg', suffix: '.mp3' },
+      { name: `${'é'.repeat(70)}${'a'.repeat(50)}.webm`, fixture: 'sample.webm', mime: 'video/webm', suffix: '.webm' },
+      { name: `${'b'.repeat(180)}.jpeg`, fixture: 'sample.jpg', mime: 'image/jpeg', suffix: '.jpeg' },
+      { name: 'photo<1>.jpg', fixture: 'sample.jpg', mime: 'image/jpeg', suffix: '.jpg' },
+      { name: 'short.mp3', fixture: 'sample.mp3', mime: 'audio/mpeg', suffix: '.mp3' },
+    ];
+    const uploaded = [];
+    for (const sample of samples) {
+      const response = await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', readFileSync(new URL(`./fixtures/media/${sample.fixture}`, import.meta.url)), { filename: sample.name, contentType: sample.mime });
+      assert.equal(response.status, 201, `${sample.suffix}: ${JSON.stringify(response.body)}`);
+      const item = response.body;
+      assert.ok(item.name.endsWith(sample.suffix)); assert.ok(item.name.length <= 160); assert.ok(item.name.length > sample.suffix.length);
+      uploaded.push(item);
+    }
+    assert.equal(uploaded[3].name, 'photo_1_.jpg'); assert.equal(uploaded[4].name, 'short.mp3');
+    const archive = await exportQuizArchive(f.db, quiz.id);
+    try {
+      const copy = await importQuizArchive(f.db, archive.path);
+      assert.deepEqual(listMedia(f.db, copy.id).map(item => item.name).sort(), uploaded.map(item => item.name).sort());
+    } finally { archive.cleanup(); }
+    await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', readFileSync(new URL('./fixtures/media/sample.mp3', import.meta.url)), { filename: `${'x'.repeat(252)}.mp3`, contentType: 'audio/mpeg' }).expect(400);
+  } finally { f.close(); }
+});
+
 test('unavailable theme ID survives import; empty editable Draft creates no game records', async () => {
   const f = fixture();
   try {

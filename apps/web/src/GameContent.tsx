@@ -33,7 +33,7 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
         : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} media={media} onEnded={onMediaEnded} localControls={localMediaControls} />
       : <MediaImage key={media.mediaId} src={media.mediaUrl} alt={media.name} className="question-image" />)}</div>
     {(host || question.state === 'ANSWER_REVEAL') && (question.explanationRu || question.explanationEn) && <section className="explanation"><h3>Объяснение / Explanation</h3><p lang="ru">{question.explanationRu}</p><p lang="en">{question.explanationEn}</p></section>}
-    {question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul className="matching-pairs correct-pairs">{question.correctMapping.map(pair => {
+    {(host || question.showOptionsOnScreen || question.state === 'ANSWER_REVEAL') && question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul className="matching-pairs correct-pairs">{question.correctMapping.map(pair => {
       const left = question.leftItems!.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);
       return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>;
     })}</ul></> : <div className="matching-columns">{[question.leftItems, question.rightItems].map((items, index) => <ul key={index}>{items?.map(item => <li key={item.id}><MatchingItemContent item={item} /></li>)}</ul>)}</div>}</>}

@@ -57,7 +57,7 @@ test('Screen/Host images, GIF URLs and mixed Matching render; Player only render
   const image = { id: 'l', kind: 'image' as const, mediaId: 'photo', mediaUrl: '/api/rooms/room/media/photo/content' };
   const right = { id: 'r', kind: 'text' as const, text: 'Cat' };
   const mapping = [{ leftId: 'l', rightId: 'r' }];
-  const base = { state: 'ANSWERING' as const, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Question', media: [{ mediaId: 'gif', name: 'animation.gif', mediaUrl: '/api/rooms/room/media/gif/content' }], leftItems: [image], rightItems: [{ ...right, textRu: 'Кот', textEn: 'Cat' }] };
+  const base = { state: 'ANSWERING' as const, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Question', showOptionsOnScreen: true, media: [{ mediaId: 'gif', name: 'animation.gif', mediaUrl: '/api/rooms/room/media/gif/content' }], leftItems: [image], rightItems: [{ ...right, textRu: 'Кот', textEn: 'Cat' }] };
   for (const host of [false, true]) {
     const view = render(createElement(QuestionContent, { host, question: { ...base, ...(host ? { correctMapping: mapping } : {}) } }));
     assert.equal(view.getAllByRole('img').length, 2);

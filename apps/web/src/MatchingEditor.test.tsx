@@ -76,3 +76,40 @@ test('Matching editor creates, autosaves bilingual sides, reorders, deletes, rel
     assert.equal(pairs.length, 2); assert.ok(!reload.queryByRole('button', { name: 'Add option' }));
   } finally { globalThis.fetch = original; }
 });
+
+test('confirmed type survives failed child load and later autosave uses the new type', async () => {
+  const original = globalThis.fetch;
+  const question = { id: 'q', roundId: 'round', type: 'single_choice', textRu: '', textEn: '', points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, position: 0 };
+  const writes: Record<string, unknown>[] = [];
+  let pairLoads = 0;
+  globalThis.fetch = async (url, init) => {
+    const path = String(url);
+    if (init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body)); writes.push(body);
+      Object.assign(question, body);
+      return Response.json(question);
+    }
+    if (path.endsWith('/questions')) return Response.json([question]);
+    if (path.endsWith('/options')) return Response.json([]);
+    if (path.endsWith('/pairs')) {
+      pairLoads++;
+      return pairLoads === 1 ? Response.json({ error: 'Pairs unavailable' }, { status: 500 }) : Response.json([
+        { id: 'p', questionId: 'q', left: { kind: 'text', textRu: '', textEn: '' }, right: { kind: 'text', textRu: '', textEn: '' }, position: 0 },
+      ]);
+    }
+    throw Error(`Unexpected ${path}`);
+  };
+  try {
+    const view = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
+    await waitFor(() => assert.ok(view.getByLabelText('Question type')));
+    fireEvent.change(view.getByLabelText('Question type'), { target: { value: 'matching' } });
+    await waitFor(() => assert.equal((view.getByLabelText('Question type') as HTMLSelectElement).value, 'matching'));
+    await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Pairs unavailable')));
+    fireEvent.change(view.getByLabelText('Question text EN'), { target: { value: 'New text' } });
+    await waitFor(() => assert.equal(writes.length, 2), { timeout: 2000 });
+    assert.equal(writes[1].type, 'matching');
+    fireEvent.click(view.getByRole('button', { name: 'Retry answer data' }));
+    await waitFor(() => assert.ok(view.getByLabelText('Pair 1 left EN')));
+    assert.equal(pairLoads, 2);
+  } finally { globalThis.fetch = original; }
+});

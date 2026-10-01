@@ -1,5 +1,18 @@
 # V1 acceptance — Phase 8E
 
+[Карта документации](README.md) · [Этапы и статус](ROADMAP.md) · [Проведение игры](RUNBOOK.md)
+
+## Как читать этот отчёт
+
+Ниже сохранён отчёт локальной приёмки **от 28 сентября 2026 года**.
+Числа тестов и результаты браузерной репетиции относятся к этому аудиту;
+последующие исправления в Git не были автоматически перепроверены этим отчётом.
+Обновление документации не означает новую игровую или аппаратную приёмку.
+Проверки на реальных телефонах, Wi-Fi, телевизоре и колонках остаются открытыми;
+используйте [физический чек-лист](#remaining-limits-and-physical-device-checklist).
+
+## Audit context
+
 Audit baseline: complete `SPEC.md`, `ARCHITECTURE.md`, roadmap and existing server/
 UI acceptance tests were reviewed before changes. This is local V1 acceptance;
 physical-device acceptance remains open. No new product scope was added.

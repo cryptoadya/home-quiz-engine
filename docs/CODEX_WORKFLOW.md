@@ -1,52 +1,97 @@
-# Codex workflow
+# Работа с кодом и Git
 
-## Principle
+[Карта документации](README.md) · [Правила репозитория](../AGENTS.md)
 
-Codex implements one roadmap slice at a time. Do not prompt it with the entire product and ask for a one-shot implementation.
+## 1. Определите границу задачи
 
-## Task prompt template
+Начинайте с названных файлов и требований [SPEC](SPEC.md), затем сверяйте
+границы с [ARCHITECTURE](ARCHITECTURE.md). Для понятной задачи достаточно
+целевого осмотра: отдельный brainstorming или письменный план не обязательны.
+Большую задачу разделяйте на связные срезы, каждый с рабочим результатом.
 
-Every implementation prompt should contain:
+Укажите цель, допустимый объём изменений, необходимые требования,
+что не входит в задачу, наблюдаемый результат и команды проверки.
+При конфликте со SPEC остановитесь и сообщите о нём; не меняйте правила игры молча.
+Модели и инструменты выбирайте по сложности и наличию, без привязки документации
+к конкретному каталогу моделей. Параллельная работа нужна только при независимых
+границах задач, которые оправдывают расходы на координацию.
 
-1. **Goal** — one concrete outcome.
-2. **Scope** — files/features allowed to change.
-3. **Relevant requirements** — point to the exact SPEC/phase sections, do not paste the whole spec unless necessary.
-4. **Non-goals** — what not to build yet.
-5. **Acceptance checks** — observable behavior/tests.
-6. **Finish condition** — run tests/typecheck/build and summarize changed files + remaining issues.
+Пример постановки:
 
-## Branching
+```text
+Цель: исправить конкретное наблюдаемое поведение.
+Объём: названные модули и связанные тесты.
+Требования: ссылки на нужные разделы SPEC/ARCHITECTURE.
+Не входит: несвязанные функции и рефакторинги.
+Приёмка: воспроизводимый сценарий и ожидаемый результат.
+Завершение: проверки, просмотр diff, краткий отчёт; Git-доставка по запросу.
+```
 
-Prefer one branch/PR per roadmap slice or coherent sub-slice, e.g.:
+## 2. Проверьте исходное состояние
 
-- `feat/foundation`
-- `feat/editor-core`
-- `feat/lobby`
-- `feat/game-loop-single`
-- `feat/reconnect`
-- `feat/question-types`
-- `feat/media`
-- `feat/themes`
+```sh
+git status --short --branch
+git log -5 --oneline
+```
 
-Do not keep huge long-lived branches.
+Сохраните чужие изменения. Для отдельной работы используйте короткую ветку,
+например `fix/player-reconnect` или `docs/documentation`; существующую ветку
+задачи продолжайте, если это соответствует запросу. Worktree нужен, когда
+изоляция полезна, а не для каждого изменения.
 
-## Reviews
+## 3. Выполните изменение и проверьте
 
-For meaningful changes:
-- implementation pass
-- independent review pass (prefer a stronger/different model for high-risk logic)
-- fix only confirmed issues
-- rerun tests/build
+Сохраняйте сервер владельцем состояния, не отправляйте правильные ответы Player
+до Reveal и не переносите игровую логику в темы. Добавьте или обновите тесты
+изменённого поведения. Сначала выполните узкие проверки, затем обязательные
+для затронутой области тесты, typecheck и build.
 
-Focus reviews on correctness, state races, player/session identity, timer semantics, and leakage of correct-answer data.
+Полная проверка из корня:
 
-## Model routing (current recommendation, Sep 2026)
+```sh
+npm run test
+npm run typecheck
+npm run build
+git diff --check
+```
 
-Choose per task rather than pinning one model globally.
+Для изменения только документации проверьте команды по конфигурации проекта,
+локальные ссылки, согласованность со SPEC и diff; запуск приложения не требуется,
+если не менялись код, зависимости или конфигурация. Старый отчёт о тестах
+не подтверждает текущий diff. В итогах различайте выполненные, неуспешные и
+не запущенные проверки.
 
-- **Architecture, state-machine changes, concurrency/race bugs, difficult debugging, final review:** `gpt-6-astra`, usually `medium` or `high`; use `xhigh/max` only when a concrete hard problem remains unresolved.
-- **Normal feature implementation with clear acceptance criteria:** `gpt-6-sol` `medium` if available in the Codex environment. Fallback: `gpt-5.6-sol` `medium`.
-- **Routine, narrow edits, tests, refactors with obvious behavior:** `gpt-5.6-terra` `low` or `medium`.
-- **Tiny mechanical edits:** use the cheapest model that reliably follows the task; do not spend Astra on formatting or renames.
+После существенного изменения просмотрите сам diff и доступные результаты ревью.
+Особое внимание: гонки состояний, личности игроков, дедлайны и утечки ответов.
+Исправляйте подтверждённые дефекты, затем повторяйте необходимые проверки.
 
-Do not assume higher effort is automatically better. Escalate model/effort only when task complexity or observed failures justify it.
+## 4. Оформите результат в Git
+
+Перед доставкой просмотрите изменения и добавьте только файлы задачи:
+
+```sh
+git diff --stat
+git diff --check
+git add <files>
+git diff --cached
+git status --short
+```
+
+Коммит, push, PR и merge выполняйте при разрешении задачи или пользователя.
+Для связного среза обычно достаточно одного содержательного коммита, например
+`docs: organize documentation and clarify V1 status`. Не переписывайте чужую
+историю и не используйте force push для обычной доставки.
+
+Если доставка разрешена и проверки прошли:
+
+```sh
+git commit -m "<type>: <concrete change>"
+git push origin <branch>
+```
+
+Перед push убедитесь, что целевая ветка соответствует запросу. Не отправляйте
+изменения с проваленными обязательными проверками или несвязанными файлами.
+Внутренние планы, заметки и временные чек-листы не включайте в коммит.
+
+Итоговый отчёт: что изменилось, какие проверки выполнены или пропущены,
+остаточные проблемы, SHA коммита и отправленная ветка, если была доставка.

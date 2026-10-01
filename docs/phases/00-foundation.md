@@ -1,5 +1,10 @@
 # Phase 0 — Foundation
 
+**Historical task; implemented.** This is the original scope for the repository
+skeleton, not the current development task. Its placeholder and “do not build yet”
+instructions apply only to Phase 0. See [current status](../ROADMAP.md),
+[current architecture](../ARCHITECTURE.md) and [the documentation map](../README.md).
+
 ## Goal
 Create the smallest executable TypeScript project that proves the repository layout and developer workflow.
 

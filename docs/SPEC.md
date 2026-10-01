@@ -1,5 +1,12 @@
 # Product specification v1.0 — Home Quiz Engine
 
+[Documentation map](README.md) · [Operating guide](RUNBOOK.md) · [Architecture](ARCHITECTURE.md)
+
+This is the normative V1 behavior specification. Implementation status is tracked
+in [ROADMAP.md](ROADMAP.md); dated verification evidence is recorded separately
+in [V1_ACCEPTANCE.md](V1_ACCEPTANCE.md). Neither an implementation note nor a
+successful local test replaces these requirements.
+
 ## Scope statement
 
 This is a private home quiz engine for parties with friends. It is not a market product. Optimize for a reliable local-party experience and an easy authoring workflow; do not add SaaS, multi-tenant, cloud-platform, billing, marketplace, or enterprise features.

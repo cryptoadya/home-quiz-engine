@@ -45,6 +45,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const [childLoadFailed, setChildLoadFailed] = useState(false);
   const answerDataVersion = useRef(0);
   const answerDataLoaded = useRef(false);
+  const normalizedOptionsOwner = useRef<string | null>(null);
   const selectedAnswer = useRef<{ id: string; type: Question['type'] } | null>(null);
   const saves = useEditorSave();
   const barrier = useSaveBarrier();
@@ -71,6 +72,11 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
       } else {
         const items = await api<Option[]>(`${base}/${question.id}/options`);
         if (!isCurrentAnswer(question, version)) return;
+        const owner = `${questionOwner(question.id)}/options`;
+        if (normalizedOptionsOwner.current === owner) {
+          (barrier ?? saves).reconcileChildren(owner, items.map(item => item.id));
+          normalizedOptionsOwner.current = null;
+        }
         setOptions(items);
       }
       answerDataLoaded.current = true;
@@ -230,6 +236,8 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
             const saved = await afterSaves(async () => {
               const question = await api<Question>(`${base}/${selected.id}`, json('PUT', { ...fields, type }));
               confirmed = question;
+              normalizedOptionsOwner.current = selected.type !== 'matching' && selected.type !== 'yes_no' && question.type === 'yes_no'
+                ? `${questionOwner(question.id)}/options` : null;
               setQuestions(items => items.map(item => item.id === question.id ? question : item));
               invalidateAnswerData(); answerDataLoaded.current = false;
               setOptions([]); setPairs([]); setChildLoadFailed(false);

@@ -56,6 +56,17 @@ class SaveQueue {
     if (!this.pending.size) clearTimeout(this.timer);
     if (discarded) this.publish(this.unsaved ? 'Saving...' : 'Saved');
   };
+  reconcileChildren = (owner: string, survivingIds: readonly string[]) => {
+    const surviving = new Set(survivingIds);
+    const owners = [...this.pending.values(), ...this.operationFailures.values(), ...(this.activeEdit ? [this.activeEdit] : [])];
+    const obsolete = new Set<string>();
+    for (const work of owners) {
+      if (!work.owner?.startsWith(`${owner}/`)) continue;
+      const childId = work.owner.slice(owner.length + 1).split('/')[0];
+      if (!surviving.has(childId)) obsolete.add(`${owner}/${childId}`);
+    }
+    obsolete.forEach(childOwner => this.discard(childOwner));
+  };
   // Immediate mutations commit their UI only on success. Track them without
   // replaying failed POST/DELETE requests as if they were pending draft edits.
   // A failure key keeps the barrier blocked until that explicit operation succeeds.
@@ -148,6 +159,7 @@ class SaveBarrier {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private notify = () => { this.listeners.forEach(listener => listener()); };
   discard = (owner: string) => { this.queues.forEach(queue => queue.discard(owner)); };
+  reconcileChildren = (owner: string, survivingIds: readonly string[]) => { this.queues.forEach(queue => queue.reconcileChildren(owner, survivingIds)); };
   flushExcept = async (owner: string, retryFailureKey?: string) => {
     const releases: Array<() => void> = [];
     try {
@@ -197,5 +209,5 @@ export function useEditorSave(owner?: string) {
   useEffect(() => barrier?.register(queue), [barrier, queue]);
   useEffect(() => () => { if (queue.snapshot().status !== 'Save failed') void queue.flush().catch(() => {}); }, [queue]);
   return { ...state, schedule: (key: string, persist: Edit['persist'], blocked?: string, editOwner = owner) => queue.schedule(key, persist, blocked, editOwner),
-    discard: queue.discard, flush: queue.flush, flushExcept: queue.flushExcept, perform: queue.perform };
+    discard: queue.discard, reconcileChildren: queue.reconcileChildren, flush: queue.flush, flushExcept: queue.flushExcept, perform: queue.perform };
 }

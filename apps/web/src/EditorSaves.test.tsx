@@ -7,7 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QuizEditor } from './Admin';
 import { EditorSaves, useEditorSave, useSaveBarrier } from './EditorSaves';
 import { Rounds } from './Rounds';
-import { Questions } from './Questions';
+import { Questions, type Option, type Question } from './Questions';
 
 afterEach(cleanup);
 function deferred<T>() {
@@ -637,6 +637,105 @@ test('non-structural type switch does not clear a retained option DELETE failure
   fireEvent.click(e.view.getByRole('button', { name: '← Quiz list' }));
   await act(async () => {});
   assert.ok(!e.view.queryByText('Quiz list opened'));
+});
+
+for (const outcome of ['success', 'retained failure', 'unrelated failure', 'failed PUT', 'retry GET'] as const) {
+  test(`Yes / No normalization reconciles deleted option ownership: ${outcome}`, async () => {
+    const originalFetch = globalThis.fetch;
+    const base = '/api/quizzes/q/rounds/r/questions';
+    let question: Question = { id: 'a', roundId: 'r', type: 'multiple_choice', textRu: '', textEn: '', points: 1,
+      answerTimeSeconds: null, showOptionsOnScreen: false, position: 0, createdAt: '', updatedAt: '' };
+    let options: Option[] = [1, 2, 3].map((number, position) => ({ id: `o${number}`, questionId: 'a',
+      textRu: `Ответ ${number}`, textEn: `Answer ${number}`, isCorrect: number < 3, position, createdAt: '', updatedAt: '' }));
+    let failReload = outcome === 'retry GET';
+    let typePuts = 0;
+    let saves!: ReturnType<typeof useEditorSave>;
+    let barrier!: NonNullable<ReturnType<typeof useSaveBarrier>>;
+    function Probe() { saves = useEditorSave(); barrier = useSaveBarrier()!; return <GlobalSaveStatus />; }
+    globalThis.fetch = async (input, init) => {
+      const path = String(input); const method = init?.method ?? 'GET';
+      if (path === base && method === 'GET') return Response.json([question]);
+      if (path === `${base}/a/options` && method === 'GET') {
+        if (question.type === 'yes_no' && failReload) { failReload = false; return Response.json({ error: 'Reload failed' }, { status: 500 }); }
+        return Response.json(options);
+      }
+      if (path.startsWith(`${base}/a/options/`) && method === 'DELETE') return Response.json({ error: `Delete ${path.split('/').at(-1)} failed` }, { status: 500 });
+      if (path === `${base}/a` && method === 'PUT') {
+        typePuts++;
+        if (outcome === 'failed PUT') return Response.json({ error: 'Type failed' }, { status: 500 });
+        question = { ...question, ...JSON.parse(String(init!.body)) };
+        options = options.slice(0, 2).map((option, index) => ({ ...option, isCorrect: index === 0 }));
+        return Response.json(question);
+      }
+      throw new Error(`Unexpected ${method} ${path}`);
+    };
+    try {
+      const view = render(<EditorSaves><Probe /><Questions quizId="q" roundId="r" /></EditorSaves>);
+      await waitFor(() => assert.ok(view.getByLabelText('Option 3 EN')));
+      fireEvent.click(view.getByRole('button', { name: 'Delete option 3' }));
+      await waitFor(() => assert.equal(view.getByTestId('global-save-status').textContent, 'Save failed'));
+      assert.equal(options.length, 3, 'failed DELETE did not remove the server child');
+      if (outcome === 'retained failure') await act(async () => {
+        await assert.rejects(saves.perform(async () => { throw new Error('Delete o1 failed'); }, 'retained', false, 'r/questions/a/options/o1'));
+      });
+      if (outcome === 'unrelated failure') await act(async () => {
+        await assert.rejects(saves.perform(async () => { throw new Error('Other question failed'); }, 'other', false, 'r/questions/b/options/o3'));
+      });
+      fireEvent.change(view.getByLabelText('Question type'), { target: { value: 'yes_no' } });
+      if (outcome === 'failed PUT') {
+        await waitFor(() => {
+          assert.equal(typePuts, 1);
+          assert.equal((view.getByLabelText('Question type') as HTMLSelectElement).disabled, false);
+        });
+        assert.equal((view.getByLabelText('Question type') as HTMLSelectElement).value, 'multiple_choice');
+        assert.ok(view.getByLabelText('Option 3 EN'));
+        await assert.rejects(barrier.flush(), /Delete o3 failed/);
+      } else {
+        if (outcome === 'retry GET') {
+          await waitFor(() => assert.ok(view.getByRole('button', { name: 'Retry answer data' })));
+          await assert.rejects(barrier.flush(), /Delete o3 failed/);
+          fireEvent.click(view.getByRole('button', { name: 'Retry answer data' }));
+        }
+        await waitFor(() => assert.ok(view.getByLabelText('Option 2 EN')));
+        assert.equal(view.queryByLabelText('Option 3 EN'), null);
+        assert.deepEqual(options.map(option => option.id), ['o1', 'o2']);
+        if (outcome === 'retained failure' || outcome === 'unrelated failure') {
+          await assert.rejects(barrier.flush(), outcome === 'retained failure' ? /Delete o1 failed/ : /Other question failed/);
+          if (outcome === 'unrelated failure') await act(async () => {
+            const release = await barrier.flushExcept('r/questions/b'); release();
+          });
+          assert.equal(view.getByTestId('global-save-status').textContent, 'Save failed');
+        } else {
+          await act(async () => barrier.flush());
+          assert.equal(view.getByTestId('global-save-status').textContent, 'Saved');
+        }
+      }
+    } finally { cleanup(); globalThis.fetch = originalFetch; }
+  });
+}
+
+test('child identity reconciliation retires only absent child work across save queues', async () => {
+  let saves!: ReturnType<typeof useEditorSave>;
+  let otherSaves!: ReturnType<typeof useEditorSave>;
+  let barrier!: NonNullable<ReturnType<typeof useSaveBarrier>>;
+  const persisted: string[] = [];
+  const owner = 'r/questions/a/options';
+  function Drafts() { saves = useEditorSave(); otherSaves = useEditorSave(); barrier = useSaveBarrier()!; return <GlobalSaveStatus />; }
+  render(<EditorSaves><Drafts /></EditorSaves>);
+  await act(async () => {
+    await assert.rejects(saves.perform(async () => { throw new Error('Absent child failed'); }, 'absent', false, `${owner}/o3`));
+    await assert.rejects(otherSaves.perform(async () => { throw new Error('Retained child failed'); }, 'retained', false, `${owner}/o1`));
+    await assert.rejects(otherSaves.perform(async () => { throw new Error('Other collection failed'); }, 'other', false, `${owner}-other/o3`));
+    saves.schedule('absent draft', async () => { persisted.push('absent'); }, 'Absent draft blocked', `${owner}/o3/text`);
+    saves.schedule('retained draft', async () => { persisted.push('retained'); }, undefined, `${owner}/o1`);
+    barrier.reconcileChildren(owner, ['o1', 'o2']);
+    await assert.rejects(barrier.flush(), /Retained child failed/);
+    await otherSaves.perform(async () => {}, 'retained');
+    await assert.rejects(barrier.flush(), /Other collection failed/);
+    await otherSaves.perform(async () => {}, 'other');
+    await barrier.flush();
+  });
+  assert.deepEqual(persisted, ['retained']);
 });
 
 test('question owner discard retains another question in the same queue', async () => {

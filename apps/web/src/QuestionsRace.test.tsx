@@ -61,11 +61,18 @@ function editorFixture(kind: 'options' | 'pairs', ids: string[] = ['a']) {
       current.push(created); return Response.json(created, { status: 201 });
     }
     if (child && suffix === 'order' && method === 'PUT') {
+      if (body.ids.length !== current.length || new Set(body.ids).size !== current.length || body.ids.some((itemId: string) => !current.some(item => item.id === itemId))) {
+        return Response.json({ error: 'Order must include every child exactly once.' }, { status: 400 });
+      }
       const ordered = body.ids.map((itemId: string, position: number) => ({ ...current.find(item => item.id === itemId)!, position }));
       items.set(id, ordered); return Response.json(ordered);
     }
     if (child && suffix && method === 'DELETE') {
       items.set(id, current.filter(item => item.id !== suffix)); return new Response(null, { status: 204 });
+    }
+    if (child === 'options' && suffix?.endsWith('/correct') && method === 'PUT') {
+      const corrected = (current as Option[]).map(item => ({ ...item, isCorrect: item.id === suffix.split('/')[0] }));
+      items.set(id, corrected); return Response.json(corrected);
     }
     if (child && suffix && method === 'PUT') {
       writes.push(path);
@@ -132,6 +139,49 @@ for (const kind of ['options', 'pairs'] as const) test(`initial ${kind} GET cann
   } finally { fixture.restore(); }
 });
 
+for (const kind of ['options', 'pairs'] as const) {
+  for (const addAgain of [false, true]) test(`editing an added ${kind} child preserves incomplete siblings${addAgain ? ' across another Add' : ''}`, async () => {
+    const fixture = editorFixture(kind);
+    const path = `${base}/a/${kind}`;
+    fixture.items.set('a', kind === 'pairs' ? [pair('a1', 'a'), pair('a2', 'a', 1)] : [option('a1', 'a'), option('a2', 'a', 1)]);
+    fixture.holdNext.add(path);
+    const label = (index: number, language = 'EN') => kind === 'pairs' ? `Pair ${index} left ${language}` : `Option ${index} ${language}`;
+    const add = kind === 'pairs' ? 'Add pair' : 'Add option';
+    try {
+      const view = fixture.render();
+      await waitFor(() => assert.equal(fixture.held.length, 1));
+      fixture.holdNext.add(path);
+      fireEvent.click(view.getByRole('button', { name: add }));
+      await waitFor(() => assert.equal(fixture.held.length, 2));
+      assert.equal((view.getByLabelText(label(1)) as HTMLInputElement).value, 'a3');
+      fireEvent.change(view.getByLabelText(label(1)), { target: { value: 'Latest EN' } });
+      fireEvent.change(view.getByLabelText(label(1, 'RU')), { target: { value: 'Последний RU' } });
+      if (addAgain) {
+        fixture.holdNext.add(path);
+        fireEvent.click(view.getByRole('button', { name: add }));
+        await waitFor(() => assert.equal(fixture.held.length, 3), { timeout: 2000 });
+      }
+      await fixture.resolve(0);
+      assert.equal((view.getByLabelText(label(1)) as HTMLInputElement).value, 'Latest EN');
+      await fixture.resolve(1);
+      if (addAgain) {
+        assert.equal((view.getByLabelText(label(1)) as HTMLInputElement).value, 'Latest EN');
+        assert.equal(view.getAllByLabelText(kind === 'pairs' ? /Pair \d left EN/ : /Option \d EN/).length, 2);
+        await fixture.resolve(2);
+      }
+      await waitFor(() => assert.equal(view.getAllByLabelText(kind === 'pairs' ? /Pair \d left EN/ : /Option \d EN/).length, addAgain ? 4 : 3));
+      assert.equal((view.getByLabelText(label(1)) as HTMLInputElement).value, 'a1');
+      assert.equal((view.getByLabelText(label(2)) as HTMLInputElement).value, 'a2');
+      assert.equal((view.getByLabelText(label(3)) as HTMLInputElement).value, 'Latest EN');
+      assert.equal((view.getByLabelText(label(3, 'RU')) as HTMLInputElement).value, 'Последний RU');
+      fireEvent.click(view.getByRole('button', { name: `Move ${kind === 'pairs' ? 'pair' : 'option'} 3 up` }));
+      await waitFor(() => assert.equal((view.getByLabelText(label(2)) as HTMLInputElement).value, 'Latest EN'));
+      assert.deepEqual(fixture.items.get('a')!.map(item => item.id), addAgain ? ['a1', 'a3', 'a2', 'a4'] : ['a1', 'a3', 'a2']);
+      assert.equal(view.queryByRole('alert'), null);
+    } finally { cleanup(); fixture.restore(); }
+  });
+}
+
 for (const action of ['delete', 'reorder'] as const) test(`old options GET cannot undo successful ${action}`, async () => {
   const fixture = editorFixture('options');
   fixture.items.set('a', []);
@@ -153,6 +203,26 @@ for (const action of ['delete', 'reorder'] as const) test(`old options GET canno
     await fixture.resolve(0);
     assert.equal((view.getByLabelText('Option 1 EN') as HTMLInputElement).value, (fixture.items.get('a')![0] as Option).textEn);
   } finally { fixture.restore(); }
+});
+
+test('incomplete option edits do not override a later authoritative correctness change', async () => {
+  const fixture = editorFixture('options');
+  const path = `${base}/a/options`;
+  fixture.holdNext.add(path);
+  try {
+    const view = fixture.render();
+    await waitFor(() => assert.equal(fixture.held.length, 1));
+    fixture.holdNext.add(path);
+    fireEvent.click(view.getByRole('button', { name: 'Add option' }));
+    await waitFor(() => assert.equal(fixture.held.length, 2));
+    fireEvent.change(view.getByLabelText('Option 1 EN'), { target: { value: 'Edited new option' } });
+    fireEvent.click(view.getByLabelText('Correct answer, option 1'));
+    await waitFor(() => assert.equal((view.getByLabelText('Correct answer, option 2') as HTMLInputElement).checked, true));
+    assert.equal((view.getByLabelText('Option 2 EN') as HTMLInputElement).value, 'Edited new option');
+    await fixture.resolve(1);
+    await fixture.resolve(0);
+    assert.equal((view.getByLabelText('Correct answer, option 2') as HTMLInputElement).checked, true);
+  } finally { cleanup(); fixture.restore(); }
 });
 
 test('late failed A reload does not show an error or Retry for B', async () => {

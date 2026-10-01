@@ -46,6 +46,8 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const answerDataVersion = useRef(0);
   const answerDataLoaded = useRef(false);
   const normalizedOptionsOwner = useRef<string | null>(null);
+  const incompleteOptionEdits = useRef(new Map<string, OptionFields>());
+  const incompletePairEdits = useRef(new Map<string, PairFields>());
   const selectedAnswer = useRef<{ id: string; type: Question['type'] } | null>(null);
   const saves = useEditorSave();
   const barrier = useSaveBarrier();
@@ -68,7 +70,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
       if (question.type === 'matching') {
         const items = await api<Pair[]>(`${base}/${question.id}/pairs`);
         if (!isCurrentAnswer(question, version)) return;
-        setPairs(items);
+        setPairs(items.map(item => ({ ...item, ...incompletePairEdits.current.get(item.id) })));
       } else {
         const items = await api<Option[]>(`${base}/${question.id}/options`);
         if (!isCurrentAnswer(question, version)) return;
@@ -77,8 +79,9 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
           (barrier ?? saves).reconcileChildren(owner, items.map(item => item.id));
           normalizedOptionsOwner.current = null;
         }
-        setOptions(items);
+        setOptions(items.map(item => ({ ...item, ...incompleteOptionEdits.current.get(item.id) })));
       }
+      incompleteOptionEdits.current.clear(); incompletePairEdits.current.clear();
       answerDataLoaded.current = true;
       setChildLoadFailed(false); setError('');
     } catch (cause) {
@@ -91,6 +94,9 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     invalidateAnswerData();
     if (selectedAnswer.current?.id !== question.id || selectedAnswer.current.type !== question.type) return;
     apply();
+    // The mutation waited for draft saves, so its authoritative response/reload
+    // already includes them and may supersede fields such as correctness.
+    incompleteOptionEdits.current.clear(); incompletePairEdits.current.clear();
     setChildLoadFailed(false);
     if (needsReload) void loadAnswerData(question);
     else answerDataLoaded.current = true;
@@ -107,6 +113,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
 
   useEffect(() => {
     invalidateAnswerData();
+    incompleteOptionEdits.current.clear(); incompletePairEdits.current.clear();
     setOptions([]); setPairs([]); setChildLoadFailed(false);
     if (selected) void loadAnswerData(selected);
     return () => invalidateAnswerData();
@@ -152,13 +159,15 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     schedule(question.id, `${base}/${question.id}`, changes, questionOwner(question.id));
   }
   function editOption(option: Option, changes: OptionFields) {
-    invalidateAnswerData(); answerDataLoaded.current = true;
+    if (answerDataLoaded.current) invalidateAnswerData();
+    else incompleteOptionEdits.current.set(option.id, changes);
     setOptions((items) => items.map((item) => item.id === option.id ? { ...item, ...changes } : item));
     schedule(option.id, `${base}/${option.questionId}/options/${option.id}`, changes, `${questionOwner(option.questionId)}/options/${option.id}`);
   }
   function editPair(pair: Pair, side: 'left' | 'right', value: Side) {
-    invalidateAnswerData(); answerDataLoaded.current = true;
     const changes = { left: pair.left, right: pair.right, [side]: value };
+    if (answerDataLoaded.current) invalidateAnswerData();
+    else incompletePairEdits.current.set(pair.id, changes);
     setPairs(items => items.map(item => item.id === pair.id ? { ...item, ...changes } : item));
     schedule(pair.id, `${base}/${pair.questionId}/pairs/${pair.id}`, changes, `${questionOwner(pair.questionId)}/pairs/${pair.id}`);
   }
@@ -240,6 +249,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
                 ? `${questionOwner(question.id)}/options` : null;
               setQuestions(items => items.map(item => item.id === question.id ? question : item));
               invalidateAnswerData(); answerDataLoaded.current = false;
+              incompleteOptionEdits.current.clear(); incompletePairEdits.current.clear();
               setOptions([]); setPairs([]); setChildLoadFailed(false);
             }, obsoleteOwner);
             if (saved && confirmed) await loadAnswerData(confirmed);

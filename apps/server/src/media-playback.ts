@@ -18,13 +18,16 @@ export function preTimerMediaId(db: DatabaseSync, roomId: string): string | null
 
 // Caller owns the lifecycle transaction.
 export function freezeMediaPlayback(db: DatabaseSync, roomId: string, now: number) {
+  // Game Pause suspends the required pre-timer attempt; Restart still replaces it.
   db.prepare(`UPDATE media_playback SET position_seconds = position_seconds + MAX(0, ? - updated_at) / 1000.0,
-    updated_at = ?, playing = 0, resume_on_game_resume = 1, revision = revision + 1
+    updated_at = ?, playing = 0, resume_on_game_resume = 1,
+    revision = revision + CASE WHEN media_id = (SELECT pre_timer_media_id FROM game_sessions WHERE id = session_id) THEN 0 ELSE 1 END
     WHERE session_id = ? AND playing = 1`).run(now, now, roomId);
 }
 export function resumeMediaPlayback(db: DatabaseSync, roomId: string, now: number) {
   db.prepare(`UPDATE media_playback SET playing = 1, updated_at = ?, resume_on_game_resume = 0,
-    revision = revision + 1 WHERE session_id = ? AND resume_on_game_resume = 1`).run(now, roomId);
+    revision = revision + CASE WHEN media_id = (SELECT pre_timer_media_id FROM game_sessions WHERE id = session_id) THEN 0 ELSE 1 END
+    WHERE session_id = ? AND resume_on_game_resume = 1`).run(now, roomId);
 }
 export function beginMedia(db: DatabaseSync, roomId: string, questionId: string, mediaId: string, now: number) {
   freezeMediaPlayback(db, roomId, now);

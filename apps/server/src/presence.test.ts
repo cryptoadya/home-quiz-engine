@@ -545,7 +545,7 @@ for (const preTimer of [false, true]) for (const scenario of ['continue', 'wait'
         assert.equal(resolved.pre_timer_media_id, frozen.pre_timer_media_id);
         assert.equal(media()[0].position_seconds, frozenMedia[0].position_seconds);
         assert.equal(media()[0].playing, 1);
-        assert.equal(media()[0].revision, Number(frozenMedia[0].revision) + 1);
+        assert.equal(media()[0].revision, frozenMedia[0].revision);
       }
       if (reveal) assert.equal(db.prepare('SELECT count(*) n FROM question_scores').get()!.n, 3);
       await api.post(`${f.root}/close`).expect(200);

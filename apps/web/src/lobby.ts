@@ -26,11 +26,13 @@ type MediaCompletion = { roomId: string; questionId: string; mediaId: string; re
 const pendingMediaCompletions = new Map<string, MediaCompletion>();
 const completionKey = ({ roomId, questionId, mediaId, revision }: MediaCompletion) => `${roomId}:${questionId}:${mediaId}:${revision}`;
 function completionIsCurrent(completion: MediaCompletion, snapshot: LobbyState) {
-  if (snapshot.room.closedAt || snapshot.room.state !== 'QUESTION' && snapshot.room.state !== 'ANSWERING' && snapshot.room.state !== 'ANSWER_REVEAL') return false;
-  const game = snapshot.game;
+  if (snapshot.room.closedAt) return false;
+  const paused = snapshot.game?.state === 'PAUSED';
+  const game = snapshot.game?.state === 'PAUSED' ? snapshot.game.content : snapshot.game;
   if (!game || !('questionId' in game) || game.questionId !== completion.questionId) return false;
   const media = game.media?.find(item => item.mediaId === completion.mediaId);
-  return media?.playback?.playing === true && media.playback.revision === completion.revision;
+  return media?.playback?.revision === completion.revision
+    && (paused ? game.state === 'QUESTION' && game.preTimer?.mediaId === completion.mediaId : media.playback.playing);
 }
 
 export function useLobby(roomId: string | undefined, audience: Audience, token?: string | null) {
@@ -57,8 +59,11 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
         sendPending();
       }, 3000);
       inFlight.current.set(key, timeout);
-      socket.emit('media:ended', completion, (_result: { accepted: boolean }) => {
+      socket.emit('media:ended', completion, (result: { accepted: boolean }) => {
         if (inFlight.current.get(key) !== timeout) return;
+        // Pause can reject an otherwise current completion. Keep it until acceptance
+        // or an authoritative snapshot invalidates the playback attempt.
+        if (!result.accepted) return;
         clearTimeout(timeout);
         inFlight.current.delete(key);
         pendingMediaCompletions.delete(key);
@@ -115,7 +120,8 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
             inFlight.current.delete(key);
           }
         }
-        subscribed.current = true;
+        if (snapshot.room.state === 'PAUSED') clearInFlight();
+        subscribed.current = snapshot.room.state !== 'PAUSED';
         sendPending();
       }
       revision.current++;

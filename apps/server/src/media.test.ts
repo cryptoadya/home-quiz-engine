@@ -460,7 +460,7 @@ test('pre-timer order gates answering, rejects stale completion, and freezes acr
     assert.equal(JSON.stringify(pausedScreen).includes('isCorrect'), false);
     resumeGame(f.db, room.id, () => 10000);
     assert.equal(state(10000).media[0].playback.positionSeconds, 2);
-    assert.equal(finish(media[0].id, first, 11000), false);
+    assert.equal(state(10000).media[0].playback.revision, first);
     assert.equal(autoPauseForDisconnectedPlayer(f.db, room.id, player.player.id, () => 11000), true);
     assert.equal(waitForPlayer(f.db, room.id, () => false, () => 12000).status, 409);
     waitForPlayer(f.db, room.id, () => true, () => 20000);
@@ -479,6 +479,52 @@ test('pre-timer order gates answering, rejects stale completion, and freezes acr
     assert.equal(state(34000).state, 'ANSWER_REVEAL'); // zero remaining participants
   } finally { f.close(); }
 });
+
+for (const resolution of ['manual', 'wait', 'continue', 'restart'] as const) for (const pauseAt of [6000, 6100]) {
+  test(`pre-timer EOF completion survives ${resolution} pause resolution at ${pauseAt}`, async () => {
+    const { startQuestion, getSurfaceState } = await import('./game.js');
+    const { completeMedia, controlMedia } = await import('./media-playback.js');
+    const { pauseGame, resumeGame, autoPauseForDisconnectedPlayer, waitForPlayer, continueWithoutPlayer } = await import('./pause.js');
+    const f = fixture();
+    try {
+      const { quiz, base, question, changes } = await ready(f.app);
+      const item = (await f.app.post(`/api/quizzes/${quiz.id}/media`).attach('file', readFileSync(new URL('./fixtures/media/sample.mp3', import.meta.url)), { filename: 'sample.mp3', contentType: 'audio/mpeg' }).expect(201)).body;
+      await f.app.put(base).send({ ...changes, answerTimeSeconds: 10, media: [{ mediaId: item.id, playBeforeTimer: true }] }).expect(200);
+      const room = (await f.app.post(`/api/quizzes/${quiz.id}/rooms`).expect(201)).body;
+      const player = (await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' }).expect(201)).body;
+      for (const action of ['start', 'start-round']) await f.app.post(`/api/rooms/${room.id}/${action}`).expect(200);
+      startQuestion(f.db, room.id, 1000);
+      const state = (now: number): any => getSurfaceState(f.db, room.id, 'screen', now)!.game;
+      const finish = (revision: number) => completeMedia(f.db, room.id, question.id, item.id, revision, 5, 20000);
+      const originalRevision = state(1000).media[0].playback.revision;
+      if (resolution === 'wait' || resolution === 'continue') {
+        assert.equal(autoPauseForDisconnectedPlayer(f.db, room.id, player.player.id, () => pauseAt), true);
+      } else assert.ok('room' in pauseGame(f.db, room.id, () => pauseAt));
+      assert.equal(state(pauseAt).state, 'PAUSED');
+      assert.equal(state(pauseAt).content.media[0].playback.positionSeconds, (pauseAt - 1000) / 1000);
+      assert.equal(finish(originalRevision), false, 'completion cannot advance while paused');
+      if (resolution === 'wait') {
+        assert.equal(waitForPlayer(f.db, room.id, () => false, () => 19000).status, 409);
+        assert.ok('room' in waitForPlayer(f.db, room.id, () => true, () => 20000));
+      } else if (resolution === 'continue') {
+        assert.ok('room' in continueWithoutPlayer(f.db, room.id, () => 20000));
+      } else assert.ok('room' in resumeGame(f.db, room.id, () => 20000));
+      assert.equal(state(20000).state, 'QUESTION');
+      assert.equal(state(20000).timer, undefined, 'elapsed server time cannot complete media');
+      if (resolution === 'restart') {
+        assert.ok('room' in controlMedia(f.db, room.id, question.id, item.id, 'restart', 20000));
+        assert.equal(finish(originalRevision), false, 'pre-pause completion cannot finish a restarted attempt');
+        assert.equal(state(20000).state, 'QUESTION');
+        assert.equal(state(20000).media[0].playback.positionSeconds, 0);
+        assert.equal(finish(state(20000).media[0].playback.revision), true);
+      } else assert.equal(finish(originalRevision), true, 'same locally completed attempt can finish after resume');
+      const completed = state(20000);
+      assert.equal(completed.state, resolution === 'continue' ? 'ANSWER_REVEAL' : 'ANSWERING');
+      assert.equal(finish(originalRevision), false, 'completion is accepted exactly once');
+      assert.deepEqual(state(20000), completed);
+    } finally { f.close(); }
+  });
+}
 
 test('single pre-timer completion starts one deadline; answering media pause/replay and expiry preserve Submit boundary', async () => {
   const { startQuestion, getSurfaceState } = await import('./game.js');

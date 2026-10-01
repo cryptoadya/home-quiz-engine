@@ -103,6 +103,76 @@ test('reconnect after server processed an event but lost its ACK clears it from 
   assert.equal(deliveries.length, 1);
 });
 
+for (const kind of ['audio', 'video']) for (const reason of ['manual', 'player_disconnect']) for (const endedBeforePause of [false, true]) {
+  test(`${kind} EOF completion survives ${reason} pause with report-before-pause=${endedBeforePause}`, async () => {
+    const h = setup(); const deliveries: any[] = []; let accept = false; let advancements = 0;
+    const initial = question();
+    initial.game.media[0].kind = kind;
+    h.setSnapshot(initial);
+    const receive = () => h.live.on('media:ended', (event, ack) => {
+      deliveries.push(event);
+      if (!accept) { ack({ accepted: false }); return; }
+      advancements++; ack({ accepted: true }); h.setSnapshot(answering());
+      queueMicrotask(() => h.live.emit('lobby:state', answering()));
+    });
+    receive();
+    const view = h.show(); await h.connect();
+    await act(async () => {}); // Flush the successful local play promise.
+    const element = view.container.querySelector('audio,video')!;
+    if (endedBeforePause) await act(async () => { fireEvent.ended(element); });
+    const pausedContent = { ...initial.game, media: initial.game.media.map(item => ({ ...item,
+      playback: { ...item.playback, playing: false, positionSeconds: 5.1 } })) };
+    const paused = { room: room('PAUSED'), game: { state: 'PAUSED', pausedFromState: 'QUESTION', reason, remainingMs: null, content: pausedContent } };
+    await act(async () => { h.live.emit('lobby:state', paused); });
+    const beforeResume = deliveries.length;
+    fireEvent.ended(element);
+    assert.equal(deliveries.length, beforeResume, 'paused Screen does not report completion');
+    if (endedBeforePause) {
+      view.unmount(); h.setSnapshot(paused); h.show(); h.subscribe(); receive();
+      await h.connect(); // Pending local completion also survives a paused remount.
+      assert.equal(deliveries.length, beforeResume);
+    }
+    accept = true;
+    const resumed = { ...initial, game: { ...initial.game, media: initial.game.media.map(item => ({ ...item,
+      playback: { ...item.playback, positionSeconds: 5.1 } })) } };
+    await act(async () => { h.live.emit('lobby:state', resumed); });
+    assert.equal(advancements, 1);
+    assert.deepEqual(deliveries.at(-1), { roomId: 'delivery-room', questionId: 'q', mediaId: 'a', revision: 1, duration: 5 });
+    assert.equal(deliveries.length, beforeResume + 1);
+    cleanup();
+  });
+}
+
+test('restart after game pause discards the old local completion attempt', async () => {
+  const h = setup(); const deliveries: any[] = [];
+  h.live.on('media:ended', event => deliveries.push(event));
+  const view = h.show(); await h.end(view);
+  const paused = { room: room('PAUSED'), game: { state: 'PAUSED', pausedFromState: 'QUESTION', remainingMs: null,
+    content: { ...question().game, media: question().game.media.map(item => ({ ...item, playback: { ...item.playback, playing: false, positionSeconds: 5.1 } })) } } };
+  h.setSnapshot(paused); await h.connect();
+  assert.equal(deliveries.length, 0);
+  h.setSnapshot(question(2));
+  await act(async () => { h.live.emit('lobby:state', question(2)); });
+  assert.equal(deliveries.length, 0, 'old pre-pause report cannot finish Host Restart');
+  await h.end(view);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].revision, 2);
+});
+
+test('blocked autoplay cannot complete across game Pause/Resume at projected EOF', async () => {
+  const h = setup(false); const deliveries: any[] = [];
+  h.live.on('media:ended', event => deliveries.push(event));
+  const view = h.show(); await h.connect();
+  await waitFor(() => assert.ok(view.getByRole('alert')));
+  const pausedContent = { ...question().game, media: question().game.media.map(item => ({ ...item,
+    playback: { ...item.playback, playing: false, positionSeconds: 5.1 } })) };
+  await act(async () => { h.live.emit('lobby:state', { room: room('PAUSED'), game: { state: 'PAUSED', pausedFromState: 'QUESTION', remainingMs: null, content: pausedContent } }); });
+  await act(async () => { h.live.emit('lobby:state', { ...question(), game: { ...question().game,
+    media: question().game.media.map(item => ({ ...item, playback: { ...item.playback, positionSeconds: 5.1 } })) } }); });
+  fireEvent.ended(view.container.querySelector('audio')!);
+  assert.equal(deliveries.length, 0);
+});
+
 test('connected natural ending sends once, and blocked autoplay never sends', async () => {
   const h = setup(); const deliveries: any[] = [];
   h.live.on('media:ended', (event, ack) => { deliveries.push(event); ack({ accepted: true }); });

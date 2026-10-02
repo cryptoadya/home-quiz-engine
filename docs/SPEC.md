@@ -176,11 +176,13 @@ Dangerous actions such as Delete Quiz, End Game, Kick Player and Continue Withou
 
 ## Screen behavior
 
-Presentation only; no controls.
+Presentation only; no game controls. When media playback fails or needs local replay, Screen may show a local playback recovery button.
 
-Question screen normally shows bilingual question, media, timer and `Answered n / total`. Do not show names of players still thinking.
+Before Host presses **Start Question**, `QUESTION` is a Host preparation state: Screen shows only a neutral bilingual ready message and question progress, without question text, media, choices, Matching content, explanation or answers. Host retains the prepared question and controls; Players keep waiting.
 
-Answer choices are normally Player-only, but a question may opt into displaying choices on Screen.
+After **Start Question**, Screen shows the bilingual question and media, including while required pre-timer media keeps the state in `QUESTION`. The timer and `Answered n / total` appear during answering. Do not show names of players still thinking.
+
+Answer choices are normally Player-only, but `showOptionsOnScreen` may display them on Screen after public start. When false, choices and Matching content stay hidden until Reveal.
 
 Pause overlays `Пауза / Paused` without revealing answer.
 

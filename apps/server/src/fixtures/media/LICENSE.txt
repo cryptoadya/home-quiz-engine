@@ -1,6 +1,19 @@
-Media test fixtures (except the locally generated silent WAV) are from
+sample.mp4 and sample.mp3 are locally generated development/acceptance fixtures,
+created for this repository from FFmpeg synthetic sources; they contain no third-party footage or music.
+They are not automatically seeded into user quizzes.
+
+sample.mp4: 3 seconds, 640x360, 24 fps, H.264 (yuv420p), AAC 44.1 kHz mono,
+fast-start MP4. Moving testsrc2 colour bars with a "LOCAL QUIZ / 3 SECOND TEST"
+label and a quiet 440 Hz tone (volume=0.15, faded in/out).
+sample.mp3: 3 seconds (plus MP3 encoder padding), MP3 64 kbit/s, 44.1 kHz mono,
+quiet 660 Hz tone (volume=0.15, faded in/out).
+Generated with FFmpeg 7.1 using libx264 CRF 28 and libmp3lame, respectively.
+A temporary PNG label was drawn locally; no new application dependency is needed.
+
+Other fixtures (except the locally generated silent WAV) are from
 https://github.com/sindresorhus/file-type/tree/main/fixture
-fixture-imovie.mp4 is renamed sample.mp4; other fixture.<ext> files are renamed sample.<ext>.
+Other fixture.<ext> files are renamed sample.<ext>.
+The following upstream license applies to those remaining fixtures.
 
 MIT License
 

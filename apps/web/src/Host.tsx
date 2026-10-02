@@ -71,6 +71,27 @@ export function Host() {
     finally { setBusy(false); }
   }
 
+  let primaryAction: Parameters<typeof start>[0] | undefined;
+  let primaryLabel = '';
+  let primaryDisabled = busy;
+  if (room && !room.closedAt) {
+    const game = state?.game;
+    if (room.state === 'LOBBY' && state?.players?.length) { primaryAction = 'start'; primaryLabel = 'Start Game'; }
+    else if (game?.state === 'ROUND_INTRO') { primaryAction = 'start-round'; primaryLabel = 'Start Round'; }
+    else if (game?.state === 'QUESTION' && !game.preTimer) { primaryAction = 'start-question'; primaryLabel = 'Start Question'; }
+    else if (room.state === 'PAUSED') {
+      const waiting = game?.state === 'PAUSED' && game.reason === 'player_disconnect';
+      primaryAction = waiting ? 'wait-for-player' : 'resume';
+      primaryLabel = waiting ? 'Wait for Player' : 'Resume';
+      primaryDisabled ||= Boolean(waiting && !game.disconnectedPlayer?.present);
+    } else if (game && 'nextAction' in game && game.nextAction) {
+      primaryAction = game.nextAction;
+      primaryLabel = game.nextAction === 'next'
+        ? ('questionNumber' in game && game.questionNumber < game.questionCount ? 'Next Question' : 'Next')
+        : { 'show-leaderboard': 'Show Leaderboard', 'next-round': 'Next Round', 'final-results': 'Final Results', 'show-winner': 'Show Winner' }[game.nextAction];
+    }
+  }
+
   return <ThemeSurface themeId={room?.themeId} className="host" data-phase={room?.closedAt ? 'CLOSED' : room?.state}>
     <h1>Host</h1>
     <Link to="/admin">Quiz list</Link>
@@ -87,17 +108,13 @@ export function Host() {
       <p className="connection-chip" data-connected={connected}>{connected ? 'Connected' : 'Reconnecting…'}</p>
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       {!state?.players?.length && <p role="status">No players. Ask guests to scan the Screen QR code or enter the room code.</p>}
-      <ul className="host-roster">{state?.players?.map(player => <li key={player.id} data-present={player.present}>
-        <span>{player.name} — {player.language.toUpperCase()}{player.present !== undefined && ` — ${player.present ? 'Online' : 'Disconnected'}`}</span>
-        {!room.closedAt && !['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) && !(state?.game?.state === 'PAUSED' && state.game.pausedFromState === 'FINAL_RESULTS') &&
-          <button className="subtle danger" aria-label={`Kick ${player.name}`} disabled={busy} onClick={() => void kick(player)}>Kick</button>}
-      </li>)}</ul>
       <p>Room code: <strong>{room.code}</strong></p>
       <p>State: <span className="phase-chip">{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>
       </section>
       <section className="host-controls" aria-label="Game controls">
+      {primaryAction && <button className="host-primary-action" onClick={() => void start(primaryAction)} disabled={primaryDisabled}>{primaryLabel}</button>}
       {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&
-        <button onClick={() => void start('pause')} disabled={busy}>Pause</button>}
+        <div className="host-secondary-actions"><button className="subtle" onClick={() => void start('pause')} disabled={busy}>Pause</button></div>}
       {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
         <p className="state-notice paused">Game paused.</p>
         {state?.game?.state === 'PAUSED' && state.game.content?.state === 'ROUND_INTRO' && <><RoundIntroContent round={state.game.content} /><p>Questions: {state.game.content.questionCount}</p></>}
@@ -108,31 +125,30 @@ export function Host() {
           <p role="status">{state.game.disconnectedPlayer?.present ? `${state.game.disconnectedPlayer.name} is back — Host can resume with Wait for Player.` : 'Waiting for Player to reconnect…'}</p>
         </>}
         {state?.game?.state === 'PAUSED' && <p>Paused from: {state.game.pausedFromState.toLowerCase().replaceAll('_', ' ')}</p>}
-        {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' ? <>
-          <button onClick={() => void start('wait-for-player')} disabled={busy || !state.game.disconnectedPlayer?.present}>Wait for Player</button>
+        {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <div className="host-secondary-actions">
           <button className="subtle danger" onClick={() => void start('continue-without-player')} disabled={busy}>Continue Without Player</button>
-        </> : <button onClick={() => void start('resume')} disabled={busy}>Resume</button>}
+        </div>}
       </section>}
-      {!room.closedAt && room.state === 'LOBBY' && Boolean(state?.players?.length) &&
-        <button onClick={() => void start()} disabled={busy}>Start Game</button>}
       {!room.closedAt && state?.game?.state === 'ROUND_INTRO' && <section className="game-content">
         <RoundIntroContent round={state.game} />
         <p>Questions: {state.game.questionCount}</p>
-        <button onClick={() => void start('start-round')} disabled={busy}>Start Round</button>
       </section>}
       {!room.closedAt && (state?.game?.state === 'QUESTION' || state?.game?.state === 'ANSWERING' || state?.game?.state === 'ANSWER_REVEAL') && <section className="game-content">
         <QuestionContent question={state.game} host mediaBusy={busy} onMediaControl={(id, action) => void controlMedia(id, action)} />
         <p>Points: {state.game.points}</p>
         <p>Answer time: {state.game.answerTimeSeconds} seconds</p>
-        {state.game.state === 'QUESTION' && !state.game.preTimer && <button onClick={() => void start('start-question')} disabled={busy}>Start Question</button>}
         {state.game.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}
       </section>}
       {!room.closedAt && state?.game && ('nextAction' in state.game) && <>
         {['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <section className="game-content"><BoundaryContent game={state.game as import('./lobby').GameBoundary} /></section>}
-        {state.game.nextAction && <button onClick={() => void start((state.game as { nextAction: NavigationAction }).nextAction)} disabled={busy}>{state.game.nextAction === 'next'
-          ? ('questionNumber' in state.game && state.game.questionNumber < state.game.questionCount ? 'Next Question' : 'Next')
-          : { 'show-leaderboard': 'Show Leaderboard', 'next-round': 'Next Round', 'final-results': 'Final Results', 'show-winner': 'Show Winner' }[state.game.nextAction]}</button>}
       </>}
+      </section>
+      <section className="host-roster-section" aria-label="Players">
+      <ul className="host-roster">{state?.players?.map(player => <li key={player.id} data-present={player.present}>
+        <span>{player.name} — {player.language.toUpperCase()}{player.present !== undefined && ` — ${player.present ? 'Online' : 'Disconnected'}`}</span>
+        {!room.closedAt && !['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) && !(state?.game?.state === 'PAUSED' && state.game.pausedFromState === 'FINAL_RESULTS') &&
+          <button className="subtle danger" aria-label={`Kick ${player.name}`} disabled={busy} onClick={() => void kick(player)}>Kick</button>}
+      </li>)}</ul>
       </section>
       <footer className="host-danger">
       {room.closedAt ? <p role="status">Room closed</p> : <button className="subtle danger" onClick={() => void close()} disabled={busy}>Close room</button>}

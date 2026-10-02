@@ -130,7 +130,7 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
         if (path.startsWith('/play') && phase === 'ANSWERING') await waitFor(() => assert.ok(view.getByText('Answer')));
         if (path.startsWith('/play') && phase === 'ANSWER_REVEAL') await waitFor(() => assert.ok(view.getByText(/Correct.*3/)));
         if (!path.startsWith('/play') && phase === 'ROUND_INTRO') assert.ok(view.getByText('Round'));
-        if (!path.startsWith('/play') && ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL'].includes(phase)) assert.ok(view.getByRole('heading', { name: 'Question' }));
+        if (!path.startsWith('/play') && ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL'].includes(phase)) assert.ok(view.getByRole('heading', { name: path.startsWith('/screen') && phase === 'QUESTION' ? 'Следующий вопрос готов / Next question is ready' : 'Question' }));
         if (!path.startsWith('/play') && ['LEADERBOARD', 'FINAL_RESULTS'].includes(phase)) assert.ok(view.getByRole('table'));
         if (!path.startsWith('/play') && phase === 'WINNER_SCREEN') assert.ok(view.container.querySelector('.winners'));
       }

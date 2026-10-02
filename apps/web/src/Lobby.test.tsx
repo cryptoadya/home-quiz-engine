@@ -241,19 +241,52 @@ test('Host reload restores Round Intro and Start Round displays current question
   assert.equal(view.queryByRole('button', { name: 'Start Round' }), null);
 });
 
-for (const showOptionsOnScreen of [false, true]) test(`Screen reload presents bilingual question, options ${showOptionsOnScreen}, no correctness`, async () => {
-  socket();
+for (const showOptionsOnScreen of [false, true]) test(`Screen preparation hides content until public start, options ${showOptionsOnScreen}`, async () => {
+  const live = socket();
   const { points, answerTimeSeconds, options, ...question } = questionGame;
-  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'QUESTION' }, players: [player], game: {
-    ...question, showOptionsOnScreen, ...(showOptionsOnScreen ? { options: options.map(({ textRu, textEn }) => ({ textRu, textEn })) } : {}),
-  } });
+  const game = { ...question, showOptionsOnScreen, options: options.map(({ textRu, textEn }) => ({ textRu, textEn })),
+    explanationRu: 'Private explanation', leftItems: [{ id: 'left', kind: 'text', textRu: 'Скрытая пара', textEn: 'Private matching' }] };
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'QUESTION' }, game });
   const view = show('/screen/room');
-  await waitFor(() => assert.ok(view.getByText('First question')));
+  await waitFor(() => assert.ok(view.getByText('Следующий вопрос готов / Next question is ready')));
+  for (const text of ['First question', 'Первый вопрос', 'One', 'Один', 'Private explanation', 'Private matching']) assert.equal(view.queryByText(text), null);
+  // Required media publicly starts while the room remains in QUESTION.
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'QUESTION' }, game: { ...game, preTimer: { mediaId: 'audio', number: 1, total: 1 } } }); });
+  assert.ok(view.getByText('First question'));
   assert.ok(view.getByText('Первый вопрос'));
   assert.equal(Boolean(view.queryByText('One')), showOptionsOnScreen);
   assert.equal(Boolean(view.queryByText('Один')), showOptionsOnScreen);
+  assert.equal(Boolean(view.queryByText(/Private matching/)), showOptionsOnScreen);
   assert.equal(view.queryByText(/correct/i), null);
   assert.equal(view.queryByRole('button'), null);
+  assert.equal(view.queryByText('Private explanation'), null);
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWERING' }, game: { ...game, state: 'ANSWERING' } }); });
+  assert.ok(view.getByText('First question'));
+  assert.equal(Boolean(view.queryByText('One')), showOptionsOnScreen);
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...game, state: 'ANSWER_REVEAL' } }); });
+  assert.ok(view.getByText('One'));
+  assert.ok(view.getByText('Private explanation'));
+});
+
+test('Host primary action precedes question details and a full roster without changing Kick', async () => {
+  socket();
+  const players = Array.from({ length: 30 }, (_, i) => ({ ...player, id: `p${i}`, name: `Guest ${i}`, present: i !== 0 }));
+  globalThis.fetch = async () => Response.json({ room: { ...room, state: 'QUESTION' }, game: questionGame, players });
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Question' })));
+  const action = view.getByRole('button', { name: 'Start Question' });
+  assert.ok(action.classList.contains('host-primary-action'));
+  assert.equal(view.getByRole('region', { name: 'Game controls' }).querySelector('button'), action);
+  const roster = view.container.querySelector('.host-roster')!;
+  assert.ok(action.compareDocumentPosition(roster) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(action.compareDocumentPosition(view.getByText('First question')) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.equal(view.getAllByRole('button', { name: /^Kick Guest/ }).length, 30);
+  assert.ok(view.getByText(/Guest 0.*Disconnected/));
+  let confirmed = '';
+  mock.method(window, 'confirm', (message: string) => { confirmed = message; return false; });
+  fireEvent.click(view.getByRole('button', { name: 'Kick Guest 0' }));
+  assert.match(confirmed, /Kick Guest 0.*cannot reconnect/);
+  assert.equal(roster.querySelectorAll('li').length, 30);
 });
 
 test('closed Round Intro hides Start Round', async () => {

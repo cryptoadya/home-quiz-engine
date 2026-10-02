@@ -12,6 +12,7 @@ export function Screen() {
   const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
   const local = needsLanAddress(window.location.origin);
   const content = state?.game?.state === 'PAUSED' ? state.game.content : state?.game;
+  const preparing = content?.state === 'QUESTION' && !content.preTimer;
   return <ThemeSurface themeId={state?.room.themeId} className="screen-lobby" data-phase={state?.room.closedAt ? 'CLOSED' : state?.room.state}>
     <ThemeDecoration kind="corners" />
     <header className="screen-header">
@@ -26,7 +27,17 @@ export function Screen() {
     {!state && !error && <p>Загрузка / Loading…</p>}
     {state && <>
       {state.room.closedAt ? <p role="status">Комната закрыта / Room closed</p> : state.room.state !== 'LOBBY'
-        ? <section className="game-content">{content && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(content.state) && <BoundaryContent game={content as import('./lobby').GameBoundary} />}{content?.state === 'ROUND_INTRO' && <RoundIntroContent round={content} />}{content && (content.state === 'QUESTION' || content.state === 'ANSWERING' || content.state === 'ANSWER_REVEAL') && <QuestionContent question={content} onMediaEnded={state.game?.state === 'PAUSED' ? undefined : (id, revision, duration) => reportMediaEnded(content.questionId ?? '', id, revision, duration)} />}{state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}</section> : <>
+        ? <section className="game-content">
+          {content && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(content.state) && <BoundaryContent game={content as import('./lobby').GameBoundary} />}
+          {content?.state === 'ROUND_INTRO' && <RoundIntroContent round={content} />}
+          {content && (content.state === 'QUESTION' || content.state === 'ANSWERING' || content.state === 'ANSWER_REVEAL') && (preparing
+            ? <div className="question-ready">
+              <p className="phase-chip">Раунд {content.roundNumber} / Round {content.roundNumber} · Вопрос / Question {content.questionNumber} / {content.questionCount}</p>
+              <h2>Следующий вопрос готов / Next question is ready</h2>
+            </div>
+            : <QuestionContent question={content} onMediaEnded={state.game?.state === 'PAUSED' ? undefined : (id, revision, duration) => reportMediaEnded(content.questionId ?? '', id, revision, duration)} />)}
+          {state.game?.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}
+        </section> : <>
         <div className="screen-join">
         <ThemeDecoration kind="lobby" />
         <div className="screen-join-panel">

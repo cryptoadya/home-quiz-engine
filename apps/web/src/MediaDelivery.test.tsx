@@ -187,3 +187,51 @@ test('connected natural ending sends once, and blocked autoplay never sends', as
   fireEvent.ended(blockedView.container.querySelector('audio')!);
   assert.equal(blockedDeliveries.length, 0);
 });
+
+for (const [name, message] of [['NotAllowedError', /blocked.*Tap Play on this Screen/], ['NotSupportedError', /format cannot be played/], ['AbortError', /Playback failed/]] as const) {
+  test(`${name} has an actionable Screen message and blocked playback retries locally`, async () => {
+    const h = setup(); const deliveries: unknown[] = [];
+    h.live.on('media:ended', (event, ack) => { deliveries.push(event); ack({ accepted: true }); });
+    let blocked = true;
+    proto.play = () => blocked ? Promise.reject(new DOMException('raw exception', name)) : Promise.resolve();
+    const view = h.show(); await h.connect();
+    await waitFor(() => assert.match(view.getByRole('alert').textContent!, message));
+    assert.doesNotMatch(view.getByRole('alert').textContent!, /raw exception/);
+    if (name === 'NotSupportedError') { assert.equal(view.queryByRole('button', { name: /Play media/ }), null); return; }
+    blocked = false;
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: /Play media/ })); });
+    assert.equal(view.queryByRole('alert'), null);
+    await act(async () => { fireEvent.ended(view.container.querySelector('audio')!); });
+    assert.equal(deliveries.length, 1);
+  });
+}
+
+for (const kind of ['audio', 'video']) test(`late ${kind} Screen at EOF requires local replay before mandatory completion`, async () => {
+  const h = setup(); const deliveries: unknown[] = [];
+  const initial = question(); initial.game.media[0].kind = kind;
+  initial.game.media[0].playback.positionSeconds = 6;
+  h.setSnapshot(initial);
+  h.live.on('media:ended', (event, ack) => { deliveries.push(event); ack({ accepted: true }); });
+  const view = h.show(); await h.connect();
+  await waitFor(() => assert.ok(view.getByRole('button', { name: /Replay media/ })));
+  const element = view.container.querySelector<HTMLMediaElement>('audio,video')!;
+  fireEvent.ended(element);
+  assert.equal(deliveries.length, 0, 'server elapsed time is insufficient');
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: /Replay media/ })); });
+  assert.equal(element.currentTime, 0);
+  // A same-revision resync must not seek the local replay back to EOF.
+  await act(async () => { h.live.emit('lobby:state', initial); });
+  assert.equal(element.currentTime, 0);
+  assert.equal(deliveries.length, 0);
+  await act(async () => { fireEvent.ended(element); });
+  assert.equal(deliveries.length, 1);
+});
+
+for (const code of [2, 3, 4]) test(`media element error ${code} is mapped without raw exceptions`, async () => {
+  const h = setup(); const view = h.show(); await h.connect();
+  const element = view.container.querySelector('audio')!;
+  Object.defineProperty(element, 'error', { configurable: true, value: { code, message: 'raw exception' } });
+  fireEvent.error(element);
+  assert.match(view.getByRole('alert').textContent!, code === 2 ? /Playback failed/ : /format cannot be played/);
+  assert.doesNotMatch(view.getByRole('alert').textContent!, /raw exception/);
+});

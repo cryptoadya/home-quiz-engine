@@ -180,7 +180,7 @@ test('Matching text/images and ordered question media use shared rendering and f
     fireEvent.play(panel.getByLabelText('Clip'));
     assert.equal(pauses, 1, 'Local video pauses its audio peer');
     fireEvent.error(panel.getByLabelText('Clip'));
-    assert.ok(panel.getByText('Медиа недоступно / Media unavailable'));
+    assert.ok(panel.getByText(/Playback failed/));
     fireEvent.change(panel.getByLabelText('Preview state'), { target: { value: 'answering' } });
     assert.equal(panel.queryByText('Верные пары / Correct pairs'), null);
     fireEvent.change(panel.getByLabelText('Preview mode'), { target: { value: 'Host' } });

@@ -138,7 +138,12 @@ for (const [index, scenario] of hostCases.entries()) test(`Host HTTP reload rest
   globalThis.fetch = async () => Response.json({ room: { ...room, state: scenario.state, closedAt: 'closedAt' in scenario ? scenario.closedAt : null }, game: scenario.game, players: [{ id: 'p', name: 'Alice', language: 'en', joinedAt: 'now' }] });
   const view = show('/host/room');
   await waitFor(() => assert.ok(view.getByText('Party')));
-  assert.deepEqual(view.queryAllByRole('button').map(button => button.textContent), (['FINAL_RESULTS', 'WINNER_SCREEN'].includes(scenario.state) || ('closedAt' in scenario && scenario.closedAt) ? scenario.buttons : ['Kick', ...scenario.buttons]));
+  assert.deepEqual(view.queryAllByRole('button').map(button => button.textContent).sort(), (['FINAL_RESULTS', 'WINNER_SCREEN'].includes(scenario.state) || ('closedAt' in scenario && scenario.closedAt) ? [...scenario.buttons] : ['Kick', ...scenario.buttons]).sort());
+  const primary = view.container.querySelector('.host-primary-action');
+  if (scenario.buttons.some(label => !['Pause', 'Close room', 'Continue Without Player'].includes(label))) {
+    assert.ok(primary);
+    assert.equal(view.getByRole('region', { name: 'Game controls' }).querySelector('button'), primary);
+  }
   if (scenario.game && 'reason' in scenario.game && scenario.game.reason === 'player_disconnect') {
     assert.ok(view.getByText(/Alice is back/));
     assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, false);

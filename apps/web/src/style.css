@@ -320,3 +320,8 @@ audio { max-width: 100%; }
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
   button:not(:disabled):hover { transform: none; }
 }
+
+.host-controls .host-primary-action { display: block; width: 100%; min-height: 60px; margin: 0 0 1rem; font-size: 1.2rem; }
+.host-secondary-actions { margin: .75rem 0; }
+.host-media button { background: var(--theme-surface); color: var(--theme-primary); border-color: var(--theme-border); }
+.host-roster-section { margin: 1.5rem 0; }

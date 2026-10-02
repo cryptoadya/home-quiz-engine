@@ -43,6 +43,11 @@ test('/play finds a room, offers RU/EN, saves identity and enters the waiting st
   await waitFor(() => assert.match(view.getByRole('status').textContent!, /Waiting for the host/));
   assert.equal(dom.window.localStorage.getItem(key), saved);
   assert.ok(view.getByText('Alex'));
+  assert.ok(!view.queryByLabelText('Player language'), 'Language belongs inside closed Settings');
+  assert.ok(!view.queryByLabelText('New player name'), 'Rename belongs inside closed Settings');
+  fireEvent.click(view.getByRole('button', { name: 'Settings' }));
+  assert.ok(view.getByLabelText('Player language'));
+  assert.ok(view.getByLabelText('New player name'));
 });
 
 test('direct code flow prefills the room and shows duplicate-name errors', async () => {
@@ -109,6 +114,7 @@ for (const stale of [
   await waitFor(() => assert.match(view.getByRole('status').textContent!, /Waiting for the host/));
   assert.ok(view.getByText('Sam'));
   assert.equal(dom.window.localStorage.getItem(key), JSON.stringify({ roomId: 'new-room', token: 'new-secret' }));
+  fireEvent.click(view.getByRole('button', { name: 'Settings' }));
   fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'ru' } });
   await waitFor(() => assert.match(view.getByRole('status').textContent!, /Ожидайте ведущего/));
   assert.deepEqual(requests, [
@@ -172,9 +178,9 @@ test('temporary reconnect failure retains token and blocks a second join until r
   await waitFor(() => assert.match(view.getByRole('status').textContent!, /Waiting for the host/));
 });
 
-for (const themeId of ['default', 'halloween']) test(`gameplay header keeps identity and live language switching together (${themeId})`, async () => {
+for (const themeId of ['default', 'halloween']) for (const state of ['LOBBY', 'ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN', 'PAUSED']) test(`Player keeps language secondary in Settings (${themeId}, ${state})`, async () => {
   dom.window.localStorage.setItem(key, saved);
-  const gameRoom = { ...room, themeId, state: 'QUESTION' };
+  const gameRoom = { ...room, themeId, state };
   let language = 'en';
   globalThis.fetch = async (url, init) => {
     if (init?.method === 'PATCH') {
@@ -185,19 +191,117 @@ for (const themeId of ['default', 'halloween']) test(`gameplay header keeps iden
     return Response.json({ room: gameRoom, player: { ...player, language }, active: true });
   };
   const view = show('/play/ABCDE');
-  await waitFor(() => assert.ok(view.getByText('Get ready for the question')));
+  await waitFor(() => assert.ok(view.getByText('Alex')));
   const header = view.container.querySelector('header')!;
   assert.equal(header.querySelector('h2')?.textContent, 'Party');
   assert.match(header.textContent!, /ABCDE/);
   assert.match(header.textContent!, /Alex/);
-  assert.ok(header.contains(view.getByLabelText('Player language')));
+  assert.equal(view.queryByLabelText('Player language'), null);
   assert.equal(view.queryByLabelText('New player name'), null);
+  fireEvent.click(view.getByRole('button', { name: 'Settings' }));
+  assert.ok(header.contains(view.getByLabelText('Player language')));
+  assert.equal(Boolean(view.queryByLabelText('New player name')), state === 'LOBBY');
   fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'ru' } });
-  await waitFor(() => assert.ok(view.getByText('Приготовьтесь к вопросу')));
-  assert.equal((view.getByLabelText('Player language') as HTMLSelectElement).value, 'ru');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Настройки', expanded: false })));
+  assert.equal(view.queryByLabelText('Player language'), null);
   assert.equal(dom.window.localStorage.getItem(key), saved);
   assert.match(header.textContent!, /ABCDE/);
   assert.match(header.textContent!, /Alex/);
+});
+
+test('Settings switches current content, preserves draft and accepted lock, and restores server language on reconnect', async () => {
+  dom.window.localStorage.setItem(key, saved);
+  let language = 'en';
+  let submitted = false;
+  let submits = 0;
+  const gameRoom = { ...room, state: 'ANSWERING' };
+  const timer = { serverNow: new Date().toISOString(), deadlineAt: new Date(Date.now() + 30000).toISOString(), durationSeconds: 30, remainingMs: 30000, expired: false };
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith('/answers')) {
+      submits++;
+      submitted = true;
+      return Response.json({ submitted: true, optionId: 'a' });
+    }
+    if (init?.method === 'PATCH') {
+      assert.equal(String(url), '/api/rooms/room/player');
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.token, 'secret');
+      language = body.language;
+    } else assert.equal(String(url), '/api/rooms/room/reconnect');
+    return Response.json({ player: { ...player, language }, room: gameRoom, active: true, game: {
+      state: 'ANSWERING', questionId: 'q1', text: language === 'en' ? 'Pick a fruit' : 'Выберите фрукт',
+      options: [{ id: 'a', text: language === 'en' ? 'Apple' : 'Яблоко' }], timer,
+      // A stale PATCH projection must not unlock a locally acknowledged answer.
+      submission: { submitted: init?.method !== 'PATCH' && submitted, optionId: 'a' },
+    } });
+  };
+  let view = show('/play/ABCDE?lang=ru');
+  await waitFor(() => assert.ok(view.getByText('Pick a fruit')));
+  fireEvent.click(view.getByRole('radio'));
+  fireEvent.click(view.getByRole('button', { name: 'Settings' }));
+  fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'ru' } });
+  await waitFor(() => assert.ok(view.getByText('Выберите фрукт')));
+  assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
+  assert.equal(view.queryByLabelText('Player language'), null);
+  fireEvent.click(view.getByRole('button', { name: 'Отправить' }));
+  await waitFor(() => assert.ok(view.getByText('Ответ принят')));
+  fireEvent.click(view.getByRole('button', { name: 'Настройки' }));
+  fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'en' } });
+  await waitFor(() => assert.ok(view.getByText('Pick a fruit')));
+  assert.ok(view.getByText('Answer submitted'));
+  assert.equal((view.getByRole('radio') as HTMLInputElement).disabled, true);
+  assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
+  assert.equal((view.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled, true);
+  fireEvent.submit(view.getByRole('button', { name: 'Submit' }).closest('form')!);
+  assert.equal(submits, 1);
+  view.unmount(); view = show('/play/ABCDE?lang=ru');
+  await waitFor(() => assert.ok(view.getByText('Answer submitted')));
+  assert.ok(view.getByText('Pick a fruit'));
+  fireEvent.click(view.getByRole('button', { name: 'Settings' }));
+  fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'ru' } });
+  await waitFor(() => assert.ok(view.getByText('Ответ принят')));
+  view.unmount(); view = show('/play/ABCDE?lang=en');
+  await waitFor(() => assert.ok(view.getByText('Ответ принят')));
+  assert.ok(view.getByText('Яблоко'));
+  assert.equal((view.getByRole('button', { name: 'Отправить' }) as HTMLButtonElement).disabled, true);
+  assert.equal(dom.window.localStorage.getItem(key), saved);
+});
+
+test('Lobby rename remains available inside Settings', async () => {
+  dom.window.localStorage.setItem(key, saved);
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'PATCH') {
+      assert.deepEqual(JSON.parse(String(init.body)), { token: 'secret', name: 'Sam' });
+      return Response.json({ player: { ...player, name: 'Sam' }, room, active: true });
+    }
+    return Response.json({ player, room, active: true });
+  };
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Alex')));
+  fireEvent.click(view.getByRole('button', { name: 'Settings' }));
+  fireEvent.change(view.getByLabelText('New player name'), { target: { value: 'Sam' } });
+  fireEvent.click(view.getByRole('button', { name: 'Rename' }));
+  await waitFor(() => assert.ok(view.getByText('Sam')));
+  assert.equal(view.queryByLabelText('New player name'), null);
+});
+
+test('removal while Settings update is pending cannot restore player controls', async () => {
+  dom.window.localStorage.setItem(key, saved);
+  const socket = new EventEmitter();
+  mock.method(lobbyTransport, 'connect', () => Object.assign(socket, { connect() {}, disconnect() {} }) as unknown as Socket);
+  let resolve!: (response: Response) => void;
+  globalThis.fetch = async (_url, init) => init?.method === 'PATCH'
+    ? new Promise<Response>(done => { resolve = done; })
+    : Response.json({ player, room, active: true });
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Alex')));
+  fireEvent.click(view.getByRole('button', { name: 'Settings' }));
+  fireEvent.change(view.getByLabelText('Player language'), { target: { value: 'ru' } });
+  await act(async () => { socket.emit('player:removed', { roomId: room.id }); });
+  await act(async () => { resolve(Response.json({ player: { ...player, language: 'ru' }, room, active: true })); });
+  assert.ok(view.getByText('The host removed you from the game.'));
+  assert.equal(view.queryByRole('button', { name: /Settings|Настройки/ }), null);
+  assert.equal(view.queryByLabelText('Player language'), null);
 });
 
 for (const outcome of ['revoked', 'network-error'] as const) test(`unmounted reconnect ${outcome} cannot clear a newer identity or start a code lookup`, async () => {

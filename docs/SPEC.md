@@ -31,7 +31,7 @@ This is a private home quiz engine for parties with friends. It is not a market 
 - RU and EN supported.
 - Any user-facing quiz text present on Screen/Player must have both RU and EN versions.
 - Player sees selected language only; Screen shows both languages.
-- Lobby exposes one language-neutral Player QR. Players enter their name and choose RU / EN before joining; language remains switchable in session.
+- Lobby exposes one language-neutral Player QR. Players enter their name and choose RU / EN before joining, then play without a permanent language selector. Language remains switchable through compact Settings; Lobby rename is available there too.
 
 ## Themes
 

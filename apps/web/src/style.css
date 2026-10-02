@@ -168,17 +168,17 @@ progress::-moz-progress-bar { background: var(--theme-primary); border-radius: 9
 .player-header h2 { font-size: 1.3rem; margin: 1rem 0 .5rem; }
 .player-meta { display: flex; justify-content: space-between; gap: .5rem; align-items: center; }
 .player-meta p { margin: .25rem 0; font-weight: 650; }
-.player-settings { margin: 1rem 0 1.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--theme-border); }
-.player-settings > label { display: flex; align-items: center; justify-content: space-between; font-size: .85rem; }
-.player-settings select { width: auto; min-width: 5rem; padding: .5rem; }
-.player-settings form button { margin-top: .75rem; }
+.player-settings { margin: .5rem 0; text-align: right; }
+.player-settings-toggle { font-size: .8rem; padding: .4rem .65rem; }
+.player-profile { grid-column: 1 / -1; margin: .5rem 0; padding: .75rem; border: 1px solid var(--theme-border); border-radius: .7rem; }
+.player-profile > label { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .85rem; }
+.player-profile select { width: auto; min-width: 5rem; padding: .5rem; min-height: 44px; }
+.player-profile form button { margin-top: .75rem; }
 .player:has(.player-header[data-compact="true"]) > h1 { margin-bottom: .4rem; }
 .player-header[data-compact="true"] { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .3rem .75rem; align-items: center; margin-bottom: .75rem; }
 .player-header[data-compact="true"] h2 { grid-column: 1 / -1; font-size: 1rem; line-height: 1.3; margin: 0; }
 .player-header[data-compact="true"] .player-meta { justify-content: flex-start; flex-wrap: wrap; font-size: .85rem; overflow-wrap: anywhere; }
 .player-header[data-compact="true"] .player-settings { margin: 0; padding: 0; border: 0; }
-.player-header[data-compact="true"] .player-settings > label { gap: .4rem; font-size: .75rem; }
-.player-header[data-compact="true"] select { min-height: 44px; }
 .player-header[data-compact="true"] + section .player-question, .player-header[data-compact="true"] + section .player-reveal h2 { margin-top: .75rem; }
 .player-question, .player-reveal h2 { font-size: 1.7rem; margin: 1.5rem 0 1rem; line-height: 1.25; }
 .answer-choices { display: grid; gap: .75rem; }

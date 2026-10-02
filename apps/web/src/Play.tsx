@@ -28,6 +28,7 @@ function PlayerRoom({ code }: { code: string }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(Boolean(code));
   const [retry, setRetry] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const identityRevision = useRef(0);
   const [answerDraft, setAnswerDraft] = useState<{ owner: string; questionId: string; value: PlayerDraft } | null>(null);
 
@@ -114,6 +115,7 @@ function PlayerRoom({ code }: { code: string }) {
       if (!response.ok) throw new Error(body.error || 'Could not update player.');
       // The command response is fresh; a subsequent socket refresh restores gameplay.
       if (revision === identityRevision.current && !removed) setIdentity(body);
+      setSettingsOpen(false);
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   }
@@ -158,9 +160,13 @@ function PlayerRoom({ code }: { code: string }) {
       <header className="player-header" data-compact={isActive && currentRoom?.state !== 'LOBBY' || undefined}><h2>{currentRoom?.quizTitle}</h2>
       <div className="player-meta"><p className="phase-chip">{currentRoom?.code}</p>
       <p>{identity.player.name}</p></div>
-      {isActive && <div className="fields player-settings">
+      {isActive && <div className="player-settings">
+        <button type="button" className="subtle player-settings-toggle" aria-expanded={settingsOpen} aria-controls="player-profile"
+          onClick={() => setSettingsOpen(open => !open)}>{ru ? 'Настройки' : 'Settings'}</button>
+      </div>}
+      {isActive && settingsOpen && <div className="fields player-profile" id="player-profile">
         <label>{ru ? 'Язык' : 'Language'}<select aria-label="Player language" value={identity.player.language} disabled={busy} onChange={event => void updateIdentity({ language: event.target.value as 'ru' | 'en' })}>
-          <option value="ru">RU</option><option value="en">EN</option>
+          <option value="ru">Русский</option><option value="en">English</option>
         </select></label>
         {currentRoom?.state === 'LOBBY' && <form onSubmit={event => { event.preventDefault(); void updateIdentity({ name: name || identity.player.name }); }}>
           <label>{ru ? 'Новое имя' : 'New name'}<input aria-label="New player name" value={name || identity.player.name} onChange={event => setName(event.target.value)} maxLength={20} /></label>

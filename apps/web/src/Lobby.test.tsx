@@ -305,7 +305,8 @@ for (const language of ['ru', 'en']) test(`Player ${language} receives Question 
   phase = 'QUESTION';
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase } }); });
   assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question'));
-  assert.equal(view.queryByRole('button'), null);
+  assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), [language === 'ru' ? 'Настройки' : 'Settings']);
+  assert.equal(view.queryByLabelText('Player language'), null);
   view.unmount();
   view = show('/play/ABCDE');
   await waitFor(() => assert.ok(view.getByText(language === 'ru' ? 'Приготовьтесь к вопросу' : 'Get ready for the question')));
@@ -665,7 +666,8 @@ for (const language of ['ru', 'en']) test(`Player ${language} new boundaries sta
     view.unmount();
     await act(async () => { view = show('/play/ABCDE'); });
     await waitFor(() => assert.ok(view.getByText(labels[index])));
-    assert.equal(view.queryByRole('button'), null);
+    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), [language === 'ru' ? 'Настройки' : 'Settings']);
+    assert.equal(view.queryByLabelText('Player language'), null);
     assert.equal(view.queryByRole('table'), null);
     assert.doesNotMatch(view.container.innerHTML, /rank/i);
   }

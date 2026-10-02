@@ -122,6 +122,46 @@ test('Lobby rename is atomic/validated; language switches after Start preserve s
   } finally { s.db.close(); }
 });
 
+test('in-game language profile persists on reconnect without changing timer, identity or accepted answer', async () => {
+  const s = await setup();
+  try {
+    const token = s.players[0].token;
+    const reconnect = async () => (await s.api.post(`${s.root}/reconnect`).send({ token }).expect(200)).body;
+    await s.start();
+    assert.equal((await reconnect()).player.language, 'en');
+    s.answer(0);
+    const session = s.db.prepare('SELECT * FROM game_sessions').get();
+    const answers = s.db.prepare('SELECT * FROM player_answers').all();
+    for (const language of ['ru', 'en']) {
+      const changed = (await s.api.patch(`${s.root}/player`).send({ token, language }).expect(200)).body;
+      const restored = await reconnect();
+      for (const identity of [changed, restored]) {
+        assert.equal(identity.player.language, language);
+        assert.equal(identity.player.id, s.players[0].player.id);
+        assert.equal(identity.game.text, language === 'ru' ? 'Вопрос' : 'Question');
+        assert.equal(identity.game.options[0].text, language === 'ru' ? 'Ответ' : 'Answer');
+        assert.equal(identity.game.questionId, s.question.id);
+        assert.deepEqual(identity.game.submission, { submitted: true, optionId: s.options[0].id });
+        assert.equal(identity.room.state, 'ANSWERING');
+        assert.equal(identity.game.timer.deadlineAt, session!.answer_deadline_at);
+        assert.ok(!JSON.stringify(identity).includes('isCorrect'));
+        assert.ok(!JSON.stringify(identity).includes('correctOption'));
+      }
+      // Submit retries return the original acknowledgement and never replace it.
+      const retry = (await s.api.post(`${s.root}/answers`).send({ token, questionId: s.question.id, optionId: s.options[1].id }).expect(200)).body;
+      assert.deepEqual(retry, { submitted: true, optionId: s.options[0].id });
+      assert.deepEqual(s.db.prepare('SELECT * FROM game_sessions').get(), session);
+      assert.deepEqual(s.db.prepare('SELECT * FROM player_answers').all(), answers);
+    }
+    await s.api.post(`${s.root}/players/${s.players[0].player.id}/kick`).send({ confirmed: true }).expect(200);
+    const removed = s.db.prepare('SELECT * FROM session_players WHERE id = ?').get(s.players[0].player.id);
+    await s.api.patch(`${s.root}/player`).send({ token, language: 'ru' }).expect(401);
+    await s.api.post(`${s.root}/reconnect`).send({ token }).expect(401);
+    assert.deepEqual(s.db.prepare('SELECT * FROM session_players WHERE id = ?').get(s.players[0].player.id), removed);
+    assert.deepEqual(s.db.prepare('SELECT * FROM player_answers').all(), answers);
+  } finally { s.db.close(); }
+});
+
 test('Reveal explanations freeze at Start, stay private before Reveal, and validate bilingual completeness', async () => {
   const s = await setup();
   try {

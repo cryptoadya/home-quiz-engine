@@ -1,3 +1,4 @@
+import { DeviceSetup } from './DeviceSetup';
 import { ThemeSurface } from './themes/ThemeSurface';
 import { Countdown } from './Countdown';
 import { useState } from 'react';
@@ -100,17 +101,14 @@ export function Host() {
     {room && <>
       <section className="host-overview"><h2>{room.quizTitle}</h2>
       {room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
-      <Link to={`/screen/${room.id}`}>Open Screen</Link>
-      {!room.closedAt && room.state === 'LOBBY' && <details className="host-join-help">
-        <summary>Joining from phones</summary>
-        <p>Open Screen using this computer’s LAN address on the party Wi-Fi (for example, http://192.168.1.50:5173). QR links use the Screen address; localhost and loopback links will not work on guests’ phones.</p>
-      </details>}
+      {(room.closedAt || room.state !== 'LOBBY') && <Link to={`/screen/${room.id}`}>Open Screen</Link>}
       <p className="connection-chip" data-connected={connected}>{connected ? 'Connected' : 'Reconnecting…'}</p>
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       {!state?.players?.length && <p role="status">No players. Ask guests to scan the Screen QR code or enter the room code.</p>}
-      <p>Room code: <strong>{room.code}</strong></p>
-      <p>State: <span className="phase-chip">{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>
+      {room.state !== 'LOBBY' && <p>Room code: <strong>{room.code}</strong></p>}
+      {room.state !== 'LOBBY' && <p>State: <span className="phase-chip">{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>}
       </section>
+      {!room.closedAt && room.state === 'LOBBY' && <DeviceSetup room={room} />}
       <section className="host-controls" aria-label="Game controls">
       {primaryAction && <button className="host-primary-action" onClick={() => void start(primaryAction)} disabled={primaryDisabled}>{primaryLabel}</button>}
       {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&

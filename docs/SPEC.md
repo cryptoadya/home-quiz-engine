@@ -31,7 +31,7 @@ This is a private home quiz engine for parties with friends. It is not a market 
 - RU and EN supported.
 - Any user-facing quiz text present on Screen/Player must have both RU and EN versions.
 - Player sees selected language only; Screen shows both languages.
-- Lobby exposes RU and EN QR links to the same room; language remains switchable in session.
+- Lobby exposes one language-neutral Player QR. Players enter their name and choose RU / EN before joining; language remains switchable in session.
 
 ## Themes
 
@@ -115,7 +115,10 @@ Media is copied into per-quiz storage. Deleting referenced media makes affected 
 
 - Up to 30 active players.
 - Short 4–6 character room code; avoid visually ambiguous O/0 and I/L/1.
-- QR generated from current LAN address when room starts.
+- Host Lobby is the organizer setup hub: room code, separate Host and Screen QR/link/copy controls, and one Player QR with room-code fallback. Screen Lobby also shows the same Player QR.
+- Share links use the current reachable web origin or local private IPv4 candidates supplied by the server, preserving the frontend port. Multiple candidates require organizer choice; manual network-address entry is available. Never publish loopback share links.
+- Host and Screen convenience entry accepts the current active room code and navigates to the existing UUID route. Generated links include a session marker and must reject reuse by another session; code-only entry deliberately resolves the current active room. UUID identity and lifecycle stay unchanged.
+- Copy uses the Clipboard API with success feedback or selectable link text when unavailable.
 - Player name max 20 chars; letters, space, hyphen, apostrophe; escape all input.
 - Duplicate name reservation is atomic; first successful reservation wins.
 - Before Start Game player may rename.

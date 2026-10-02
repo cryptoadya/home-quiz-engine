@@ -1,4 +1,3 @@
-// Presentation diagnostic only: QR links still use the current browser origin.
 export function needsLanAddress(origin: string): boolean {
   try {
     const url = new URL(origin);

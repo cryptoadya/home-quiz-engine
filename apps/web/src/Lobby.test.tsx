@@ -12,7 +12,7 @@ import { lobbyTransport } from './lobby';
 const room = { id: 'room', code: 'ABCDE', quizId: 'quiz', quizTitle: 'Party', state: 'LOBBY', createdAt: 'now', closedAt: null };
 const player = { id: 'player', name: 'Alex', language: 'en', joinedAt: 'now' };
 const originalFetch = globalThis.fetch;
-afterEach(() => { cleanup(); mock.restoreAll(); globalThis.fetch = originalFetch; dom.window.localStorage.clear(); });
+afterEach(() => { cleanup(); mock.restoreAll(); globalThis.fetch = originalFetch; dom.window.localStorage.clear(); dom.reconfigure({ url: 'http://localhost' }); });
 function show(path: string) { return render(createElement(MemoryRouter, { initialEntries: [path] }, createElement(App))); }
 function socket() {
   const events = new EventEmitter();
@@ -42,7 +42,7 @@ test('Host loads roster, applies realtime snapshots and resubscribes for authori
   assert.ok(view.getByText('Room closed'));
 });
 
-test('Screen renders count, same-room bilingual QR links, LAN origin and live closure', async () => {
+test('Screen renders count, one language-neutral Player QR, LAN origin and live closure', async () => {
   dom.reconfigure({ url: 'http://192.168.1.50:5173/screen/room' });
   try {
     const live = socket();
@@ -51,14 +51,12 @@ test('Screen renders count, same-room bilingual QR links, LAN origin and live cl
     await waitFor(() => assert.ok(view.getByText('ABCDE')));
     assert.ok(view.getByText(/Players: 1/));
     assert.equal(view.queryByRole('alert'), null);
-    for (const lang of ['ru', 'en']) {
-      const link = view.getByRole('link', { name: lang.toUpperCase() }) as HTMLAnchorElement;
-      assert.equal(link.href, `http://192.168.1.50:5173/play/ABCDE?lang=${lang}`);
-      assert.ok(link.querySelector('svg'));
-    }
+    const link = view.getByRole('link', { name: 'Players / Игроки' }) as HTMLAnchorElement;
+    assert.equal(link.href, 'http://192.168.1.50:5173/play/ABCDE');
+    assert.equal(view.container.querySelectorAll('.join-codes svg').length, 1);
     await act(async () => { live.emit('lobby:state', { room: { ...room, closedAt: 'now' }, players: [player] }); });
     assert.ok(view.getByText(/Room closed/));
-    assert.equal(view.queryByRole('link', { name: 'RU' }), null);
+    assert.equal(view.queryByRole('link', { name: 'Players / Игроки' }), null);
   } finally { dom.reconfigure({ url: 'http://localhost' }); }
 });
 
@@ -98,7 +96,7 @@ test('localhost Screen warns about phone reachability', async () => {
 });
 
 for (const hostname of ['party.localhost', 'localhost.', '127.0.0.2', '0.0.0.0', '[::1]', '[::]', '[::ffff:127.0.0.1]']) {
-  test(`Screen keeps QR links but warns for guest-unreachable origin ${hostname}`, async () => {
+  test(`Screen withholds QR links for guest-unreachable origin ${hostname}`, async () => {
     dom.reconfigure({ url: `http://${hostname}:5173/screen/room` });
     try {
       socket();
@@ -107,20 +105,18 @@ for (const hostname of ['party.localhost', 'localhost.', '127.0.0.2', '0.0.0.0',
       await waitFor(() => assert.ok(view.getByText('ABCDE')));
       assert.match(view.getByRole('alert').textContent!, /LAN address/);
       assert.ok(view.getByRole('alert').classList.contains('screen-join-warning'));
-      for (const language of ['RU', 'EN']) assert.ok(view.getByRole('link', { name: language }).querySelector('svg'));
+      assert.equal(view.container.querySelector('.join-codes svg'), null);
     } finally { dom.reconfigure({ url: 'http://localhost' }); }
   });
 }
 
-test('Host keeps detailed phone joining guidance in a collapsed Lobby disclosure', async () => {
+test('Host offers setup and a manual LAN fallback without loopback QR links', async () => {
   socket();
   globalThis.fetch = async () => Response.json({ room, players: [] });
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByText('ABCDE')));
-  const help = view.getByText('Joining from phones').closest('details');
-  assert.ok(help);
-  assert.equal(help.open, false);
-  assert.match(help.textContent!, /LAN address.*localhost/);
+  await waitFor(() => assert.ok(view.getByRole('region', { name: 'Device setup / Подключение устройств' })));
+  assert.ok(view.getByLabelText('Network address'));
+  assert.equal(view.container.querySelector('.device-setup svg'), null);
 });
 
 
@@ -168,15 +164,16 @@ test('Host keeps Start failure visible when a realtime snapshot arrives', async 
 });
 
 test('Screen leaves QR and join instructions when Start is broadcast and on reload', async () => {
+  dom.reconfigure({ url: 'http://192.168.1.50:5173' });
   const live = socket();
   globalThis.fetch = async () => Response.json({ room, players: [player] });
   let view = show('/screen/room');
-  await waitFor(() => assert.ok(view.getByRole('link', { name: 'RU' })));
+  await waitFor(() => assert.ok(view.getByRole('link', { name: 'Players / Игроки' })));
   const started = { room: { ...room, state: 'ROUND_INTRO', quizTitle: 'Frozen title' }, players: [player], game: introGame };
   await act(async () => { live.emit('lobby:state', started); });
   assert.ok(view.getByText('Frozen round'));
   assert.ok(view.getByText('Замороженный раунд'));
-  assert.equal(view.queryByRole('link', { name: 'RU' }), null);
+  assert.equal(view.queryByRole('link', { name: 'Players / Игроки' }), null);
   assert.equal(view.queryByText(/scan a QR/), null);
   assert.equal(view.container.querySelector('.join-codes svg'), null);
   view.unmount();

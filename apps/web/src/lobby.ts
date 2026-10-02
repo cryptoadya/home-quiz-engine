@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-export type Room = { isTest?: boolean; id: string; code: string; quizTitle: string; themeId?: string | null; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN' | 'PAUSED'; closedAt: string | null };
+export type Room = { shareKey?: string; isTest?: boolean; id: string; code: string; quizTitle: string; themeId?: string | null; state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN' | 'PAUSED'; closedAt: string | null };
 export type RoundIntro = { artUrl?: string; state: 'ROUND_INTRO'; roundNumber: number; questionCount: number; titleRu: string; titleEn: string; descriptionRu: string; descriptionEn: string };
 export type AnswerTimer = { serverNow: string; deadlineAt: string; durationSeconds: number; remainingMs: number; expired: boolean };
 export type Mapping = { leftId: string; rightId: string }[];

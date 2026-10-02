@@ -50,7 +50,7 @@ test('room API gates readiness and persists the Lobby lifecycle without freezing
     assert.equal((await app.get(`/api/rooms/code/${room.code.toLowerCase()}`)).body.id, room.id);
     assert.equal((await app.get('/api/rooms/code/ZZZZZ!')).status, 404);
     assert.equal((await app.get('/api/rooms/missing')).status, 404);
-    assert.deepEqual(Object.keys(room).sort(), ['id', 'code', 'quizId', 'quizTitle', 'themeId', 'isTest', 'state', 'createdAt', 'closedAt'].sort());
+    assert.deepEqual(Object.keys(room).sort(), ['id', 'shareKey', 'code', 'quizId', 'quizTitle', 'themeId', 'isTest', 'state', 'createdAt', 'closedAt'].sort());
     db.prepare('UPDATE quizzes SET title = ? WHERE id = ?').run('Edited in Lobby', quiz.id);
     db.prepare('UPDATE questions SET text_en = ?').run('Edited question');
     assert.equal(db.prepare('SELECT count(*) AS n FROM questions').get()?.n, 1);
@@ -93,5 +93,31 @@ test('allocation retries collisions, enforces uniqueness, releases codes, and bo
     assert.ok('room' in reused);
     assert.notEqual(reused.room.id, first.room.id);
     assert.equal(getRoomByCode(db, 'ABCDE')?.id, reused.room.id);
+  } finally { db.close(); }
+});
+
+test('code lookup is never cached and shared session markers change on code reuse', async () => {
+  const { createRoom, closeRoom } = await import('./rooms.js');
+  const db = initializeDatabase(':memory:');
+  try {
+    const quiz = readyQuiz(db);
+    const first = createRoom(db, quiz.id, () => 'ABCDE');
+    assert.ok('room' in first);
+    const api = request(createApp(db));
+    const lookup = await api.get('/api/rooms/code/ABCDE').expect(200);
+    assert.equal(lookup.headers['cache-control'], 'no-store');
+    assert.match(lookup.body.shareKey, /^[a-f0-9]{16}$/);
+    closeRoom(db, first.room.id);
+    await api.get('/api/rooms/code/ABCDE').expect(404);
+    const second = createRoom(db, quiz.id, () => 'ABCDE');
+    assert.ok('room' in second);
+    const reused = await api.get('/api/rooms/code/ABCDE').expect(200);
+    assert.equal(reused.body.id, second.room.id);
+    assert.notEqual(reused.body.shareKey, lookup.body.shareKey);
+    assert.ok((await api.get(`/api/rooms/${first.room.id}`)).body.closedAt);
+    const network = await api.get('/api/network').expect(200);
+    assert.equal(network.headers['cache-control'], 'no-store');
+    assert.ok(Array.isArray(network.body.addresses));
+    for (const candidate of network.body.addresses) assert.match(candidate.address, /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/);
   } finally { db.close(); }
 });

@@ -1,11 +1,13 @@
 import { freezeMedia, removeMediaDirectory } from './media.js';
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { validateQuizReadiness, type QuizValidation } from './validation.js';
 import { createGameSnapshot } from './snapshot.js';
 
 export type Room = {
   id: string;
+  // Stable marker for generated links; this is not an authentication credential.
+  shareKey: string;
   code: string;
   quizId: string | null;
   quizTitle: string;
@@ -23,7 +25,7 @@ const roomQuery = `SELECT s.id, s.code, s.quiz_id AS quizId,
   FROM game_sessions s LEFT JOIN quizzes q ON s.state = 'LOBBY' AND q.id = s.quiz_id`;
 
 function publicRoom(row: Record<string, unknown> | undefined): Room | null {
-  return row ? { ...row, isTest: row.isTest === 1 } as Room : null;
+  return row ? { ...row, shareKey: createHash('sha256').update(String(row.id)).digest('hex').slice(0, 16), isTest: row.isTest === 1 } as Room : null;
 }
 
 export function getRoom(db: DatabaseSync, id: string): Room | null {

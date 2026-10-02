@@ -1,16 +1,16 @@
 import { ThemeSurface } from './themes/ThemeSurface';
 import { Countdown } from './Countdown';
 import { useParams } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
+import { PlayerJoinCode } from './DeviceSetup';
+import { useShareOrigin } from './share-origin';
 import { useLobby } from './lobby';
 import { RoundIntroContent, QuestionContent, BoundaryContent } from './GameContent';
-import { needsLanAddress } from './join-origin';
 import { ThemeDecoration } from './themes/ThemeDecoration';
 
 export function Screen() {
   const { roomId } = useParams();
   const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
-  const local = needsLanAddress(window.location.origin);
+  const { origin } = useShareOrigin(state?.room.state === 'LOBBY' && !state.room.closedAt);
   const content = state?.game?.state === 'PAUSED' ? state.game.content : state?.game;
   const preparing = content?.state === 'QUESTION' && !content.preTimer;
   return <ThemeSurface themeId={state?.room.themeId} className="screen-lobby" data-phase={state?.room.closedAt ? 'CLOSED' : state?.room.state}>
@@ -44,15 +44,8 @@ export function Screen() {
         <p className="eyebrow">Код комнаты / Room code</p>
         <strong className="room-code">{state.room.code}</strong>
         <p>Подключитесь к Wi-Fi и сканируйте QR / Join the Wi-Fi and scan a QR code</p>
-        {local && <p className="screen-join-warning" role="alert">QR недоступен для телефонов — нужен LAN-адрес. / Phone QR links need a LAN address.</p>}
-        <div className="join-codes">{(['ru', 'en'] as const).map(language => {
-          const url = new URL(`/play/${encodeURIComponent(state.room.code)}`, window.location.origin);
-          url.searchParams.set('lang', language);
-          return <a key={language} href={url.href} aria-label={language.toUpperCase()}>
-            <QRCodeSVG value={url.href} size={240} marginSize={4} level="M" />
-            <span>{language.toUpperCase()}</span>
-          </a>;
-        })}</div>
+        {origin ? <PlayerJoinCode origin={origin} code={state.room.code} />
+          : <p className="screen-join-warning" role="alert">QR недоступен для телефонов — выберите адрес сети в Host. / Phone QR links need a LAN address. Choose the party network in Host and open its Screen link.</p>}
         </div></div>
       </>}
       {state.room.state === 'LOBBY' && <><p>Игроки / Players: {state.players?.length ?? 0} / 30</p>

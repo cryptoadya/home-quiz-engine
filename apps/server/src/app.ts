@@ -1,3 +1,4 @@
+import { networkInterfaces } from 'node:os';
 import { kickPlayer } from './kick.js';
 import { updatePlayer } from './players.js';
 import { archiveUpload, exportQuizArchive, importQuizArchive, ArchiveValidationError } from './quiz-archive.js';
@@ -26,6 +27,13 @@ import { validateQuizReadiness } from './validation.js';
 export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}, presence: PlayerPresenceChecker = absentPlayerPresence) {
   const app = express();
   app.use(express.json());
+  app.get('/api/network', (_request, response) => {
+    const addresses = Object.entries(networkInterfaces()).flatMap(([name, entries]) =>
+      (entries ?? []).filter(entry => !entry.internal && entry.family === 'IPv4'
+        && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(entry.address))
+        .map(entry => ({ name, address: entry.address })));
+    response.set('Cache-Control', 'no-store').json({ addresses });
+  });
   app.get('/api/history', (_request, response) => {
     response.set('Cache-Control', 'no-store').json(listHistory(db));
   });
@@ -140,6 +148,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
     return response.status(status).json(body);
   });
   app.get('/api/rooms/code/:code', (request, response) => {
+    response.set('Cache-Control', 'no-store');
     const room = getRoomByCode(db, request.params.code);
     return room ? response.json(room) : response.status(404).json({ error: 'Active room not found.' });
   });

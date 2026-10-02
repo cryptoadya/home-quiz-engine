@@ -267,7 +267,7 @@ test('ready Admin opens Host, reload recovers the room, and confirmed close upda
   fireEvent.click(view.getByRole('button', { name: 'Open lobby' }));
   await waitFor(() => assert.ok(view.getByRole('heading', { name: 'Host' })));
   await waitFor(() => assert.ok(view.getByText('ABCDE')));
-  assert.ok(view.getByText('Lobby'));
+  assert.ok(view.getByRole('region', { name: 'Device setup / Подключение устройств' }));
   assert.ok(view.getByText('New Quiz'));
   view.unmount();
   view = show('/host/room-1');

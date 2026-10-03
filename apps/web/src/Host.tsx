@@ -1,4 +1,3 @@
-import { DeviceSetup } from './DeviceSetup';
 import { ThemeSurface } from './themes/ThemeSurface';
 import { Countdown } from './Countdown';
 import { useState } from 'react';
@@ -7,8 +6,9 @@ import { Link, useParams } from 'react-router-dom';
 import { useLobby, type NavigationAction } from './lobby';
 import { RoundIntroContent, QuestionContent, BoundaryContent } from './GameContent';
 
-export function Host() {
-  const { roomId } = useParams();
+export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
+  const params = useParams();
+  const roomId = resolvedId ?? params.roomId;
   const { state, refresh, error: loadError, connected } = useLobby(roomId, 'host');
   const room = state?.room;
   const [error, setError] = useState('');
@@ -101,14 +101,13 @@ export function Host() {
     {room && <>
       <section className="host-overview"><h2>{room.quizTitle}</h2>
       {room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
-      {(room.closedAt || room.state !== 'LOBBY') && <Link to={`/screen/${room.id}`}>Open Screen</Link>}
+      {(room.closedAt || room.state !== 'LOBBY') && <Link to={`/screen/${room.closedAt ? room.id : room.code}`}>Open Screen</Link>}
       <p className="connection-chip" data-connected={connected}>{connected ? 'Connected' : 'Reconnecting…'}</p>
       <p>Players: {state?.players?.length ?? 0} / 30</p>
       {!state?.players?.length && <p role="status">No players. Ask guests to scan the Screen QR code or enter the room code.</p>}
-      {room.state !== 'LOBBY' && <p>Room code: <strong>{room.code}</strong></p>}
+      <p>Room code: <strong className="host-room-code">{room.code}</strong></p>
       {room.state !== 'LOBBY' && <p>State: <span className="phase-chip">{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>}
       </section>
-      {!room.closedAt && room.state === 'LOBBY' && <DeviceSetup room={room} />}
       <section className="host-controls" aria-label="Game controls">
       {primaryAction && <button className="host-primary-action" onClick={() => void start(primaryAction)} disabled={primaryDisabled}>{primaryLabel}</button>}
       {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&

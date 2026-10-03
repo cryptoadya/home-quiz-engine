@@ -110,16 +110,6 @@ for (const hostname of ['party.localhost', 'localhost.', '127.0.0.2', '0.0.0.0',
   });
 }
 
-test('Host offers setup and a manual LAN fallback without loopback QR links', async () => {
-  socket();
-  globalThis.fetch = async () => Response.json({ room, players: [] });
-  const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('region', { name: 'Device setup / Подключение устройств' })));
-  assert.ok(view.getByLabelText('Network address'));
-  assert.equal(view.container.querySelector('.device-setup svg'), null);
-});
-
-
 test('Host requires players and confirmation; Start success removes control and updates state', async () => {
   const live = socket();
   let starts = 0;

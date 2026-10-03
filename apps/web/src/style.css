@@ -384,12 +384,4 @@ audio { max-width: 100%; }
 .host-media button { background: var(--theme-surface); color: var(--theme-primary); border-color: var(--theme-border); }
 .host-roster-section { margin: 1.5rem 0; }
 
-.device-setup { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--theme-border); border-radius: 1.25rem; background: var(--theme-surface); }
-.device-setup h2 { margin-top: 0; }
-.device-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 1rem; margin-top: 1rem; }
-.device-link { min-width: 0; padding: 1rem; border: 1px solid var(--theme-border); border-radius: 1rem; }
-.device-link > a { display: flex; flex-direction: column; align-items: center; gap: .5rem; }
-.device-link svg { max-width: 100%; height: auto; background: white; }
-.device-link textarea { display: block; width: 100%; box-sizing: border-box; margin: 1rem 0 .5rem; resize: vertical; }
-.device-link p, .device-setup a { overflow-wrap: anywhere; }
-.device-link .join-codes { margin: 0; }
+.host-room-code { font-size: 1.6rem; letter-spacing: .12em; }

@@ -269,6 +269,7 @@ test('ready Admin opens Host, reload recovers the room, and confirmed close upda
     if (path.endsWith('/rounds')) return Response.json([]);
     if (path === `/api/quizzes/${quiz.id}/rooms` && init?.method === 'POST') return Response.json(room, { status: 201 });
     if (path === '/api/rooms/room-1/close' && init?.method === 'POST') { room.closedAt = quiz.createdAt; return Response.json(room); }
+    if (path === '/api/rooms/code/ABCDE') return Response.json(room);
     if (path === '/api/rooms/room-1/game/host') return Response.json({ room, players: [] });
     if (path === `/api/quizzes/${quiz.id}`) return Response.json(quiz);
     throw new Error(`Unexpected request: ${path}`);
@@ -278,7 +279,7 @@ test('ready Admin opens Host, reload recovers the room, and confirmed close upda
   fireEvent.click(view.getByRole('button', { name: 'Open lobby' }));
   await waitFor(() => assert.ok(view.getByRole('heading', { name: 'Host' })));
   await waitFor(() => assert.ok(view.getByText('ABCDE')));
-  assert.ok(view.getByRole('region', { name: 'Device setup / Подключение устройств' }));
+  assert.equal(view.queryByRole('region', { name: 'Device setup / Подключение устройств' }), null);
   assert.ok(view.getByText('New Quiz'));
   view.unmount();
   view = show('/host/room-1');
@@ -326,6 +327,7 @@ test('Admin starts a labeled Test Game lobby for the current quiz and shows laun
       calls.push(path);
       return fail ? Response.json({ error: 'Quiz is not ready.' }, { status: 409 }) : Response.json(room, { status: 201 });
     }
+    if (path === '/api/rooms/code/ABCDE') return Response.json(room);
     if (path.endsWith('/game/host')) return Response.json({ room, players: [] });
     return Response.json(quiz);
   };

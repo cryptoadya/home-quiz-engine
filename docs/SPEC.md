@@ -114,11 +114,14 @@ Media is copied into per-quiz storage. Deleting referenced media makes affected 
 ## Lobby / room
 
 - Up to 30 active players.
-- Short 4–6 character room code; avoid visually ambiguous O/0 and I/L/1.
-- Host Lobby is the organizer setup hub: room code, separate Host and Screen QR/link/copy controls, and one Player QR with room-code fallback. Screen Lobby also shows the same Player QR.
-- Share links use the current reachable web origin or local private IPv4 candidates supplied by the server, preserving the frontend port. Multiple candidates require organizer choice; manual network-address entry is available. Never publish loopback share links.
-- Host and Screen convenience entry accepts the current active room code and navigates to the existing UUID route. Generated links include a session marker and must reject reuse by another session; code-only entry deliberately resolves the current active room. UUID identity and lifecycle stay unchanged.
-- Copy uses the Clipboard API with success feedback or selectable link text when unavailable.
+- A 5-character active room code; avoid visually ambiguous O/0 and I/L/1.
+- Party setup: start the server on the Mac, note its LAN address (for example `192.168.178.37:5173`), open Lobby in Admin and note its code (for example `H8VXT`). Manually open `http://192.168.178.37:5173/host/H8VXT` on the Host phone and `http://192.168.178.37:5173/screen/H8VXT` on the TV / second computer. Guests scan the single Player QR on Screen, enter a name, choose RU / EN and Join.
+- Host Lobby shows quiz title, prominent room code, player count, compact roster, Start Game and secondary Close Room. No organizer QR, long sharing URLs, Copy actions or network setup.
+- Admin opens `/host/<CODE>` after Open Lobby. Host and Screen code URLs resolve the current active room internally to its UUID; the browser keeps the human-readable code URL. A reused code intentionally opens its current active room. Direct UUID routes remain compatible; Player reconnect tokens and session identity remain unchanged.
+- `/host` and `/screen` offer only room-code entry and Open Host / Open Screen. Lowercase codes normalize to uppercase. Nonexistent or closed codes show a clear error.
+- Screen Lobby prominently shows quiz title, room code, player count / names and exactly one language-neutral Player QR targeting `http://<reachable-LAN-origin>/play/<CODE>`. No organizer QR.
+- Player QR uses the current reachable web origin, preserving the frontend port. For localhost / unusable origins, use server-discovered private IPv4 (`10/8`, `172.16/12`, `192.168/16`), excluding loopback, `169.254/16` and unspecified / unusable addresses. One unique private address is selected automatically; multiple addresses use a compact Screen selector. If none is available, show a concise instruction to open Screen at the Mac’s LAN address. Vite console output is unchanged.
+- `/play` accepts a room code; `/play/<CODE>` loads the name and language join form directly.
 - Player name max 20 chars; letters, space, hyphen, apostrophe; escape all input.
 - Duplicate name reservation is atomic; first successful reservation wins.
 - Before Start Game player may rename.

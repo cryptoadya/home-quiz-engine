@@ -52,7 +52,7 @@ async function editor(matching = false, secondRound = false) {
     }
     if (path.endsWith('/export') || init?.method === 'POST') {
       actions.push(path);
-      return path.endsWith('/export') ? new Response('zip') : Response.json({ id: 'room' });
+      return path.endsWith('/export') ? new Response('zip') : Response.json({ id: 'room', code: 'ABCDE' });
     }
     if (path.endsWith('/validation')) { validations++; return Response.json({ ready: true, problems: [] }); }
     if (path.endsWith('/rounds')) return Response.json(secondRound ? [round, { ...round, id: 'r2', titleRu: 'Второй', titleEn: 'Second', position: 1 }] : [round]);

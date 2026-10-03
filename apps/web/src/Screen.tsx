@@ -1,16 +1,17 @@
 import { ThemeSurface } from './themes/ThemeSurface';
 import { Countdown } from './Countdown';
 import { useParams } from 'react-router-dom';
-import { PlayerJoinCode } from './DeviceSetup';
-import { useShareOrigin } from './share-origin';
+import { PlayerJoinCode } from './PlayerJoinCode';
+import { reachableOrigin, useShareOrigin } from './share-origin';
 import { useLobby } from './lobby';
 import { RoundIntroContent, QuestionContent, BoundaryContent } from './GameContent';
 import { ThemeDecoration } from './themes/ThemeDecoration';
 
-export function Screen() {
-  const { roomId } = useParams();
+export function Screen({ roomId: resolvedId }: { roomId?: string } = {}) {
+  const params = useParams();
+  const roomId = resolvedId ?? params.roomId;
   const { state, error, connected, reportMediaEnded } = useLobby(roomId, 'screen');
-  const { origin } = useShareOrigin(state?.room.state === 'LOBBY' && !state.room.closedAt);
+  const { origin, setOrigin, addresses } = useShareOrigin(state?.room.state === 'LOBBY' && !state.room.closedAt);
   const content = state?.game?.state === 'PAUSED' ? state.game.content : state?.game;
   const preparing = content?.state === 'QUESTION' && !content.preTimer;
   return <ThemeSurface themeId={state?.room.themeId} className="screen-lobby" data-phase={state?.room.closedAt ? 'CLOSED' : state?.room.state}>
@@ -44,8 +45,12 @@ export function Screen() {
         <p className="eyebrow">Код комнаты / Room code</p>
         <strong className="room-code">{state.room.code}</strong>
         <p>Подключитесь к Wi-Fi и сканируйте QR / Join the Wi-Fi and scan a QR code</p>
+        {addresses.length > 1 && <label>Party network<select value={origin ?? ''} onChange={event => setOrigin(event.target.value || null)}>
+          <option value="">Choose the party Wi-Fi address</option>
+          {addresses.map(item => <option key={item.address} value={reachableOrigin(item.address, window.location.origin)!}>{item.name} — {item.address}</option>)}
+        </select></label>}
         {origin ? <PlayerJoinCode origin={origin} code={state.room.code} />
-          : <p className="screen-join-warning" role="alert">QR недоступен для телефонов — выберите адрес сети в Host. / Phone QR links need a LAN address. Choose the party network in Host and open its Screen link.</p>}
+          : <p className="screen-join-warning" role="alert">QR недоступен для телефонов — откройте Screen по LAN-адресу Mac. / Phone QR links need a LAN address. Open Screen using this Mac’s LAN address.</p>}
         </div></div>
       </>}
       {state.room.state === 'LOBBY' && <><p>Игроки / Players: {state.players?.length ?? 0} / 30</p>

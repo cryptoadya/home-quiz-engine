@@ -126,8 +126,8 @@ export function QuizList() {
   async function play(quiz: Quiz) {
     setBusy(true); setError('');
     try {
-      const room = await api<{ id: string }>(`/api/quizzes/${quiz.id}/rooms`, { method: 'POST' });
-      navigate(`/host/${room.id}`);
+      const room = await api<{ code: string }>(`/api/quizzes/${quiz.id}/rooms`, { method: 'POST' });
+      navigate(`/host/${room.code}`);
     } catch (cause) {
       setError(`Could not open the lobby for “${quiz.title}”. Open Edit to check readiness, then try again. ${(cause as Error).message}`);
       setBusy(false);
@@ -239,8 +239,8 @@ function QuizEditorContent() {
     setLaunchError('');
     try {
       await barrier.flush();
-      const room = await api<{ id: string }>(`/api/quizzes/${quizId}/${isTest ? 'test-games' : 'rooms'}`, { method: 'POST' });
-      navigate(`/host/${room.id}`);
+      const room = await api<{ code: string }>(`/api/quizzes/${quizId}/${isTest ? 'test-games' : 'rooms'}`, { method: 'POST' });
+      navigate(`/host/${room.code}`);
     } catch (cause) {
       setLaunchError((cause as Error).message);
       refreshValidation();

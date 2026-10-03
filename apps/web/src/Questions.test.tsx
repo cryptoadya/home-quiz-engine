@@ -20,6 +20,7 @@ test('selected round edits draft questions and options, saves, reorders, and con
   dom.window.confirm = () => confirmed;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round has no questions', roundId: 'r1' }] });
     const method = init?.method || 'GET';
     if (path === '/api/quizzes/q1') return Response.json(quiz);
@@ -68,7 +69,8 @@ test('selected round edits draft questions and options, saves, reorders, and con
   const view = render(createElement(MemoryRouter, { initialEntries: ['/admin/quizzes/q1'] }, createElement(App)));
   await waitFor(() => assert.ok(view.getByText('Questions')));
   await waitFor(() => assert.ok(view.getByRole('button', { name: '1. Untitled question' })));
-  fireEvent.click(view.getByRole('button', { name: 'Add Single Choice question' }));
+  fireEvent.change(view.getByLabelText('New question type'), { target: { value: 'single_choice' } });
+    fireEvent.click(view.getByRole('button', { name: 'Add question' }));
   await waitFor(() => assert.equal(questions.length, 2));
   await waitFor(() => assert.ok(view.getByLabelText('Question text RU')));
   fireEvent.change(view.getByLabelText('Question text RU'), { target: { value: 'Вопрос' } });

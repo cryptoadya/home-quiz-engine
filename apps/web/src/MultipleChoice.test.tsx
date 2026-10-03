@@ -62,7 +62,8 @@ test('Multiple Choice editor creates, autosaves independent correctness and relo
   try {
     const view = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
     await waitFor(() => assert.ok(view.getByText('No questions yet.')));
-    fireEvent.click(view.getByRole('button', { name: 'Add Multiple Choice question' }));
+    fireEvent.change(view.getByLabelText('New question type'), { target: { value: 'multiple_choice' } });
+    fireEvent.click(view.getByRole('button', { name: 'Add question' }));
     await waitFor(() => assert.ok(view.getByLabelText('Option 3 EN')));
     fireEvent.click(view.getByLabelText('Show correct-option count to Player'));
     await waitFor(() => assert.equal(q.showCorrectCount, false));

@@ -17,7 +17,8 @@ export type Quiz = {
 };
 
 type QuizSettings = Pick<Quiz, 'title' | 'themeId' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'>;
-type ValidationProblem = { code: string; message: string; roundId?: string; questionId?: string; optionId?: string };
+export type AuthoringTarget = { id: string; questionId?: string; optionId?: string; pairId?: string; code?: string };
+type ValidationProblem = { code: string; message: string; roundId?: string; questionId?: string; optionId?: string; pairId?: string };
 type QuizValidation = { ready: boolean; problems: ValidationProblem[] };
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -122,21 +123,38 @@ export function QuizList() {
     finally { setBusy(false); }
   }
 
+  async function play(quiz: Quiz) {
+    setBusy(true); setError('');
+    try {
+      const room = await api<{ id: string }>(`/api/quizzes/${quiz.id}/rooms`, { method: 'POST' });
+      navigate(`/host/${room.id}`);
+    } catch (cause) {
+      setError(`Could not open the lobby for “${quiz.title}”. Open Edit to check readiness, then try again. ${(cause as Error).message}`);
+      setBusy(false);
+    }
+  }
+
   return <ThemeSurface className="admin">
-    <Link to="/admin/history">History</Link>
-    <header className="admin-header"><div><h1>Quizzes</h1><p>Your saved drafts</p></div><button onClick={create} disabled={busy}>Create quiz</button></header>
-    <button disabled={busy} onClick={() => importInput.current?.click()}>Import Quiz</button>
+    <header className="admin-header"><div><h1>My quizzes</h1><p>Edit a quiz, preview your questions, then open a lobby.</p></div><button onClick={create} disabled={busy}>Create quiz</button></header>
+    <details className="authoring-secondary"><summary>Import & history</summary><div className="authoring-actions">
+      <button className="subtle" disabled={busy} onClick={() => importInput.current?.click()}>Import Quiz</button>
+      <Link to="/admin/history">History</Link>
+    </div></details>
     <input ref={importInput} type="file" accept=".zip,application/zip" aria-label="Quiz ZIP" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importQuiz(file); }} />
     {notice && <p role="status">{notice} {imported && <Link to={`/admin/quizzes/${imported.id}`}>Open imported quiz</Link>}</p>}
-    {imported && resolveTheme(imported.themeId).manifest.id !== imported.themeId && <p role="alert">Theme “{imported.themeId}” is unavailable. Using Default; the original theme ID is preserved.</p>}
+    {imported && resolveTheme(imported.themeId).manifest.id !== imported.themeId && <p role="alert">This quiz’s theme is unavailable. Using Default; choose a theme in Edit.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {loading ? <p>Loading quizzes...</p> : quizzes.length === 0 ? <p className="empty-state">No quizzes yet. Create one to get started.</p> :
       <ul className="quiz-list">{quizzes.map((quiz) => <li key={quiz.id}>
         <div><Link to={`/admin/quizzes/${quiz.id}`}>{quiz.title}</Link><p>{resolveTheme(quiz.themeId).manifest.name} · Modified {formatDate(quiz.updatedAt)}</p></div>
         <div className="quiz-actions">
+          <Link className="authoring-button subtle" aria-label={`Edit ${quiz.title}`} to={`/admin/quizzes/${quiz.id}`}>Edit</Link>
+          <button onClick={() => void play(quiz)} disabled={busy} aria-label={`Play ${quiz.title}`}>Play</button>
+          <details className="authoring-secondary"><summary aria-label={`More actions for ${quiz.title}`}>More</summary><div className="authoring-actions">
           <button className="subtle" onClick={() => void exportQuiz(quiz)} disabled={busy} aria-label={`Export ${quiz.title}`}>Export</button>
           <button className="subtle" onClick={() => void duplicate(quiz)} disabled={busy} aria-label={`Duplicate ${quiz.title}`}>Duplicate</button>
-          <button className="subtle danger" onClick={() => void remove(quiz)} disabled={busy} aria-label={`Delete ${quiz.title}`}>Delete</button>
+          <div className="destructive-actions"><button className="subtle danger" onClick={() => void remove(quiz)} disabled={busy} aria-label={`Delete ${quiz.title}`}>Delete</button></div>
+          </div></details>
         </div>
       </li>)}</ul>}
   </ThemeSurface>;
@@ -164,7 +182,8 @@ function QuizEditorContent() {
   const [error, setError] = useState('');
   const [validation, setValidation] = useState<QuizValidation | null>(null);
   const [validationError, setValidationError] = useState('');
-  const [targetRound, setTargetRound] = useState<{ id: string } | null>(null);
+  const [targetRound, setTargetRound] = useState<AuthoringTarget | null>(null);
+  const [mediaRevision, setMediaRevision] = useState(0);
   const validationRevision = useRef(0);
 
   function refreshValidation() {
@@ -240,42 +259,59 @@ function QuizEditorContent() {
 
   return <ThemeSurface themeId={quiz.themeId} className="admin editor">
     <button className="subtle" disabled={exiting || opening || exporting} onClick={() => void exitEditor()}>← Quiz list</button>
-    <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status}</span></div>
-    {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
-    {launchError && <p role="alert" className="error">{launchError}</p>}
-    <button disabled={exporting || opening || exiting} onClick={async () => {
-      setExporting(true); setExportNotice(''); setLaunchError('');
-      try { await barrier.flush(); await downloadQuiz(quiz.id); setExportNotice('Quiz ZIP downloaded.'); }
-      catch (cause) { setLaunchError((cause as Error).message); }
-      finally { setExporting(false); }
-    }}>Export Quiz</button>
-    {exportNotice && <p role="status">{exportNotice}</p>}
-    <button onClick={() => void openLobby()} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Open lobby</button>
-    <button onClick={() => void openLobby(true)} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Start Test Game</button>
-    <p className="preview-banner">Test Game opens a real lobby for phones. Host starts the game after players join. Test sessions are excluded from normal history.</p>
+    <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status === 'Saving...' ? 'Saving…' : status}</span><a className="authoring-button" href="#play-quiz">Play</a></div>
+    <nav className="authoring-steps" aria-label="Quiz authoring"><a href="#quiz-basics">1. Quiz basics</a><a href="#rounds-questions">2. Rounds & questions</a><a href="#question-preview">3. Preview</a><a href="#play-quiz">4. Play</a></nav>
+    {(saves.error || error) && <p role="alert" className="error">{saves.error || error} Review the fields or your connection, then try again. Your edits are still here.</p>}
+    {launchError && <p role="alert" className="error">{launchError} Check readiness and your connection, then try the action again.</p>}
     <section className="readiness" aria-label="Quiz readiness">
-      <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Draft · ${validation.problems.length} ${validation.problems.length === 1 ? 'problem' : 'problems'}` : 'Checking readiness...'}</strong>
-      {validationError && <p role="alert" className="error">Could not refresh readiness: {validationError}</p>}
+      <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Problems to fix · ${validation.problems.length}` : 'Checking readiness…'}</strong>
+      {validationError && <p role="alert" className="error">Could not check readiness. <button className="subtle" onClick={refreshValidation}>Try again</button> {validationError}</p>}
       {validation && validation.problems.length > 0 && <details>
         <summary>Show problems</summary>
         <ul>{validation.problems.map((problem, index) => <li key={`${problem.code}-${problem.roundId ?? ''}-${problem.questionId ?? ''}-${problem.optionId ?? ''}-${index}`}>
-          {problem.roundId ? <button type="button" className="problem-link" onClick={() => setTargetRound({ id: problem.roundId! })}>{problem.message}</button> : problem.message}
+          <button type="button" className="problem-link" onClick={() => {
+            if (problem.roundId) setTargetRound({ id: problem.roundId, questionId: problem.questionId, optionId: problem.optionId, pairId: problem.pairId, code: problem.code });
+            else {
+              const target = document.getElementById(problem.code === 'QUIZ_NO_ROUNDS' ? 'rounds-questions' : 'quiz-basics');
+              target?.scrollIntoView?.({ block: 'start' });
+              target?.querySelector<HTMLElement>('input, button')?.focus();
+            }
+          }}>{problem.message.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, 'attached file')}</button>
         </li>)}</ul>
       </details>}
     </section>
     <fieldset disabled={opening || exporting || exiting} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-    <div className="fields">
+    <section id="quiz-basics" className="authoring-panel" aria-label="Quiz basics"><h2>Quiz basics</h2><div className="fields">
       <label>Title<input value={quiz.title} maxLength={100} onChange={(event) => change({ ...settings, title: event.target.value })} /></label>
       <label>Theme<select value={quiz.themeId} onChange={(event) => change({ ...settings, themeId: event.target.value })}>
         {themes.map(theme => <option key={theme.manifest.id} value={theme.manifest.id}>{theme.manifest.name}</option>)}
-        {!themes.some(theme => theme.manifest.id === quiz.themeId) && <option value={quiz.themeId}>{quiz.themeId || 'Missing theme'} (unavailable)</option>}
+        {!themes.some(theme => theme.manifest.id === quiz.themeId) && <option value={quiz.themeId}>Unavailable theme</option>}
       </select></label>
       {!themes.some(theme => theme.manifest.id === quiz.themeId) && <p>Theme unavailable. Using Default. Select Default to replace this unavailable theme.</p>}
+      <details className="authoring-secondary"><summary>Answer settings</summary><div className="fields">
       <label>Default answer time (seconds)<input type="number" min="1" max="3600" step="1" value={quiz.defaultAnswerTimeSeconds} onChange={(event) => change({ ...settings, defaultAnswerTimeSeconds: Number(event.target.value) })} /></label>
       <label className="checkbox"><input type="checkbox" checked={quiz.shuffleAnswers} onChange={(event) => change({ ...settings, shuffleAnswers: event.target.checked })} /> Shuffle answers</label>
-    </div>
-    <MediaManager key={quiz.id} quizId={quiz.id} disabled={opening || exporting || exiting} onPersistedChange={refreshValidation} />
-    <Rounds quiz={quiz} quizId={quiz.id} targetRound={targetRound} onPersistedChange={refreshValidation} />
+      </div></details>
+    </div></section>
+    <Rounds quiz={quiz} quizId={quiz.id} mediaRevision={mediaRevision} targetRound={targetRound} onPersistedChange={refreshValidation} />
+    <MediaManager key={quiz.id} quizId={quiz.id} disabled={opening || exporting || exiting} onPersistedChange={() => { setMediaRevision(value => value + 1); refreshValidation(); }} />
     </fieldset>
+    <section id="play-quiz" className="authoring-panel" aria-label="Play quiz"><h2>Play</h2>
+      <p>When your quiz is ready, open a lobby and invite your players.</p>
+      <div className="authoring-actions"><button onClick={() => void openLobby()} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Open lobby</button></div>
+      <details className="authoring-secondary"><summary>Rehearse & export</summary>
+        <p>Rehearse with real phones and Wi-Fi. The Host starts the game after players join. Rehearsals are excluded from normal history.</p>
+        <div className="authoring-actions">
+          <button className="subtle" onClick={() => void openLobby(true)} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Rehearse with devices</button>
+          <button className="subtle" disabled={exporting || opening || exiting} onClick={async () => {
+            setExporting(true); setExportNotice(''); setLaunchError('');
+            try { await barrier.flush(); await downloadQuiz(quiz.id); setExportNotice('Quiz ZIP downloaded.'); }
+            catch (cause) { setLaunchError((cause as Error).message); }
+            finally { setExporting(false); }
+          }}>Export Quiz</button>
+        </div>
+      </details>
+      {exportNotice && <p role="status">{exportNotice}</p>}
+    </section>
   </ThemeSurface>;
 }

@@ -26,7 +26,7 @@ test('media panel uploads, lists metadata, confirms deletion and refreshes readi
   fireEvent.change(view.getByLabelText('Media file'), { target: { files: [new File(['GIF89a'], 'picture.gif', { type: 'image/gif' })] } });
   fireEvent.click(view.getByRole('button', { name: 'Upload media' }));
   await waitFor(() => assert.ok(view.getByText('picture.gif')));
-  assert.ok(view.getByText(/image · image\/gif/));
+  assert.ok(view.getByText(/image · .* MB/));
   fireEvent.click(view.getByRole('button', { name: 'Delete media picture.gif' }));
   assert.equal(refreshed, 1); assert.equal(calls.length, 2);
   confirmed = true;

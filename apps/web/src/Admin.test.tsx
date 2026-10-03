@@ -23,6 +23,7 @@ for (const themeId of ['default', 'halloween']) test(`editor renders one header/
   const question = { id: 'question', roundId: round.id, type: 'single_choice', textRu: 'Длинный вопрос '.repeat(50), textEn: 'Long question '.repeat(50), points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, position: 0 };
   globalThis.fetch = async input => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [] });
     if (path.endsWith('/rounds')) return Response.json([round]);
     if (path.endsWith('/questions')) return Response.json([question]);
@@ -45,6 +46,7 @@ test('Admin lists drafts, creates one, and confirms deletion', async () => {
   dom.window.confirm = () => confirmed;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     calls.push(`${init?.method || 'GET'} ${path}`);
     if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'QUIZ_NO_ROUNDS', message: 'Quiz has no rounds' }] });
     if (path.endsWith('/rounds')) return Response.json([]);
@@ -59,7 +61,8 @@ test('Admin lists drafts, creates one, and confirms deletion', async () => {
   fireEvent.click(view.getByRole('link', { name: 'New Quiz' }));
   await waitFor(() => assert.ok(view.getByDisplayValue('New Quiz')));
   fireEvent.click(view.getByRole('button', { name: /Quiz list/ }));
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Delete New Quiz' })));
+  await waitFor(() => assert.ok(view.getByText('More')));
+  fireEvent.click(view.getByText('More'));
   fireEvent.click(view.getByRole('button', { name: 'Delete New Quiz' }));
   assert.equal(calls.filter((call) => call.startsWith('DELETE')).length, 0);
   confirmed = true;
@@ -79,6 +82,7 @@ test('Admin duplicates a quiz through one API call and lists the returned copy',
   let fail = true;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     calls.push(`${init?.method || 'GET'} ${path}`);
     if (path === '/api/quizzes') return Response.json([quiz]);
     if (path === '/api/quizzes/quiz-1/duplicate') return fail
@@ -87,7 +91,8 @@ test('Admin duplicates a quiz through one API call and lists the returned copy',
     return Response.json({ error: 'Unexpected request.' }, { status: 404 });
   };
   const view = show('/admin');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Duplicate New Quiz' })));
+  await waitFor(() => assert.ok(view.getByText('More')));
+  fireEvent.click(view.getByText('More'));
   fireEvent.click(view.getByRole('button', { name: 'Duplicate New Quiz' }));
   await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Copy unavailable.')));
   assert.equal(view.queryByRole('link', { name: 'New Quiz (Copy)' }), null);
@@ -104,6 +109,7 @@ test('editor autosaves basic settings and keeps a failed save visible', async ()
   const updates: unknown[] = [];
   let fail = false;
   globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/media')) return Response.json([]);
     if (String(input).endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'QUIZ_NO_ROUNDS', message: 'Quiz has no rounds' }] });
     if (String(input).endsWith('/rounds')) return Response.json([]);
     if (init?.method === 'PUT') {
@@ -118,7 +124,7 @@ test('editor autosaves basic settings and keeps a failed save visible', async ()
   fireEvent.change(view.getByLabelText('Theme'), { target: { value: 'default' } });
   fireEvent.change(view.getByLabelText('Default answer time (seconds)'), { target: { value: '45' } });
   fireEvent.click(view.getByLabelText('Shuffle answers'));
-  assert.equal(view.getAllByRole('status')[0].textContent, 'Saving...');
+  assert.equal(view.getAllByRole('status')[0].textContent, 'Saving…');
   await waitFor(() => assert.equal(view.getAllByRole('status')[0].textContent, 'Saved'), { timeout: 2000 });
   assert.equal(updates.length, 1);
   assert.deepEqual(updates[0], {
@@ -140,6 +146,7 @@ test('editor loads, adds, edits, reorders, and confirms round deletion', async (
   dom.window.confirm = () => confirmed;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round has no questions', roundId: 'r1' }] });
     if (path === `/api/quizzes/${quiz.id}`) return Response.json(quiz);
     if (path.endsWith('/rounds')) {
@@ -169,14 +176,14 @@ test('editor loads, adds, edits, reorders, and confirms round deletion', async (
     return Response.json({ error: 'Missing' }, { status: 404 });
   };
   const view = show('/admin/quizzes/quiz-1');
-  await waitFor(() => assert.ok(view.getByRole('heading', { name: 'Rounds' })));
+  await waitFor(() => assert.ok(view.getByRole('heading', { name: 'Rounds & questions' })));
   await waitFor(() => assert.ok(view.getByRole('button', { name: 'First / Первый' })));
   fireEvent.click(view.getByRole('button', { name: 'Add round' }));
   await waitFor(() => assert.ok(view.getByRole('button', { name: 'New Round / Новый раунд' })));
   fireEvent.change(view.getByLabelText('Round title RU'), { target: { value: 'Финал' } });
   fireEvent.change(view.getByLabelText('Round title EN'), { target: { value: 'Final' } });
   fireEvent.click(view.getByLabelText('Show leaderboard after this round'));
-  assert.equal(view.getByText('Saving...', { selector: '.round-status' }).textContent, 'Saving...');
+  assert.equal(view.getByText('Saving…', { selector: '.round-status' }).textContent, 'Saving…');
   await waitFor(() => assert.equal(view.getByText('Saved', { selector: '.round-status' }).textContent, 'Saved'), { timeout: 2000 });
   assert.equal(rounds[2].titleEn, 'Final');
   assert.equal(rounds[2].showLeaderboardAfter, true);
@@ -195,6 +202,7 @@ test('round editor waits for both description languages and shows failed autosav
   const updates: unknown[] = [];
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round has no questions', roundId: 'r1' }] });
     if (path.endsWith('/rounds')) return Response.json([round]);
     if (path.endsWith('/questions')) return Response.json([]);
@@ -223,13 +231,14 @@ test('editor shows readiness, problems, and selects the affected round', async (
   let validation = { ready: false, problems: [{ code: 'ROUND_NO_QUESTIONS', message: 'Round “Second” has no questions', roundId: 'r2' }] };
   globalThis.fetch = async (input) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json(validation);
     if (path.endsWith('/rounds')) return Response.json(rounds);
     if (path.endsWith('/questions')) return Response.json([]);
     return Response.json(quiz);
   };
   const view = show('/admin/quizzes/quiz-1');
-  await waitFor(() => assert.ok(view.getByText('Draft · 1 problem')));
+  await waitFor(() => assert.ok(view.getByText('Problems to fix · 1')));
   fireEvent.click(view.getByText('Show problems'));
   assert.ok(view.getByText('Round “Second” has no questions'));
   fireEvent.click(view.getByRole('button', { name: 'Round “Second” has no questions' }));
@@ -238,6 +247,7 @@ test('editor shows readiness, problems, and selects the affected round', async (
   // A successful persisted quiz edit refreshes the server's authoritative result.
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json(validation);
     if (path.endsWith('/rounds')) return Response.json(rounds);
     if (path.endsWith('/questions')) return Response.json([]);
@@ -254,6 +264,7 @@ test('ready Admin opens Host, reload recovers the room, and confirmed close upda
   dom.window.confirm = () => confirmed;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json({ ready: true, problems: [] });
     if (path.endsWith('/rounds')) return Response.json([]);
     if (path === `/api/quizzes/${quiz.id}/rooms` && init?.method === 'POST') return Response.json(room, { status: 201 });
@@ -284,6 +295,7 @@ test('draft cannot launch and server launch rejection remains visible', async ()
   let ready = false;
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json({ ready, problems: [] });
     if (path.endsWith('/rounds')) return Response.json([]);
     if (path.endsWith('/rooms') && init?.method === 'POST') return Response.json({ error: 'Quiz is not ready.', validation: { ready: false, problems: [] } }, { status: 409 });
@@ -307,6 +319,7 @@ test('Admin starts a labeled Test Game lobby for the current quiz and shows laun
   const room = { id: 'test-room', code: 'ABCDE', quizTitle: quiz.title, state: 'LOBBY', closedAt: null, isTest: true };
   globalThis.fetch = async (input, init) => {
     const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]);
     if (path.endsWith('/validation')) return Response.json({ ready, problems: [] });
     if (path.endsWith('/rounds')) return Response.json([]);
     if (path.endsWith('/test-games') && init?.method === 'POST') {
@@ -317,15 +330,19 @@ test('Admin starts a labeled Test Game lobby for the current quiz and shows laun
     return Response.json(quiz);
   };
   let view = show('/admin/quizzes/quiz-1');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Test Game' })));
-  assert.equal((view.getByRole('button', { name: 'Start Test Game' }) as HTMLButtonElement).disabled, true);
+  await waitFor(() => assert.ok(view.getByText('Rehearse & export')));
+  assert.equal(view.getByRole('button', { name: 'Rehearse with devices', hidden: true }).closest('details')?.open, false);
+  fireEvent.click(view.getByText('Rehearse & export'));
+  assert.equal((view.getByRole('button', { name: 'Rehearse with devices' }) as HTMLButtonElement).disabled, true);
   view.unmount(); ready = true;
   view = show('/admin/quizzes/quiz-1');
-  await waitFor(() => assert.equal((view.getByRole('button', { name: 'Start Test Game' }) as HTMLButtonElement).disabled, false));
-  fireEvent.click(view.getByRole('button', { name: 'Start Test Game' }));
+  await waitFor(() => assert.ok(view.getByText('Rehearse & export')));
+  fireEvent.click(view.getByText('Rehearse & export'));
+  await waitFor(() => assert.equal((view.getByRole('button', { name: 'Rehearse with devices' }) as HTMLButtonElement).disabled, false));
+  fireEvent.click(view.getByRole('button', { name: 'Rehearse with devices' }));
   await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Quiz is not ready.')));
   fail = false;
-  fireEvent.click(view.getByRole('button', { name: 'Start Test Game' }));
+  fireEvent.click(view.getByRole('button', { name: 'Rehearse with devices' }));
   await waitFor(() => assert.ok(view.getByText('Тестовая игра / Test Game')));
   assert.ok(view.getByText('ABCDE'));
   assert.deepEqual(calls, ['/api/quizzes/quiz-1/test-games', '/api/quizzes/quiz-1/test-games']);
@@ -343,7 +360,8 @@ test('Admin imports ZIP with success/edit link and unavailable-theme warning; fa
     return Response.json([]);
   };
   const view = show('/admin');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Import Quiz' })));
+  fireEvent.click(view.getByText('Import & history'));
+  assert.ok(view.getByRole('button', { name: 'Import Quiz' }));
   const input = view.getByLabelText('Quiz ZIP');
   fireEvent.change(input, { target: { files: [new File(['zip'], 'quiz.zip', { type: 'application/zip' })] } });
   await waitFor(() => assert.match(view.getByRole('alert').textContent!, /Missing media/));
@@ -353,7 +371,7 @@ test('Admin imports ZIP with success/edit link and unavailable-theme warning; fa
   await waitFor(() => assert.ok(view.getByRole('link', { name: 'Open imported quiz' })));
   assert.equal(view.getByRole('link', { name: 'Open imported quiz' }).getAttribute('href'), '/admin/quizzes/imported-quiz');
   assert.match(view.getByRole('status').textContent!, /editable Draft/);
-  assert.match(view.getByRole('alert').textContent!, /Using Default.*original theme ID is preserved/);
+  assert.match(view.getByRole('alert').textContent!, /Using Default.*choose a theme in Edit/);
   assert.equal(calls.length, 2); assert.equal(calls[1].method, 'POST'); assert.ok(calls[1].body instanceof FormData);
 });
 
@@ -367,12 +385,14 @@ test('Admin export downloads ZIP and reports errors and success without gameplay
   dom.window.HTMLAnchorElement.prototype.click = function () { downloaded = this.download === 'quiz.zip'; };
   try {
     globalThis.fetch = async input => {
-      const path = String(input); calls.push(path);
+      const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]); calls.push(path);
       if (path.endsWith('/export')) return fail ? Response.json({ error: 'Missing source media.' }, { status: 400 }) : new Response('zip', { headers: { 'Content-Type': 'application/zip' } });
       return Response.json([quiz]);
     };
     const view = show('/admin');
-    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Export New Quiz' })));
+    await waitFor(() => assert.ok(view.getByText('More')));
+  fireEvent.click(view.getByText('More'));
     fireEvent.click(view.getByRole('button', { name: 'Export New Quiz' }));
     await waitFor(() => assert.match(view.getByRole('alert').textContent!, /Missing source media/));
     fail = false; fireEvent.click(view.getByRole('button', { name: 'Export New Quiz' }));

@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { App } from './App';
 
 for (const [path, title] of [
-  ['/admin', 'Quizzes'],
+  ['/admin', 'My quizzes'],
   ['/host', 'Host'],
   ['/screen', 'Screen'],
   ['/play', 'Player'],

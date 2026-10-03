@@ -16,7 +16,8 @@ test('Matching editor creates, autosaves bilingual sides, reorders, deletes, rel
   let next = 0;
   let saved = false;
   globalThis.fetch = async (url, init) => {
-    const path = String(url); const method = init?.method ?? 'GET';
+    const path = String(url);
+    if (path.endsWith('/media')) return Response.json([]); const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (path.endsWith('/questions')) {
       if (method === 'POST') { assert.deepEqual(body, { type: 'matching' }); questions = [question]; return Response.json(question); }
@@ -43,7 +44,8 @@ test('Matching editor creates, autosaves bilingual sides, reorders, deletes, rel
   try {
     const view = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
     await waitFor(() => assert.ok(view.getByText('No questions yet.')));
-    fireEvent.click(view.getByRole('button', { name: 'Add Matching question' }));
+    fireEvent.change(view.getByLabelText('New question type'), { target: { value: 'matching' } });
+    fireEvent.click(view.getByRole('button', { name: 'Add question' }));
     await waitFor(() => assert.ok(view.getByLabelText('Pair 2 right EN')));
     assert.ok(!view.queryByText('Answer options'));
     assert.equal(view.queryAllByRole('radio').length, 0);
@@ -84,6 +86,7 @@ test('confirmed type survives failed child load and later autosave uses the new 
   let pairLoads = 0;
   globalThis.fetch = async (url, init) => {
     const path = String(url);
+    if (path.endsWith('/media')) return Response.json([]);
     if (init?.method === 'PUT') {
       const body = JSON.parse(String(init.body)); writes.push(body);
       Object.assign(question, body);
@@ -108,7 +111,7 @@ test('confirmed type survives failed child load and later autosave uses the new 
     fireEvent.change(view.getByLabelText('Question text EN'), { target: { value: 'New text' } });
     await waitFor(() => assert.equal(writes.length, 2), { timeout: 2000 });
     assert.equal(writes[1].type, 'matching');
-    fireEvent.click(view.getByRole('button', { name: 'Retry answer data' }));
+    fireEvent.click(view.getByRole('button', { name: 'Try loading answers again' }));
     await waitFor(() => assert.ok(view.getByLabelText('Pair 1 left EN')));
     assert.equal(pairLoads, 2);
   } finally { globalThis.fetch = original; }
@@ -127,6 +130,7 @@ for (const [from, to] of [
   const writes: string[] = [];
   globalThis.fetch = async (url, init) => {
     const path = String(url);
+    if (path.endsWith('/media')) return Response.json([]);
     const method = init?.method ?? 'GET';
     if (path.endsWith('/questions')) return Response.json([question]);
     if (path.endsWith('/options')) return Response.json(options);

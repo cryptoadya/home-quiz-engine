@@ -16,6 +16,7 @@ test('Yes / No editor has fixed bilingual rows, one correct answer and safe type
   let questions: typeof fields[] = [];
   globalThis.fetch = async (url, init) => {
     const path = String(url);
+    if (path.endsWith('/media')) return Response.json([]);
     const method = init?.method || 'GET';
     if (path.endsWith('/questions')) {
       if (method === 'POST') { assert.deepEqual(JSON.parse(String(init?.body)), { type: 'yes_no' }); questions = [fields]; return Response.json(fields); }
@@ -31,7 +32,8 @@ test('Yes / No editor has fixed bilingual rows, one correct answer and safe type
   try {
     const view = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
     await waitFor(() => assert.ok(view.getByText('No questions yet.')));
-    fireEvent.click(view.getByRole('button', { name: 'Add Yes / No question' }));
+    fireEvent.change(view.getByLabelText('New question type'), { target: { value: 'yes_no' } });
+    fireEvent.click(view.getByRole('button', { name: 'Add question' }));
     await waitFor(() => assert.ok(view.getByDisplayValue('Yes')));
     assert.equal(view.getAllByRole('radio').length, 2);
     assert.ok(!view.queryByRole('button', { name: 'Add option' }));

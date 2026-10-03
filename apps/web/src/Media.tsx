@@ -2,6 +2,21 @@ import { useEffect, useState } from 'react';
 import { useEditorSave } from './EditorSaves';
 
 type Media = { id: string; name: string; kind: 'image' | 'audio' | 'video'; mimeType: string; sizeBytes: number };
+export function useQuizMedia(quizId: string, revision = 0, previewOpen = false) {
+  const [items, setItems] = useState<Media[]>([]);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/quizzes/${quizId}/media`).then(async response => {
+      if (!response.ok) throw new Error('Could not load your media. Try again.');
+      return response.json() as Promise<Media[]>;
+    }).then(items => { if (active) { setItems(items); setError(''); } })
+      .catch(cause => { if (active) setError((cause as Error).message); });
+    return () => { active = false; };
+  }, [quizId, revision, previewOpen, retry]);
+  return { items, error, retry: () => setRetry(value => value + 1) };
+}
 export function MediaManager({ quizId, onPersistedChange, disabled = false }: { quizId: string; onPersistedChange: () => void; disabled?: boolean }) {
   const saves = useEditorSave();
   const [open, setOpen] = useState(false);
@@ -54,20 +69,21 @@ export function MediaManager({ quizId, onPersistedChange, disabled = false }: { 
     } catch (cause) { setError((cause as Error).message); setStatus('Delete failed.'); }
     finally { setBusy(false); }
   }
-  return <section className="media-manager" aria-label="Quiz media">
-    <h2>Media</h2>
+  return <section id="quiz-media" className="media-manager" aria-label="Quiz media">
+    <h2>Media library</h2>
     <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide media' : 'Manage media'}</button>
     {open && <>
       <p>Images/GIF up to 20 MB · Audio up to 100 MB · Video up to 500 MB</p>
-      <label className="upload-field">Media file<input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp3,.wav,.ogg,.mp4,.webm" disabled={busy || disabled}
+      <p>Upload here, then choose the file in Question media, Matching pairs, or Round art.</p>
+      <div className="authoring-actions media-actions"><label className="upload-field">Media file<input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp3,.wav,.ogg,.mp4,.webm" disabled={busy || disabled}
         onChange={event => setFile(event.target.files?.[0] ?? null)} /></label>
-      <button type="button" disabled={busy || disabled || !file} onClick={() => void upload()}>Upload media</button>
+      <button type="button" disabled={busy || disabled || !file} onClick={() => void upload()}>Upload media</button></div>
       {status && <p role="status" aria-live="polite">{status}</p>}
       {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
       {!busy && !error && items.length === 0 && <p className="empty-state">No media uploaded.</p>}
       <ul className="quiz-list">{items.map(media => <li key={media.id}>
-        <div><strong>{media.name}</strong><p>{media.kind} · {media.mimeType} · {(media.sizeBytes / 1024 / 1024).toFixed(2)} MB</p></div>
-        <button type="button" className="subtle danger" disabled={busy || disabled} aria-label={`Delete media ${media.name}`} onClick={() => void remove(media)}>Delete</button>
+        <div><strong>{media.name}</strong><p>{media.kind} · {(media.sizeBytes / 1024 / 1024).toFixed(2)} MB</p></div>
+        <div className="destructive-actions"><button type="button" className="subtle danger" disabled={busy || disabled} aria-label={`Delete media ${media.name}`} onClick={() => void remove(media)}>Delete</button></div>
       </li>)}</ul>
     </>}
   </section>;

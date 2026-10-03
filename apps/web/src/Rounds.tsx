@@ -1,6 +1,7 @@
 import { useEditorSave, useSaveBarrier } from './EditorSaves';
 import { useEffect, useRef, useState } from 'react';
-import type { Quiz } from './Admin';
+import type { AuthoringTarget, Quiz } from './Admin';
+import { useQuizMedia } from './Media';
 import { MediaImage } from './MediaImage';
 import { Questions } from './Questions';
 import { ROUND_DESCRIPTION_MAX_LENGTH } from '../../server/src/round-description';
@@ -29,9 +30,11 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
 
-export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?: Quiz; quizId: string; targetRound?: { id: string } | null; onPersistedChange?: () => void }) {
+export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevision = 0 }: { quiz?: Quiz; quizId: string; targetRound?: AuthoringTarget | null; onPersistedChange?: () => void; mediaRevision?: number }) {
   const base = `/api/quizzes/${quizId}/rounds`;
-  const [artMedia, setArtMedia] = useState<{ id: string; name: string; kind: string }[]>([]);
+  const { items: artMedia, error: mediaError, retry: retryMedia } = useQuizMedia(quizId, mediaRevision);
+  const [roundSettingsOpen, setRoundSettingsOpen] = useState(false);
+  const roundEditor = useRef<HTMLDivElement>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,6 +52,13 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
       void selectRound(targetRound.id);
     }
   }, [targetRound, rounds]);
+
+  useEffect(() => {
+    if (!targetRound || selectedId !== targetRound.id || targetRound.questionId) return;
+    setRoundSettingsOpen(true);
+    roundEditor.current?.scrollIntoView?.({ block: 'start' });
+    roundEditor.current?.querySelector<HTMLInputElement>('input')?.focus();
+  }, [targetRound, selectedId]);
 
   useEffect(() => {
     let active = true;
@@ -144,37 +154,43 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz }: { quiz?
     showLeaderboardAfter: selected.showLeaderboardAfter,
   } : null;
 
-  return <section className="rounds">
-    <div className="editor-heading"><h2>Rounds</h2><span className="round-status" role="status" aria-live="polite">{status}</span></div>
+  return <section id="rounds-questions" className="rounds" aria-label="Rounds & questions">
+    <div className="editor-heading"><h2>Rounds & questions</h2><span className="round-status" role="status" aria-live="polite">{status === 'Saving...' ? 'Saving…' : status}</span></div>
     {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
     {loading ? <p>Loading rounds...</p> : <>
-      <button onClick={() => void add()} disabled={busy || incomplete.current}>Add round</button>
+      <div className="authoring-actions"><button onClick={() => void add()} disabled={busy || incomplete.current}>Add round</button></div>
+      <nav className="authoring-navigator" aria-label="Rounds">
       {rounds.length === 0 ? <p>No rounds yet.</p> : <ol className="round-list">{rounds.map((round, index) => <li key={round.id}>
-        <button className={selectedId === round.id ? 'selected-round' : 'subtle'} onClick={() => void selectRound(round.id)} disabled={busy || incomplete.current}>
-          {round.titleEn} / {round.titleRu}
+        <button aria-current={selectedId === round.id ? 'true' : undefined} className={selectedId === round.id ? 'selected-round' : 'subtle'} onClick={() => void selectRound(round.id)} disabled={busy || incomplete.current}>
+          <span className="navigator-title">{round.titleEn} / {round.titleRu}</span>
         </button>
         <div className="round-order">
           <button className="subtle" aria-label={`Move ${round.titleEn} up`} disabled={busy || incomplete.current || index === 0} onClick={() => void move(index, -1)}>↑</button>
           <button className="subtle" aria-label={`Move ${round.titleEn} down`} disabled={busy || incomplete.current || index === rounds.length - 1} onClick={() => void move(index, 1)}>↓</button>
         </div>
       </li>)}</ol>}
-      {selected && fields && <div className="fields">
+      </nav>
+      {selected && fields && <div className="selected-round-editor" ref={roundEditor} tabIndex={-1}>
+        <h3>Round {rounds.indexOf(selected) + 1}: {selected.titleEn || selected.titleRu || 'Untitled round'}</h3>
+        <div className="fields">
         <label>Round title RU<input value={selected.titleRu} maxLength={100} disabled={busy} onChange={(event) => change(selected, { ...fields, titleRu: event.target.value })} /></label>
         <label>Round title EN<input value={selected.titleEn} maxLength={100} disabled={busy} onChange={(event) => change(selected, { ...fields, titleEn: event.target.value })} /></label>
+        <details className="authoring-secondary" open={roundSettingsOpen} onToggle={event => setRoundSettingsOpen(event.currentTarget.open)}><summary>Round introduction & settings</summary><div className="fields">
         <label>Round description RU<textarea value={selected.descriptionRu} maxLength={ROUND_DESCRIPTION_MAX_LENGTH} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionRu: event.target.value })} /></label>
         <label>Round description EN<textarea value={selected.descriptionEn} maxLength={ROUND_DESCRIPTION_MAX_LENGTH} disabled={busy} onChange={(event) => change(selected, { ...fields, descriptionEn: event.target.value })} /></label>
-        <button disabled={busy} onClick={() => void api<{ id: string; name: string; kind: string }[]>(`/api/quizzes/${quizId}/media`).then(setArtMedia).catch(cause => setError(cause.message))}>Load / refresh round art</button>
+        {mediaError && <p role="alert">{mediaError} <button className="subtle" disabled={busy} onClick={retryMedia}>Try loading round art again</button></p>}
         <label>Round art<select disabled={busy} value={selected.artMediaId ?? ''} onChange={event => change(selected, { ...fields, artMediaId: event.target.value || null })}>
           <option value="">None</option>
-          {selected.artMediaId && !artMedia.some(item => item.id === selected.artMediaId) && <option value={selected.artMediaId}>Current art (refresh to check)</option>}
-          {artMedia.filter(item => item.kind === 'image').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {selected.artMediaId && !artMedia.some(item => item.id === selected.artMediaId) && <option value={selected.artMediaId}>Image unavailable — choose another</option>}
+          {artMedia.filter(item => item.kind === 'image').map(item => <option key={item.id} value={item.id}>{item.name} (image)</option>)}
         </select></label>
         {selected.artMediaId && <MediaImage src={`/api/quizzes/${quizId}/media/${selected.artMediaId}/content`} alt="Round art" className="editor-media-preview" />}
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
-        <button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button>
+        </div></details>
+        </div><div className="destructive-actions"><button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button></div>
       </div>}
       {selected && <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-        <Questions quiz={quiz} roundNumber={rounds.indexOf(selected) + 1} key={selected.id} quizId={quizId} roundId={selected.id} onPersistedChange={onPersistedChange} />
+        <Questions quiz={quiz} roundNumber={rounds.indexOf(selected) + 1} key={selected.id} quizId={quizId} roundId={selected.id} mediaRevision={mediaRevision} targetQuestion={targetRound?.id === selected.id ? targetRound : null} onPersistedChange={onPersistedChange} />
       </fieldset>}
     </>}
   </section>;

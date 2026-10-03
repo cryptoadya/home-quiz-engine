@@ -27,7 +27,6 @@ test('question attachments preserve ordered IDs, reorder/remove, and Matching im
   try {
     const view = render(createElement(Questions, { quizId: 'quiz', roundId: 'round' }));
     await waitFor(() => assert.ok(view.getByLabelText('Pair 1 left EN')));
-    fireEvent.click(view.getByText('Load / refresh uploaded media'));
     await waitFor(() => assert.ok(view.getByText('photo.png (image)')));
     fireEvent.change(view.getByLabelText('Attach question media'), { target: { value: 'a' } });
     fireEvent.click(view.getByLabelText('Move media 2 up'));
@@ -36,10 +35,10 @@ test('question attachments preserve ordered IDs, reorder/remove, and Matching im
     fireEvent.change(view.getByLabelText('Pair 1 left kind'), { target: { value: 'image' } });
     await waitFor(() => assert.deepEqual(pair.left, { kind: 'image', mediaId: 'a' }));
     assert.equal(view.queryByLabelText('Pair 1 left EN'), null);
-    assert.equal(view.queryByText('Play before timer'), null);
+    assert.equal(view.queryByText('Play before answer timer starts'), null);
     await waitFor(() => assert.deepEqual(question.media, [{ mediaId: 'a', playBeforeTimer: false }]));
     fireEvent.change(view.getByLabelText('Attach question media'), { target: { value: 'c' } });
-    fireEvent.click(view.getByLabelText('Play before timer'));
+    fireEvent.click(view.getByLabelText('Play before answer timer starts'));
     await waitFor(() => assert.deepEqual(question.media, [{ mediaId: 'a', playBeforeTimer: false }, { mediaId: 'c', playBeforeTimer: true }]));
     fireEvent.change(view.getByLabelText('Question text EN'), { target: { value: 'Media question' } });
     await waitFor(() => assert.equal(question.textEn, 'Media question'));

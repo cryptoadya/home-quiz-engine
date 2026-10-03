@@ -35,7 +35,8 @@ function editorFixture(kind: 'options' | 'pairs', ids: string[] = ['a']) {
   const holdNext = new Set<string>();
   let failNext = '';
   globalThis.fetch = async (input, init) => {
-    const path = String(input); const method = init?.method ?? 'GET';
+    const path = String(input);
+    if (path.endsWith('/media')) return Response.json([]); const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (path === base && method === 'GET') return Response.json(questions);
     const match = path.match(/\/questions\/([^/]+)(?:\/(options|pairs))?(?:\/(.*))?$/);
@@ -237,23 +238,23 @@ test('late failed A reload does not show an error or Retry for B', async () => {
     await waitFor(() => assert.equal((view.getByLabelText('Option 1 EN') as HTMLInputElement).value, 'b1'));
     await fixture.resolve(0, true);
     assert.equal(view.queryByRole('alert'), null);
-    assert.equal(view.queryByRole('button', { name: 'Retry answer data' }), null);
+    assert.equal(view.queryByRole('button', { name: 'Try loading answers again' }), null);
   } finally { fixture.restore(); }
 });
 
-test('newest Retry answer data replaces the current options', async () => {
+test('newest Try loading answers again replaces the current options', async () => {
   const fixture = editorFixture('options');
   fixture.failNext(`${base}/a/options`);
   try {
     const view = fixture.render();
-    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Retry answer data' })));
+    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Try loading answers again' })));
     fixture.holdNext.add(`${base}/a/options`);
-    fireEvent.click(view.getByRole('button', { name: 'Retry answer data' }));
+    fireEvent.click(view.getByRole('button', { name: 'Try loading answers again' }));
     await waitFor(() => assert.equal(fixture.held.length, 1));
     fixture.items.set('a', [option('fresh', 'a')]);
     await act(async () => fixture.held[0].reply.resolve(Response.json(fixture.items.get('a'))));
     await waitFor(() => assert.equal((view.getByLabelText('Option 1 EN') as HTMLInputElement).value, 'fresh'));
-    assert.equal(view.queryByRole('button', { name: 'Retry answer data' }), null);
+    assert.equal(view.queryByRole('button', { name: 'Try loading answers again' }), null);
     assert.equal(view.queryByRole('alert'), null);
   } finally { fixture.restore(); }
 });

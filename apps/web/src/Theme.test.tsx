@@ -118,12 +118,27 @@ for (const path of ['/host/room', '/screen/room', '/play/ABCDE']) {
         assert.equal(view.getByRole('main').style.getPropertyValue('--theme-primary'), resolveTheme(themeId).tokens.primary, phase);
         const art = [...view.container.querySelectorAll<HTMLImageElement>('.halloween-art')];
         const expected = themeId !== 'halloween' ? 0 : path.startsWith('/play') ? 1
-          : (path.startsWith('/screen') ? 2 : 0) + (['ROUND_INTRO', 'ROUND_END', 'WINNER_SCREEN'].includes(phase) || path.startsWith('/screen') && phase === 'LOBBY' ? 1 : 0);
+          : (path.startsWith('/screen') ? 2 : 0) + (['ROUND_INTRO', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(phase) || path.startsWith('/screen') && ['LOBBY', 'ANSWER_REVEAL'].includes(phase) ? 1 : 0);
         assert.equal(art.length, expected, `${phase} requests only its decorative artwork`);
         for (const image of art) {
           assert.equal(image.alt, '');
           assert.equal(image.getAttribute('aria-hidden'), 'true');
           assert.ok(image.width > 0 && image.height > 0, 'intrinsic bounds prevent layout shifts');
+        }
+        if (themeId === 'halloween' && path.startsWith('/screen')) {
+          const accents: Record<string, string> = {
+            LOBBY: 'halloween_banner_haunted_house.webp',
+            ROUND_INTRO: 'halloween_pumpkin_cluster.webp',
+            ANSWER_REVEAL: 'halloween_ghost_mascot.webp',
+            ROUND_END: 'halloween_spooky_candle_scene.webp',
+            LEADERBOARD: 'halloween_spooky_candle_scene.webp',
+            FINAL_RESULTS: 'halloween_spooky_candle_scene.webp',
+            WINNER_SCREEN: 'halloween_winner_trophy.webp',
+          };
+          const accent = accents[phase];
+          assert.ok(art.some(image => image.src.endsWith('halloween_corner_web_top_left.webp')));
+          assert.ok(art.some(image => image.src.endsWith('halloween_corner_web_top_right.webp')));
+          if (accent) assert.equal(art.filter(image => image.src.endsWith(accent)).length, 1, `${phase} has one expected accent`);
         }
         if (themeId === 'halloween' && phase === 'WINNER_SCREEN') assert.equal(view.container.querySelector('.party-decoration'), null);
         if (path.startsWith('/play') && phase === 'ANSWERING') assert.equal(view.container.querySelector('.player-header')?.getAttribute('data-compact'), 'true');

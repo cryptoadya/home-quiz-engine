@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
-import { BoundaryContent, RoundIntroContent } from './GameContent';
+import { BoundaryContent, QuestionContent, RoundIntroContent } from './GameContent';
 import { ThemeSurface } from './themes/ThemeSurface';
 import { HalloweenDecoration, type DecorationKind } from './themes/halloween/HalloweenDecoration';
 import { PlayerAnswerContent } from './PlayerAnswer';
@@ -14,7 +14,7 @@ import type { PlayerReveal } from './lobby';
 afterEach(cleanup);
 
 test('Halloween artwork uses transparent lossless WebP with matching intrinsic dimensions', () => {
-  for (const kind of ['lobby', 'round', 'winner', 'waiting', 'player', 'corners'] as DecorationKind[]) {
+  for (const kind of ['lobby', 'round', 'winner', 'waiting', 'reveal', 'player', 'corners'] as DecorationKind[]) {
     const view = render(createElement(HalloweenDecoration, { kind }));
     for (const image of view.container.querySelectorAll('img')) {
       assert.match(image.src, /\.webp$/);
@@ -105,11 +105,32 @@ test('Halloween standings retain one rank per row, including ties, and celebrate
   const game = { state: 'LEADERBOARD' as const, roundNumber: 1, questionCount: 1, titleRu: '', titleEn: '', nextAction: null, leaderboard };
   const view = render(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(BoundaryContent, { game })));
   assert.deepEqual([...view.container.querySelectorAll('.rank-badge')].map(el => el.textContent), ['1', '1', '3']);
-  assert.equal(view.container.querySelector('.halloween-art'), null);
+  for (const state of ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'] as const) {
+    view.rerender(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(BoundaryContent, { game: { ...game, state } })));
+    assert.equal(view.container.querySelectorAll('.halloween-art--waiting').length, 1);
+    assert.ok(view.getByRole('table'));
+    assert.ok(view.getByRole('rowheader', { name: 'Alex' }));
+    assert.ok(view.getByRole('rowheader', { name: 'Sam' }));
+  }
   view.rerender(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(BoundaryContent, { game: { ...game, state: 'WINNER_SCREEN', leaderboard: leaderboard.slice(0, 2) } })));
-  assert.ok(view.container.querySelector('.halloween-art--winner'));
+  assert.equal(view.container.querySelectorAll('.halloween-art--winner').length, 1);
+  assert.equal(view.container.querySelector('.halloween-art--waiting'), null);
   assert.equal(view.container.querySelector('.party-decoration'), null);
   assert.equal(view.container.querySelectorAll('.winner-card').length, 2);
   assert.ok(view.getByText('Alex'));
   assert.ok(view.getByText('Sam'));
+});
+
+test('Halloween Reveal has a decorative ghost outside answer content and keeps Host compact', () => {
+  const question = { state: 'ANSWER_REVEAL' as const, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Question', options: [{ textRu: 'Ответ', textEn: 'Answer', isCorrect: true }] };
+  const view = render(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(QuestionContent, { question })));
+  const ghost = view.container.querySelector('.halloween-art--reveal');
+  assert.ok(ghost?.closest('.question-meta'));
+  assert.equal(ghost?.closest('.game-options'), null);
+  assert.equal(view.queryByRole('img'), null);
+  assert.ok(view.getByText('Верный ответ / Correct answer'));
+  view.rerender(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(QuestionContent, { question, host: true })));
+  assert.equal(view.container.querySelector('.halloween-art--reveal'), null);
+  view.rerender(createElement(ThemeSurface, { themeId: 'default' }, createElement(QuestionContent, { question })));
+  assert.equal(view.container.querySelector('.halloween-art'), null);
 });

@@ -1,20 +1,62 @@
-/* Artwork has reserved bounds and cannot receive pointer input. All layout
-   changes are scoped to Halloween; question panels retain their full area. */
+/* All illustrations stay in reserved layout space, outside game content.
+   Artwork is bundled, purely decorative, and never receives pointer input. */
 [data-theme="halloween"] .halloween-art { display: block; object-fit: contain; pointer-events: none; user-select: none; max-width: 100%; }
-[data-theme="halloween"].screen-lobby { position: relative; }
+[data-theme="halloween"].screen-lobby { position: relative; --web-size: clamp(3rem, 7vw, 8rem); }
+[data-theme="halloween"].screen-lobby .screen-header { padding-inline: var(--web-size); min-height: var(--web-size); }
 [data-theme="halloween"] .halloween-corners { position: absolute; inset: 0; pointer-events: none; }
-[data-theme="halloween"] .halloween-corners img { position: absolute; top: 0; width: clamp(.75rem, 1.5vw, 1.75rem); height: clamp(.75rem, 1.5vw, 1.75rem); opacity: .35; }
+[data-theme="halloween"] .halloween-corners img { position: absolute; top: 0; width: var(--web-size); height: var(--web-size); opacity: .9; }
 [data-theme="halloween"] .halloween-art--web-left { left: 0; }
 [data-theme="halloween"] .halloween-art--web-right { right: 0; }
-[data-theme="halloween"] .screen-join { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 2rem; align-items: center; }
+
+/* The QR/code panel leads on small screens; the scene fills the other half
+   on TV and laptop layouts without adding a tall banner above the QR. */
+[data-theme="halloween"] .screen-join { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(18rem, .9fr); gap: clamp(1rem, 3vw, 3rem); align-items: center; }
 [data-theme="halloween"] .screen-join-panel { min-width: 0; }
-[data-theme="halloween"] .halloween-art--lobby { width: 100%; height: clamp(14rem, 38vh, 28rem); opacity: .95; }
-[data-theme="halloween"] .halloween-art--round { width: clamp(7rem, 12vw, 12rem); height: clamp(6rem, 13vh, 9rem); margin: 0 auto .75rem; }
-[data-theme="halloween"] .halloween-art--winner { width: clamp(10rem, 20vw, 20rem); height: clamp(9rem, 22vh, 15rem); margin: 0 auto .75rem; }
-[data-theme="halloween"] .halloween-art--waiting { width: clamp(8rem, 15vw, 15rem); height: clamp(6rem, 16vh, 11rem); margin: 0 auto 1rem; opacity: .8; }
+[data-theme="halloween"] .halloween-art--lobby { width: 100%; height: auto; aspect-ratio: 1672 / 941; max-height: min(48vh, 30rem); }
+
+/* Small defaults keep shared Host content compact. Screen alone gets the
+   larger composition, with titles and all authored media in their own cells. */
+[data-theme="halloween"] .halloween-art--round,
+[data-theme="halloween"] .halloween-art--winner,
+[data-theme="halloween"] .halloween-art--waiting { width: 3rem; height: 3rem; margin: 0 auto .5rem; }
+[data-theme="halloween"].screen-lobby .round-intro { display: grid; grid-template-columns: minmax(0, 1fr) clamp(7rem, 18vw, 16rem); gap: 0 clamp(1rem, 3vw, 3rem); align-items: center; }
+[data-theme="halloween"].screen-lobby .round-intro > * { grid-column: 1; min-width: 0; }
+[data-theme="halloween"].screen-lobby .halloween-art--round { grid-column: 2; grid-row: 1 / span 3; width: 100%; height: auto; aspect-ratio: 1; margin: 0; }
+[data-theme="halloween"].screen-lobby .round-intro > .question-image { grid-column: 1 / -1; }
+
+/* Reveal's ghost sits with phase metadata, never with answer choices. */
+[data-theme="halloween"] .question-meta:has(.halloween-art--reveal) { display: grid; grid-template-columns: minmax(0, 1fr) auto; text-align: left; }
+[data-theme="halloween"] .question-meta:has(.halloween-art--reveal) > p { grid-column: 1; }
+[data-theme="halloween"] .halloween-art--reveal { grid-column: 2; grid-row: 1 / span 2; width: clamp(2.5rem, 4vw, 4.5rem); height: auto; aspect-ratio: 1; }
+
+/* Boundary art sits beside the heading. Standings always keep the full width. */
+[data-theme="halloween"].screen-lobby .boundary-content:not(.winner-stage) { display: grid; grid-template-columns: minmax(0, 1fr) clamp(5rem, 12vw, 12rem); gap: 0 1rem; align-items: center; }
+[data-theme="halloween"].screen-lobby .boundary-content:not(.winner-stage) > * { grid-column: 1; min-width: 0; }
+[data-theme="halloween"].screen-lobby .boundary-content > .halloween-art--waiting { grid-column: 2; grid-row: 1 / span 3; width: 100%; height: auto; aspect-ratio: 4 / 3; margin: 0; }
+[data-theme="halloween"].screen-lobby .boundary-content:not([data-phase="ROUND_END"]) > .halloween-art--waiting { grid-row: 1; }
+[data-theme="halloween"].screen-lobby .boundary-content > .leaderboard,
+[data-theme="halloween"].screen-lobby .boundary-content > [role="status"] { grid-column: 1 / -1; }
+
+/* One shared trophy celebrates single and tied winners without displacing names. */
+[data-theme="halloween"].screen-lobby .winner-stage { display: grid; grid-template-columns: clamp(10rem, 22vw, 22rem) minmax(0, 1fr); gap: 0 clamp(1rem, 3vw, 3rem); align-items: center; }
+[data-theme="halloween"].screen-lobby .winner-stage > * { grid-column: 2; min-width: 0; }
+[data-theme="halloween"].screen-lobby .halloween-art--winner { grid-column: 1; grid-row: 1 / span 2; width: 100%; height: auto; aspect-ratio: 1; margin: 0; }
+[data-theme="halloween"].screen-lobby .winner-stage .winners { margin-top: .75rem; }
+
+/* Player gets only its existing tiny header mascot; no question artwork. */
 [data-theme="halloween"].player > h1 { position: relative; }
 [data-theme="halloween"] .halloween-art--player { position: absolute; right: 0; top: -.15rem; width: 1.25rem; height: 1.25rem; opacity: .85; }
-@media (max-width: 75rem) {
-  [data-theme="halloween"] .screen-join { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
-  [data-theme="halloween"] .halloween-art--lobby { height: clamp(6rem, 18vw, 12rem); }
+
+@media (max-width: 55rem) {
+  [data-theme="halloween"] .screen-join { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+  [data-theme="halloween"] .screen-join-panel { grid-row: 1; }
+  [data-theme="halloween"] .halloween-art--lobby { max-height: 11rem; }
+}
+@media (max-width: 38rem) {
+  [data-theme="halloween"].screen-lobby .screen-header { padding-inline: 1.5rem; }
+  [data-theme="halloween"].screen-lobby .round-intro,
+  [data-theme="halloween"].screen-lobby .winner-stage { display: block; }
+  [data-theme="halloween"].screen-lobby .halloween-art--round { width: 5rem; margin: 0 auto .5rem; }
+  [data-theme="halloween"].screen-lobby .halloween-art--winner { width: 7rem; margin: 0 auto .5rem; }
+  [data-theme="halloween"].screen-lobby .boundary-content:not(.winner-stage) { grid-template-columns: minmax(0, 1fr) 4rem; gap: 0 .5rem; }
 }

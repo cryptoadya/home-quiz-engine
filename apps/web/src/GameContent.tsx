@@ -22,6 +22,7 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
     <div className="question-meta">
     <p className="phase-chip">Раунд {question.roundNumber} / Round {question.roundNumber} · Вопрос / Question {question.questionNumber} / {question.questionCount}</p>
     {question.answers && <p className="answer-count">Ответили / Answered: {question.answers.answered} / {question.answers.expected}</p>}
+    {!host && question.state === 'ANSWER_REVEAL' && <ThemeDecoration kind="reveal" />}
     </div>
     {question.statistics && <p className="reveal-statistics">Верно / Correct: {question.statistics.correct} · Неверно / Wrong: {question.statistics.wrong} · Нет ответа / Unanswered: {question.statistics.unanswered}</p>}
     <div className="question-copy">
@@ -48,7 +49,7 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
 export function BoundaryContent({ game }: { game: import('./lobby').GameBoundary }) {
   return <div className={`boundary-content ${game.state === 'WINNER_SCREEN' ? 'winner-stage' : ''}`} data-phase={game.state}>
     {game.state === 'WINNER_SCREEN' && <ThemeDecoration kind="winner" />}
-    {game.state === 'ROUND_END' && <ThemeDecoration kind="waiting" />}
+    {game.state !== 'WINNER_SCREEN' && <ThemeDecoration kind="waiting" />}
     <h2>{game.state === 'ROUND_END' ? 'Раунд завершён / Round complete' : game.state === 'LEADERBOARD' ? 'Таблица лидеров / Leaderboard' : game.state === 'FINAL_RESULTS' ? 'Финальные результаты / Final results' : 'Победители / Winners'}</h2>
     {game.state === 'ROUND_END' && <><h3 lang="ru">{game.titleRu}</h3><h3 lang="en">{game.titleEn}</h3></>}
     {game.leaderboard?.length === 0 && <p role="status">Нет участников / No remaining players</p>}

@@ -97,7 +97,7 @@ test('Player stale authenticated HTTP cannot restore an old answer after Pause a
   assert.equal((view.getByRole('radio') as HTMLInputElement).checked, true);
 });
 
-test('Host Close requires confirmation and delayed action refresh cannot replace newer socket closure', async () => {
+test('Host End Game requires confirmation and delayed action refresh cannot replace newer socket closure', async () => {
   const live = socket();
   let confirmed = false;
   const confirmations: string[] = [];
@@ -111,11 +111,12 @@ test('Host Close requires confirmation and delayed action refresh cannot replace
     return new Promise(done => { resolve = done; });
   };
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Close room' })));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Close room' })); });
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'End Game' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'End Game' })); });
   assert.equal(posts, 0);
+  assert.match(confirmations[0], /End this game/);
   confirmed = true;
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Close room' })); });
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'End Game' })); });
   assert.equal(posts, 1); assert.equal(confirmations.length, 2);
   await act(async () => { live.emit('lobby:state', { room: { ...room, closedAt: 'closed' } }); });
   await act(async () => { resolve(Response.json({ room })); });
@@ -124,13 +125,13 @@ test('Host Close requires confirmation and delayed action refresh cannot replace
 
 const hostCases = [
   { state: 'LOBBY', game: null, buttons: ['Start Game', 'Close room'] },
-  { state: 'ROUND_INTRO', game: { state: 'ROUND_INTRO', roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '' }, buttons: ['Pause', 'Start Round', 'Close room'] },
-  { state: 'QUESTION', game: { ...question, state: 'QUESTION' }, buttons: ['Pause', 'Start Question', 'Close room'] },
-  { state: 'ANSWERING', game: question, buttons: ['Pause', 'Close room'] },
-  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'manual' }, buttons: ['Resume', 'Close room'] },
-  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'player_disconnect', disconnectedPlayer: { id: 'p', name: 'Alice', present: true } }, buttons: ['Wait for Player', 'Continue Without Player', 'Close room'] },
-  { state: 'ANSWER_REVEAL', game: { ...question, state: 'ANSWER_REVEAL', questionNumber: 1, questionCount: 2, statistics: { correct: 1, wrong: 0, unanswered: 0 }, nextAction: 'next' }, buttons: ['Pause', 'Next Question', 'Close room'] },
-  ...(['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'] as const).map(state => ({ state, game: { state, roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', leaderboard: [{ playerId: 'p', displayName: 'Alice', totalPoints: 1, rank: 1 }], nextAction: state === 'ROUND_END' ? 'show-leaderboard' : state === 'LEADERBOARD' ? 'next-round' : state === 'FINAL_RESULTS' ? 'show-winner' : null }, buttons: state === 'ROUND_END' ? ['Pause', 'Show Leaderboard', 'Close room'] : state === 'LEADERBOARD' ? ['Pause', 'Next Round', 'Close room'] : state === 'FINAL_RESULTS' ? ['Pause', 'Show Winner', 'Close room'] : ['Close room'] })),
+  { state: 'ROUND_INTRO', game: { state: 'ROUND_INTRO', roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '' }, buttons: ['Pause', 'Start Round', 'End Game'] },
+  { state: 'QUESTION', game: { ...question, state: 'QUESTION' }, buttons: ['Pause', 'Start Question', 'End Game'] },
+  { state: 'ANSWERING', game: question, buttons: ['Pause', 'End Game'] },
+  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'manual' }, buttons: ['Resume', 'End Game'] },
+  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'player_disconnect', disconnectedPlayer: { id: 'p', name: 'Alice', present: true } }, buttons: ['Wait for Player', 'Continue Without Player', 'End Game'] },
+  { state: 'ANSWER_REVEAL', game: { ...question, state: 'ANSWER_REVEAL', questionNumber: 1, questionCount: 2, statistics: { correct: 1, wrong: 0, unanswered: 0 }, nextAction: 'next' }, buttons: ['Pause', 'Next Question', 'End Game'] },
+  ...(['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'] as const).map(state => ({ state, game: { state, roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', leaderboard: [{ playerId: 'p', displayName: 'Alice', totalPoints: 1, rank: 1 }], nextAction: state === 'ROUND_END' ? 'show-leaderboard' : state === 'LEADERBOARD' ? 'next-round' : state === 'FINAL_RESULTS' ? 'show-winner' : null }, buttons: state === 'ROUND_END' ? ['Pause', 'Show Leaderboard', 'End Game'] : state === 'LEADERBOARD' ? ['Pause', 'Next Round', 'End Game'] : state === 'FINAL_RESULTS' ? ['Pause', 'Show Winner', 'End Game'] : ['Close room'] })),
   { state: 'ANSWERING', closedAt: 'closed', game: question, buttons: [] },
 ];
 for (const [index, scenario] of hostCases.entries()) test(`Host HTTP reload restores exact controls: ${scenario.state} case ${index}`, async () => {
@@ -140,7 +141,7 @@ for (const [index, scenario] of hostCases.entries()) test(`Host HTTP reload rest
   await waitFor(() => assert.ok(view.getByText('Party')));
   assert.deepEqual(view.queryAllByRole('button').map(button => button.textContent).sort(), (['FINAL_RESULTS', 'WINNER_SCREEN'].includes(scenario.state) || ('closedAt' in scenario && scenario.closedAt) ? [...scenario.buttons] : ['Kick', ...scenario.buttons]).sort());
   const primary = view.container.querySelector('.host-primary-action');
-  if (scenario.buttons.some(label => !['Pause', 'Close room', 'Continue Without Player'].includes(label))) {
+  if (scenario.buttons.some(label => !['Pause', 'End Game', 'Close room', 'Continue Without Player'].includes(label))) {
     assert.ok(primary);
     assert.equal(view.getByRole('region', { name: 'Game controls' }).querySelector('button'), primary);
   }
@@ -265,4 +266,26 @@ test('Kicked Player loses active answer controls and stale reconnect cannot rest
   assert.equal(view.queryByRole('radio'), null);
   assert.equal(view.queryByRole('button', { name: 'Submit' }), null);
   assert.equal(view.queryByLabelText('Player language'), null);
+});
+
+test('returning to a visible Player tab requests a fresh authenticated socket snapshot', async () => {
+  const live = socket(); save();
+  Object.assign(live, { connected: true });
+  const subscriptions: unknown[] = [];
+  live.on('lobby:subscribe', payload => subscriptions.push(payload));
+  globalThis.fetch = async () => Response.json(identity);
+  show('/play/ABCDE');
+  await waitFor(() => assert.equal(live.listenerCount('connect'), 1));
+  await act(async () => { live.emit('connect'); });
+  assert.equal(subscriptions.length, 1);
+  const hidden = Object.getOwnPropertyDescriptor(dom.window.document, 'hidden');
+  Object.defineProperty(dom.window.document, 'hidden', { configurable: true, value: false });
+  try {
+    await act(async () => { dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange')); });
+    assert.equal(subscriptions.length, 2);
+    assert.deepEqual(subscriptions[1], { roomId: 'room', audience: 'player', token: 'secret' });
+  } finally {
+    if (hidden) Object.defineProperty(dom.window.document, 'hidden', hidden);
+    else Reflect.deleteProperty(dom.window.document, 'hidden');
+  }
 });

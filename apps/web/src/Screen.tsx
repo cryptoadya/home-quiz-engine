@@ -19,6 +19,7 @@ export function Screen({ roomId: resolvedId }: { roomId?: string } = {}) {
     <header className="screen-header">
     <h1>{state?.room.closedAt ? 'Викторина / Quiz' : state?.room.state === 'PAUSED' ? 'Пауза / Paused' : state?.room.state && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.room.state) ? 'Игра / Game' : state?.room.state === 'ANSWER_REVEAL' ? 'Ответ / Answer Reveal' : state?.room.state === 'ROUND_INTRO' ? 'Начало раунда / Round Intro' : (state?.room.state === 'QUESTION' || state?.room.state === 'ANSWERING') ? 'Вопрос / Question' : 'Лобби / Lobby'}</h1>
     {state && <>
+      {state.game?.state === 'PAUSED' && !state.room.closedAt && <div className="screen-pause-overlay" role="status"><strong>Пауза / Paused</strong><p>Продолжим по команде ведущего / Waiting for the host</p></div>}
       <h2 className="quiz-title">{state.room.quizTitle}</h2>
       {state.room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
       {!connected && <p className="connection-chip" data-connected={false}>Переподключение… / Reconnecting…</p>}

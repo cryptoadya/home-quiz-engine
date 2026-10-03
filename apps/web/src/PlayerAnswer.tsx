@@ -83,10 +83,10 @@ export function PlayerAnswerContent({ question, language, seconds, onSubmit, dra
         <ul className="matching-pairs">{pairs.map(pair => { const left = question.leftItems?.find(item => item.id === pair.leftId); const right = question.rightItems?.find(item => item.id === pair.rightId); return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>; })}</ul>
       </fieldset> : <fieldset disabled={locked} className="answer-choices">
         <legend>{multiple ? (ru ? 'Выберите несколько вариантов' : 'Choose multiple options') : (ru ? 'Выберите один вариант' : 'Choose one option')}</legend>
-        {question.options.map(option => <label key={option.id} data-selected={selected.includes(option.id) || undefined}>
-          <input type={multiple ? "checkbox" : "radio"} name="answer" value={option.id} checked={selected.includes(option.id)}
+        {question.options.map((option, index) => <label key={option.id} data-selected={selected.includes(option.id) || undefined}>
+          <input type={multiple ? "checkbox" : "radio"} name="answer" aria-label={option.text} value={option.id} checked={selected.includes(option.id)}
             disabled={locked} onChange={() => changeDraft({ selection: multiple ? (selection.includes(option.id) ? selection.filter(id => id !== option.id) : [...selection, option.id]) : [option.id] })} />
-          {option.text}
+          <span className="answer-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span><span className="answer-text">{option.text}</span>
         </label>)}
       </fieldset>}
       {!submission?.submitted && <p>{ru ? 'Выбор можно изменить до отправки' : 'You can change your choice before Submit'}</p>}

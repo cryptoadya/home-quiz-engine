@@ -46,7 +46,7 @@ test('Host Pause hides progression, reload restores pause, Resume restores prior
   let view = show('/host/room');
   await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Question' })));
   await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Pause' })); });
-  assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Resume', 'Close room']);
+  assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Resume', 'End Game']);
   view.unmount(); view = show('/host/room');
   await waitFor(() => assert.ok(view.getByRole('button', { name: 'Resume' })));
   await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Resume' })); });
@@ -138,7 +138,7 @@ for (const audience of ['host', 'screen']) test(`${audience} disconnect pause re
   if (audience === 'host') {
     assert.ok(view.getByText('Alice disconnected.'));
     assert.ok(view.getByText('Game paused.'));
-    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Wait for Player', 'Continue Without Player', 'Close room']);
+    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Wait for Player', 'Continue Without Player', 'End Game']);
     assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, true);
   } else {
     assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));

@@ -103,12 +103,15 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
     }
     const socket = lobbyTransport.connect();
     socketRef.current = socket;
-    socket.on('connect', () => {
+    const subscribe = () => {
       subscribed.current = false;
       // The subscription returns a fresh SQLite snapshot on EVERY connection;
       // no event history or client cache is used for recovery.
       socket.emit('lobby:subscribe', { roomId, audience, ...(audience === 'player' ? { token } : {}) });
-    });
+    };
+    socket.on('connect', subscribe);
+    const restoreVisible = () => { if (!document.hidden && socket.connected) subscribe(); };
+    document.addEventListener('visibilitychange', restoreVisible);
     socket.on('lobby:state', (snapshot: LobbyState) => {
       if (!active || snapshot.room.id !== roomId) return;
       if (audience === 'screen') {
@@ -129,11 +132,11 @@ export function useLobby(roomId: string | undefined, audience: Audience, token?:
       setState(snapshot); setError(''); setConnected(true);
     });
     socket.on('player:removed', (body: { roomId: string }) => { if (body.roomId === roomId) { revision.current++; setRemoved(true); setState(null); } });
-    socket.on('lobby:error', (body: { error: string }) => { subscribed.current = false; clearInFlight(); setError(body.error); setConnected(false); });
+    socket.on('lobby:error', (body: { error: string }) => { revision.current++; subscribed.current = false; clearInFlight(); setState(null); setError(body.error); setConnected(false); });
     socket.on('disconnect', () => { subscribed.current = false; clearInFlight(); setConnected(false); });
     socket.on('connect_error', () => { subscribed.current = false; clearInFlight(); setConnected(false); });
     socket.connect();
-    return () => { revision.current++; active = false; subscribed.current = false; clearInFlight(); socket.removeAllListeners(); socket.disconnect(); socketRef.current = null; };
+    return () => { revision.current++; active = false; subscribed.current = false; clearInFlight(); document.removeEventListener('visibilitychange', restoreVisible); socket.removeAllListeners(); socket.disconnect(); socketRef.current = null; };
   }, [roomId, audience, token, clearInFlight, sendPending]);
   return { state, refresh, error, connected, removed, reportMediaEnded };
 }

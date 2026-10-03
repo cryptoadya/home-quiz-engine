@@ -135,6 +135,7 @@ export function QuizList() {
   }
 
   return <ThemeSurface className="admin">
+    <div className="app-masthead"><span className="wordmark">Home Quiz</span><span className="surface-label">Quiz studio</span></div>
     <header className="admin-header"><div><h1>My quizzes</h1><p>Edit a quiz, preview your questions, then open a lobby.</p></div><button onClick={create} disabled={busy}>Create quiz</button></header>
     <details className="authoring-secondary"><summary>Import & history</summary><div className="authoring-actions">
       <button className="subtle" disabled={busy} onClick={() => importInput.current?.click()}>Import Quiz</button>
@@ -263,7 +264,7 @@ function QuizEditorContent() {
     <nav className="authoring-steps" aria-label="Quiz authoring"><a href="#quiz-basics">1. Quiz basics</a><a href="#rounds-questions">2. Rounds & questions</a><a href="#question-preview">3. Preview</a><a href="#play-quiz">4. Play</a></nav>
     {(saves.error || error) && <p role="alert" className="error">{saves.error || error} Review the fields or your connection, then try again. Your edits are still here.</p>}
     {launchError && <p role="alert" className="error">{launchError} Check readiness and your connection, then try the action again.</p>}
-    <section className="readiness" aria-label="Quiz readiness">
+    <section className="readiness" data-ready={validation?.ready} aria-label="Quiz readiness">
       <strong aria-live="polite">{validation ? validation.ready ? 'Ready to play' : `Problems to fix · ${validation.problems.length}` : 'Checking readiness…'}</strong>
       {validationError && <p role="alert" className="error">Could not check readiness. <button className="subtle" onClick={refreshValidation}>Try again</button> {validationError}</p>}
       {validation && validation.problems.length > 0 && <details>

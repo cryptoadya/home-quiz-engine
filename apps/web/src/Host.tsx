@@ -59,8 +59,9 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
     finally { setBusy(false); }
   }
 
+  const gameInProgress = !!room && !['LOBBY', 'WINNER_SCREEN'].includes(room.state);
   async function close() {
-    if (!window.confirm('Close this room and release its code?')) return;
+    if (!window.confirm(gameInProgress ? 'End this game and close the room? Players will no longer be able to answer.' : 'Close this room and release its code?')) return;
     setBusy(true);
     setError('');
     try {
@@ -94,8 +95,7 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
   }
 
   return <ThemeSurface themeId={room?.themeId} className="host" data-phase={room?.closedAt ? 'CLOSED' : room?.state}>
-    <h1>Host</h1>
-    <Link to="/admin">Quiz list</Link>
+    <header className="app-masthead"><div><span className="wordmark">Home Quiz</span><h1>Host</h1></div><Link to="/admin">Quiz list</Link></header>
     {(error || loadError) && <p role="alert">{error || loadError}</p>}
     {!room && !error && !loadError && <p>Loading room...</p>}
     {room && <>
@@ -148,7 +148,7 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
       </li>)}</ul>
       </section>
       <footer className="host-danger">
-      {room.closedAt ? <p role="status">Room closed</p> : <button className="subtle danger" onClick={() => void close()} disabled={busy}>Close room</button>}
+      {room.closedAt ? <p role="status">Room closed</p> : <button className="subtle danger" onClick={() => void close()} disabled={busy}>{gameInProgress ? 'End Game' : 'Close room'}</button>}
       </footer>
     </>}
   </ThemeSurface>;

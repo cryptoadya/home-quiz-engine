@@ -185,3 +185,25 @@ test('new playback revision ignores stale ended and completes after successful a
     assert.deepEqual(completions, [['a', 2, 5]]);
   } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; }
 });
+
+test('answer-count snapshots do not interrupt an unchanged Screen playback attempt', async () => {
+  const proto = window.HTMLMediaElement.prototype;
+  const oldPlay = proto.play, oldPause = proto.pause;
+  const oldReady = Object.getOwnPropertyDescriptor(proto, 'readyState')!;
+  Object.defineProperty(proto, 'readyState', { configurable: true, get: () => 1 });
+  let plays = 0, pauses = 0;
+  proto.play = function () { plays++; return Promise.resolve(); };
+  proto.pause = function () { pauses++; };
+  const media = { mediaId: 'track', name: 'track', kind: 'audio' as const, mediaUrl: '/audio', playback: { playing: true, positionSeconds: 0, serverNow: 0, revision: 1 } };
+  const question: CurrentQuestion = { state: 'ANSWERING', questionId: 'q', roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: [media] };
+  try {
+    const view = render(createElement(QuestionContent, { question }));
+    await waitFor(() => assert.equal(plays, 1));
+    const audio = view.container.querySelector('audio')!;
+    audio.currentTime = 4;
+    view.rerender(createElement(QuestionContent, { question: { ...question, answers: { answered: 1, expected: 3 }, media: [{ ...media, playback: { ...media.playback, positionSeconds: 4, serverNow: 4000 } }] } }));
+    assert.equal(pauses, 0, 'a passive broadcast must not pause the current media');
+    assert.equal(plays, 1);
+    assert.equal(audio.currentTime, 4);
+  } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; Object.defineProperty(proto, 'readyState', oldReady); }
+});

@@ -292,3 +292,32 @@ test('Kick revokes every authenticated tab and broadcasts remaining roster to Ho
     assert.equal(io.sockets.sockets.get(sockets[0].id!)!.rooms.size, 1);
   } finally { sockets.forEach(socket => socket.disconnect()); await new Promise<void>(resolve => io.close(() => resolve())); db.close(); }
 });
+
+test('deleting an editable quiz notifies every subscribed Lobby surface and revokes players', async () => {
+  const db = initializeDatabase(':memory:');
+  const quiz = createQuiz(db);
+  db.prepare("INSERT INTO game_sessions (id, code, quiz_id, state, created_at) VALUES ('room', 'ABCDE', ?, 'LOBBY', 'now')").run(quiz.id);
+  const { server, io } = createQuizServer(db);
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const sockets = ['host', 'screen', 'player'].map(() => connect(url, { transports: ['websocket'], forceNew: true }));
+  try {
+    await Promise.all(sockets.map(socket => once(socket, 'connect')));
+    const identity = (await request(server).post('/api/rooms/code/ABCDE/players').send({ name: 'Alex', language: 'en' })).body;
+    for (const [index, audience] of ['host', 'screen', 'player'].entries()) {
+      const state = nextState(sockets[index]);
+      sockets[index].emit('lobby:subscribe', { roomId: 'room', audience, token: identity.token });
+      await state;
+    }
+    const events = sockets.map((socket, index) => new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Deleted Lobby was not invalidated')), 1500);
+      socket.once(index === 2 ? 'player:removed' : 'lobby:error', () => { clearTimeout(timeout); resolve(); });
+    }));
+    await request(server).delete(`/api/quizzes/${quiz.id}`).expect(204);
+    await Promise.all(events);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM session_players').get()!.n, 0);
+  } finally {
+    sockets.forEach(socket => socket.disconnect());
+    await new Promise<void>(resolve => io.close(() => resolve())); db.close();
+  }
+});

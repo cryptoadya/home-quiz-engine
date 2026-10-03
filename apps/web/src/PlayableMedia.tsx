@@ -17,6 +17,8 @@ function playbackError(element: HTMLMediaElement, cause?: unknown): PlaybackErro
 
 export function PlayableMedia({ media, onEnded, localControls = false }: { localControls?: boolean; media: QuestionMedia; onEnded?: (mediaId: string, revision: number, duration: number) => void }) {
   const ref = useRef<HTMLMediaElement>(null);
+  const projection = useRef({ playback: media.playback, receivedAt: performance.now() });
+  if (projection.current.playback !== media.playback) projection.current = { playback: media.playback, receivedAt: performance.now() };
   const completion = useRef({ revision: media.playback?.revision, started: false, reported: false, replaying: false });
   if (completion.current.revision !== media.playback?.revision) completion.current = { revision: media.playback?.revision, started: false, reported: false, replaying: false };
   const endedCallback = useRef(onEnded);
@@ -26,7 +28,6 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
   useEffect(() => {
     const element = ref.current!;
     const playback = media.playback;
-    const receivedAt = performance.now();
     let active = true;
     const current = () => active && completion.current.revision === playback?.revision;
     function completed() {
@@ -44,7 +45,8 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
     function synchronize() {
       if (!current() || !playback || element.readyState === 0) return;
       // A local EOF recovery must survive same-attempt projections and Pause/Resume.
-      let target = completion.current.replaying ? element.currentTime : playback.positionSeconds + (playback.playing ? (performance.now() - receivedAt) / 1000 : 0);
+      const latest = projection.current;
+      let target = completion.current.replaying ? element.currentTime : latest.playback!.positionSeconds + (playback.playing ? (performance.now() - latest.receivedAt) / 1000 : 0);
       if (Number.isFinite(element.duration)) target = Math.min(target, element.duration);
       // Finished audio has no frame to restore, and seeking EOF can fail in MP3 demuxers.
       try { if (!completion.current.replaying && (media.kind !== 'audio' || !Number.isFinite(element.duration) || target < element.duration)) element.currentTime = target; } catch { /* Retry once metadata is ready. */ }
@@ -59,7 +61,8 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
     }
     retry.current = () => {
       if (!current() || (playback ? !playback.playing : !localControls)) return;
-      const target = playback ? playback.positionSeconds + (performance.now() - receivedAt) / 1000 : element.currentTime;
+      const latest = projection.current;
+      const target = playback ? latest.playback!.positionSeconds + (performance.now() - latest.receivedAt) / 1000 : element.currentTime;
       if (Number.isFinite(element.duration) && target >= element.duration && !completion.current.started) {
         // Never infer mandatory completion from server time. Replay locally to earn it.
         try { element.currentTime = 0; } catch { setError('failed'); return; }
@@ -72,7 +75,9 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
     element.addEventListener('loadedmetadata', synchronize);
     element.addEventListener('ended', completed);
     return () => { active = false; element.removeEventListener('ended', completed); element.removeEventListener('loadedmetadata', synchronize); element.pause(); };
-  }, [media.mediaUrl, media.playback, media.kind, localControls]);
+  // Answer/presence snapshots update the projection without seeking, pausing or
+  // restarting the same playback attempt. Only actual commands rerun this effect.
+  }, [media.mediaUrl, media.playback?.revision, media.playback?.playing, media.kind, localControls]);
   const props = { src: media.mediaUrl, preload: 'metadata', 'aria-label': media.name, controls: localControls, onPlay: () => { if (localControls) ref.current?.parentElement?.querySelectorAll<HTMLMediaElement>('audio, video').forEach(peer => { if (peer !== ref.current) peer.pause(); }); }, onError: () => setError(playbackError(ref.current!)) };
   return <>{media.kind === 'video'
     ? <video key={media.playback?.revision} {...props} ref={ref as Ref<HTMLVideoElement>} playsInline className="question-video" />

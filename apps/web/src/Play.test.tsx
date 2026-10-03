@@ -330,3 +330,22 @@ for (const outcome of ['revoked', 'network-error'] as const) test(`unmounted rec
   assert.equal(current.queryByRole('alert'), null);
   assert.equal(current.queryByLabelText('Name'), null);
 });
+
+test('Player can find and join a lobby when browser storage access is denied', async () => {
+  mock.method(dom.window.Storage.prototype, 'getItem', () => { throw new Error('Storage denied'); });
+  globalThis.fetch = async (_url, init) => Response.json(init?.method === 'POST'
+    ? { room, player, active: true, token: 'secret' } : room);
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByLabelText('Name')));
+  fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Alex' } });
+  fireEvent.click(view.getByRole('button', { name: 'Join' }));
+  await waitFor(() => assert.ok(view.getByText('Waiting for the host…')));
+});
+
+test('Player ignores a failed removal of corrupt storage and still resolves the current lobby', async () => {
+  dom.window.localStorage.setItem(key, '{broken');
+  mock.method(dom.window.Storage.prototype, 'removeItem', () => { throw new Error('Storage denied'); });
+  globalThis.fetch = async () => Response.json(room);
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByLabelText('Name')));
+});

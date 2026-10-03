@@ -6,6 +6,8 @@ import { test } from 'node:test';
 import request from 'supertest';
 import { createApp } from './app.js';
 import { initializeDatabase } from './db.js';
+import { createRound } from './rounds.js';
+import { createQuestion, createOption } from './questions.js';
 
 test('health and quiz CRUD persist drafts with validation', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'home-quiz-api-'));
@@ -146,4 +148,31 @@ test('round PUT accepts 5000 description characters and rejects 5001 in either l
       assert.equal((await app.get(`/api/quizzes/${quizId}/rounds`)).body[0][field].length, 5000);
     }
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('quiz edits publish fresh Lobby metadata but do not republish frozen games', async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const changed: string[] = [];
+    const api = request(createApp(db, id => changed.push(id)));
+    const quiz = (await api.post('/api/quizzes').expect(201)).body;
+    db.prepare("INSERT INTO game_sessions (id, code, quiz_id, state, created_at) VALUES ('editing-lobby', 'ABCDE', ?, 'LOBBY', 'now')").run(quiz.id);
+    await api.put(`/api/quizzes/${quiz.id}`).send({ title: 'Updated party', themeId: 'halloween', defaultAnswerTimeSeconds: 30, shuffleAnswers: false }).expect(200);
+    assert.deepEqual(changed, ['editing-lobby']);
+    assert.equal((await api.get('/api/rooms/editing-lobby')).body.quizTitle, 'Updated party');
+    const round = createRound(db, quiz.id);
+    db.prepare("UPDATE rounds SET title_ru = 'Раунд', title_en = 'Round' WHERE id = ?").run(round.id);
+    const question = createQuestion(db, round.id);
+    db.prepare("UPDATE questions SET text_ru = 'Вопрос', text_en = 'Question' WHERE id = ?").run(question.id);
+    for (const correct of [true, false]) {
+      const option = createOption(db, question.id);
+      db.prepare("UPDATE answer_options SET text_ru = 'Ответ', text_en = 'Answer', is_correct = ? WHERE id = ?").run(Number(correct), option.id);
+    }
+    await api.post('/api/rooms/code/ABCDE/players').send({ name: 'Alice', language: 'en' }).expect(201);
+    await api.post('/api/rooms/editing-lobby/start').expect(200);
+    changed.length = 0;
+    await api.put(`/api/quizzes/${quiz.id}`).send({ title: 'Next party', themeId: 'default', defaultAnswerTimeSeconds: 45, shuffleAnswers: true }).expect(200);
+    assert.deepEqual(changed, []);
+    assert.equal((await api.get('/api/rooms/editing-lobby')).body.quizTitle, 'Updated party');
+  } finally { db.close(); }
 });

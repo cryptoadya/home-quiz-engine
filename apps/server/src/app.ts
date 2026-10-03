@@ -293,10 +293,13 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
     if ('error' in result) return response.status(400).json(result);
     const quiz = updateQuiz(db, request.params.id, result.changes);
     if (!quiz) return response.status(404).json({ error: 'Quiz not found.' });
+    for (const lobby of db.prepare("SELECT id FROM game_sessions WHERE quiz_id = ? AND state = 'LOBBY' AND closed_at IS NULL").all(quiz.id)) lobbyChanged(String(lobby.id));
     return response.json(quiz);
   });
   app.delete('/api/quizzes/:id', (request, response) => {
+    const lobbies = db.prepare("SELECT id FROM game_sessions WHERE quiz_id = ? AND state = 'LOBBY'").all(request.params.id);
     if (!deleteQuiz(db, request.params.id)) return response.status(404).json({ error: 'Quiz not found.' });
+    for (const lobby of lobbies) lobbyChanged(String(lobby.id));
     return response.status(204).end();
   });
 

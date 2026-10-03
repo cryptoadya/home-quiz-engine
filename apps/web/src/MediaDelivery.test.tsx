@@ -31,6 +31,9 @@ const answering = () => ({ room: room('ANSWERING'), game: { ...question().game, 
   media: question().game.media.map(item => ({ ...item, playback: { ...item.playback, playing: false, revision: 2 } })) } });
 
 function setup(autoplay = true) {
+  // Delivery tests exercise event ordering; a busy parallel suite must not
+  // turn a five-second fixture into an already-expired playback attempt.
+  mock.method(performance, 'now', () => 0);
   let plays = 0;
   const played: string[] = [];
   proto.play = function () { plays++; played.push(this.getAttribute('src') ?? ''); return autoplay ? Promise.resolve() : Promise.reject(new Error('blocked')); };

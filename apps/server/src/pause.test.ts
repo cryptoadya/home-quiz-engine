@@ -150,7 +150,7 @@ test('Answering freezes ten seconds across DB reopen; rejects Submit; resumes an
     const player = getPlayerGame(db, room.id, 'en', identities[0].player.id, now)!;
     assert.deepEqual(player.submission, { submitted: true, optionId: options[0].id });
     assert.equal(player.timer!.remainingMs, 10000);
-    assert.equal(player.timer!.durationSeconds, 10);
+    assert.equal(player.timer!.durationSeconds, 30);
     jobs[0].callback(); // Cancelled before Pause: cannot interfere with the resumed timer.
     assert.equal(jobs.length, 2);
     manager.stop(); db.close(); db = initializeDatabase(path);
@@ -379,5 +379,28 @@ for (const showOptions of [false, true]) test(`text-only paused Answering hides 
     assert.equal(host.content.options.filter((option: { isCorrect?: boolean }) => option.isCorrect).length, 1);
     assert.equal(host.content.timer, undefined);
     assert.equal(getPlayerGame(db, room.id, 'en', 'unused'), null);
+  } finally { db.close(); }
+});
+
+test('timer progress keeps the authored duration after manual and disconnect resume', async () => {
+  const db = initializeDatabase(':memory:');
+  try {
+    const { api, root, room, identities } = await setup(db);
+    await api.post(`${root}/start`).expect(200);
+    await api.post(`${root}/start-round`).expect(200);
+    startQuestion(db, room.id, epoch);
+    pauseGame(db, room.id, () => epoch + 20000);
+    resumeGame(db, room.id, () => epoch + 60000);
+    for (const audience of ['host', 'screen'] as const) {
+      const game = getSurfaceState(db, room.id, audience, epoch + 60000)!.game as any;
+      assert.equal(game.timer.durationSeconds, 30);
+      assert.equal(game.timer.remainingMs, 10000);
+    }
+    const { autoPauseForDisconnectedPlayer, waitForPlayer } = await import('./pause.js');
+    autoPauseForDisconnectedPlayer(db, room.id, identities[0].player.id, () => epoch + 62000);
+    waitForPlayer(db, room.id, () => true, () => epoch + 90000);
+    const timer = getPlayerGame(db, room.id, 'en', identities[0].player.id, epoch + 90000)!.timer!;
+    assert.equal(timer.durationSeconds, 30);
+    assert.equal(timer.remainingMs, 8000);
   } finally { db.close(); }
 });

@@ -110,7 +110,10 @@ export function startRound(db: DatabaseSync, roomId: string) {
 function readTimer(db: DatabaseSync, roomId: string, now: number) {
   const row = db.prepare('SELECT answer_started_at, answer_deadline_at FROM game_sessions WHERE id = ?').get(roomId)!;
   if (row.answer_started_at === null || row.answer_deadline_at === null) return undefined;
-  return projectAnswerTimer(String(row.answer_started_at), String(row.answer_deadline_at), now);
+  const { snapshot, round, questionIndex } = currentContent(db, roomId);
+  // Resume timestamps describe the remaining interval, not a new full question.
+  return { ...projectAnswerTimer(String(row.answer_started_at), String(row.answer_deadline_at), now),
+    durationSeconds: effectiveDuration(round.questions[questionIndex!].answerTimeSeconds, snapshot.defaultAnswerTimeSeconds) };
 }
 
 // Only call after reconnectPlayer verifies the token, room and locked roster.

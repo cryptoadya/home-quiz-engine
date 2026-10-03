@@ -24,7 +24,7 @@ function PlayerRoom({ code }: { code: string }) {
   const [name, setName] = useState('');
   const [searchParams] = useSearchParams();
   const [language, setLanguage] = useState<'ru' | 'en'>(() => searchParams.get('lang') === 'en' ? 'en' : 'ru');
-  const { state: live, error: subscriptionError, removed } = useLobby(identity?.room.id, 'player', token);
+  const { state: live, error: subscriptionError, removed, connected } = useLobby(identity?.room.id, 'player', token);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(Boolean(code));
   const [retry, setRetry] = useState(0);
@@ -39,14 +39,17 @@ function PlayerRoom({ code }: { code: string }) {
     setBusy(true);
     setError('');
     async function load() {
-      const raw = window.localStorage.getItem(storageKey(code));
+      let raw: string | null = null;
+      try { raw = window.localStorage.getItem(storageKey(code)); }
+      catch { /* Restricted storage must not prevent joining in this tab. */ }
+      const forget = () => { try { window.localStorage.removeItem(storageKey(code)); } catch { /* Storage may be read-only. */ } };
       let saved: { roomId: string; token: string } | null = null;
       if (raw) {
         try {
           const parsed = JSON.parse(raw);
           if (typeof parsed?.roomId === 'string' && typeof parsed?.token === 'string') saved = parsed;
         } catch { /* Corrupt local data cannot restore an identity. */ }
-        if (!saved) window.localStorage.removeItem(storageKey(code));
+        if (!saved) forget();
       }
       if (saved) {
         const response = await fetch(`/api/rooms/${encodeURIComponent(saved.roomId)}/reconnect`, {
@@ -60,7 +63,7 @@ function PlayerRoom({ code }: { code: string }) {
         if (!response.ok && response.status !== 401 && response.status !== 404) throw new Error(body.error || 'Could not reconnect. Please retry.');
         // Closed/inactive identities can still reconnect successfully by ID, but
         // this URL's code may now belong to a different room. Resolve it afresh.
-        window.localStorage.removeItem(storageKey(code));
+        forget();
         setToken(null); setIdentity(null);
       }
       const response = await fetch(`/api/rooms/code/${encodeURIComponent(code)}`);
@@ -153,7 +156,7 @@ function PlayerRoom({ code }: { code: string }) {
   if (answerDraft && !validDraft) setAnswerDraft(null);
   const emptyDraft: PlayerDraft = { selection: [], mapping: [], activeLeft: null };
   return <ThemeSurface themeId={(currentRoom ?? room)?.themeId} className="player" data-phase={currentRoom?.closedAt ? 'CLOSED' : currentRoom?.state} data-excluded={identity?.game?.excluded || undefined}>
-    <h1>Player<ThemeDecoration kind="player" /></h1>
+    <div className="app-masthead player-masthead"><span className="wordmark">Home Quiz</span><h1>Player<ThemeDecoration kind="player" /></h1></div>
     {error && <p role="alert">{error}</p>}
     {subscriptionError && <p role="alert">{subscriptionError} {ru ? 'Обновите страницу для повторного подключения.' : 'Reload to reconnect.'}</p>}
     {identity ? <>
@@ -175,6 +178,7 @@ function PlayerRoom({ code }: { code: string }) {
       </div>}
       </header>
       {removed && <p className="state-notice excluded" role="status">{ru ? 'Ведущий удалил вас из игры.' : 'The host removed you from the game.'}</p>}
+      {isActive && !connected && !subscriptionError && <p className="connection-chip" data-connected={false}>{ru ? 'Переподключение…' : 'Reconnecting…'}</p>}
       {!removed && (isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
         {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game?.excluded && currentRoom?.state === 'ANSWERING' ? <p className="state-notice excluded" role="status">{ru ? 'Этот вопрос продолжен без вас' : 'This question continued without you'}</p> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={JSON.stringify([draftOwner, identity.game.questionId])} question={identity.game}
           token={token} roomId={identity.room.id} language={identity.player.language}
@@ -199,7 +203,7 @@ function PlayerRoom({ code }: { code: string }) {
         if (next === code) setRetry(value => value + 1);
         else navigate(`/play/${encodeURIComponent(next)}`);
       }}>
-        <label>Room code<input value={enteredCode} onChange={event => setEnteredCode(event.target.value)} required
+        <label>Room code<input className="code-input" value={enteredCode} onChange={event => setEnteredCode(event.target.value)} required
           autoCapitalize="characters" autoCorrect="off" spellCheck={false} readOnly={Boolean(room)} /></label>
         {!room && <button disabled={busy} type="submit">{code && error ? 'Retry' : 'Find room'}</button>}
       </form>
@@ -207,7 +211,7 @@ function PlayerRoom({ code }: { code: string }) {
       {room && <>
         <h2>{room.quizTitle}</h2>
         <form className="fields" onSubmit={event => { event.preventDefault(); void join(); }}>
-          <label>Name<input value={name} onChange={event => setName(event.target.value)} required autoComplete="nickname" /></label>
+          <label>Name<input value={name} onChange={event => setName(event.target.value)} required maxLength={20} autoComplete="nickname" /></label>
           <p>Up to 20 characters: letters, spaces, hyphens and apostrophes.</p>
           <label>Language<select value={language} onChange={event => setLanguage(event.target.value as 'ru' | 'en')}>
             <option value="ru">RU</option><option value="en">EN</option>

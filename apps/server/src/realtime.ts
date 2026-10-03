@@ -35,6 +35,7 @@ export function createQuizServer(db: DatabaseSync) {
     for (const audience of ['host', 'screen', 'player'] as const) {
       const state = getSurfaceState(db, roomId, audience, Date.now(), isPlayerPresent);
       if (state) io.to(channel(roomId, audience)).emit('lobby:state', state);
+      else io.to(channel(roomId, audience)).emit('lobby:error', { error: 'Room no longer exists. The quiz was deleted.' });
     }
   }
   const deadlines = createDeadlineManager(db, broadcast);

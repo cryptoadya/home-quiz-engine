@@ -23,6 +23,7 @@ import { createQuestion, deleteQuestion, getQuestion, listQuestions, reorderQues
   createOption, deleteOption, getOption, listOptions, reorderOptions, selectCorrectOption, updateOption, validateOptionChanges } from './questions.js';
 import { getRound } from './rounds.js';
 import { validateQuizReadiness } from './validation.js';
+import { duplicateQuestion, duplicateRound } from './authoring-copy.js';
 
 export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => void = () => {}, presence: PlayerPresenceChecker = absentPlayerPresence) {
   const app = express();
@@ -332,10 +333,18 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
     if (!deleteRound(db, request.params.quizId, request.params.roundId)) return response.status(404).json({ error: 'Round not found in quiz.' });
     return response.status(204).end();
   });
+  app.post('/api/quizzes/:quizId/rounds/:roundId/duplicate', (request, response) => {
+    const copy = duplicateRound(db, request.params.quizId, request.params.roundId);
+    return copy ? response.status(201).json(copy) : response.status(404).json({ error: 'Round not found in quiz.' });
+  });
 
   const roundPath = '/api/quizzes/:quizId/rounds/:roundId/questions';
   const questionPath = `${roundPath}/:questionId`;
   const optionsPath = `${questionPath}/options`;
+  app.post(`${questionPath}/duplicate`, (request, response) => {
+    const copy = duplicateQuestion(db, request.params.quizId, request.params.roundId, request.params.questionId);
+    return copy ? response.status(201).json(copy) : response.status(404).json({ error: 'Question not found in round.' });
+  });
   app.get(roundPath, (request, response) => {
     if (!getRound(db, request.params.quizId, request.params.roundId)) return response.status(404).json({ error: 'Round not found in quiz.' });
     return response.json(listQuestions(db, request.params.roundId));

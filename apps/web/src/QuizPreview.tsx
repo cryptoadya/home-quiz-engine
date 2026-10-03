@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Quiz } from './Admin';
 import type { Question, Option, Pair, Media, Side } from './Questions';
 import type { CurrentQuestion, PlayerQuestion, PlayerReveal, MatchingItem, PlayerMatchingItem } from './lobby';
@@ -64,6 +64,23 @@ export function QuizPreview(props: Props) {
   const [mode, setMode] = useState<PreviewMode>('RU Player');
   const [reveal, setReveal] = useState(false);
   const [shape, setShape] = useState('16 / 9');
+  const viewport = useRef<HTMLDivElement>(null);
+  const [screenScale, setScreenScale] = useState(1);
+  const screenWidth = shape === '9 / 16' ? 720 : 1280;
+  const [ratioWidth, ratioHeight] = shape.split('/').map(Number);
+  const screenHeight = screenWidth * ratioHeight / ratioWidth;
+  // Lay out Screen at a TV-sized resolution, then fit that stage into the rail.
+  // Measuring the rail as the Screen itself would produce false overflow warnings.
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (mode !== 'Screen' || !element) return;
+    const measure = () => { if (element.clientWidth) setScreenScale(element.clientWidth / screenWidth); };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [mode, screenWidth]);
   const content = useMemo(() => previewContent(props, mode, reveal),
     [props.quizId, props.quiz, props.question, props.options, props.pairs, props.media, props.roundNumber, props.questionNumber, props.questionCount, mode, reveal]);
   const language = mode === 'RU Player' ? 'ru' : 'en';
@@ -79,7 +96,8 @@ export function QuizPreview(props: Props) {
       {mode === 'Screen' && <label>Screen format<select value={shape} onChange={event => setShape(event.target.value)}><option value="16 / 9">Wide · 16:9</option><option value="4 / 3">Standard · 4:3</option><option value="9 / 16">Portrait · 9:16</option></select></label>}
     </div>
     <p className="preview-banner">Visual preview · timer is frozen · answers stay local. Reveal uses an unanswered sample result.</p>
-    <div className="preview-viewport" data-mode={mode === 'Screen' ? 'screen' : mode === 'Host' ? 'host' : 'player'} style={{ '--preview-ratio': shape } as CSSProperties}>
+    <div ref={viewport} className="preview-viewport" data-mode={mode === 'Screen' ? 'screen' : mode === 'Host' ? 'host' : 'player'} style={{ '--preview-ratio': shape,
+      '--preview-screen-width': `${screenWidth}px`, '--preview-screen-height': `${screenHeight}px`, '--preview-screen-scale': screenScale } as CSSProperties}>
     <ThemeSurface as="div" themeId={props.quiz?.themeId} data-phase={reveal ? 'ANSWER_REVEAL' : 'ANSWERING'} className={mode === 'Screen' ? 'screen-lobby' : mode === 'Host' ? 'preview-host' : 'player'}>
       {mode === 'Screen' && <ThemeDecoration kind="corners" />}
       <header className={mode === 'Screen' ? 'screen-header' : 'preview-header'}><h1>{mode === 'Screen' ? (reveal ? 'Ответ / Answer Reveal' : 'Вопрос / Question') : mode === 'Host' ? 'Host' : language === 'ru' ? 'Игрок' : 'Player'}</h1>

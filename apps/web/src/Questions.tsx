@@ -1,8 +1,10 @@
+import { AuthoringField, textHint } from './AuthoringField';
 import { QuizPreview } from './QuizPreview';
-import type { AuthoringTarget, Quiz } from './Admin';
+import type { AuthoringTarget, Quiz, ValidationProblem } from './Admin';
+import { createPortal } from 'react-dom';
 import { useQuizMedia } from './Media';
 import { MediaImage } from './MediaImage';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useEditorSave, useSaveBarrier } from './EditorSaves';
 import { useQuestionAnswerData } from './useQuestionAnswerData';
 
@@ -34,11 +36,21 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 const json = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumber = 1, mediaRevision = 0, targetQuestion }: { quiz?: Quiz; roundNumber?: number; quizId: string; roundId: string; onPersistedChange?: () => void; mediaRevision?: number; targetQuestion?: AuthoringTarget | null }) {
+type QuestionsProps = {
+  quiz?: Quiz; roundNumber?: number; quizId: string; roundId: string; onPersistedChange?: () => void;
+  onMediaChange?: () => void; mediaRevision?: number; targetQuestion?: AuthoringTarget | null; navigationTarget?: HTMLElement | null;
+  previewOpen?: boolean; onPreviewOpenChange?: (open: boolean) => void; problems?: ValidationProblem[];
+};
+
+export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumber = 1, mediaRevision = 0, targetQuestion,
+  navigationTarget, onMediaChange, previewOpen: sharedPreviewOpen, onPreviewOpenChange, problems = [] }: QuestionsProps) {
   const base = `/api/quizzes/${quizId}/rounds/${roundId}/questions`;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [localPreviewOpen, setLocalPreviewOpen] = useState(false);
+  const previewOpen = sharedPreviewOpen ?? localPreviewOpen;
+  const setPreviewOpen = onPreviewOpenChange ?? setLocalPreviewOpen;
+  const previewButton = useRef<HTMLButtonElement>(null);
   const { items: media, error: mediaError, retry: retryMedia } = useQuizMedia(quizId, mediaRevision, previewOpen);
   const [addType, setAddType] = useState<Question['type']>('single_choice');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -51,6 +63,11 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   const questionOwner = (id: string) => `${roundId}/questions/${id}`;
   const { status } = saves;
   const [error, setError] = useState('');
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const mediaFileInput = useRef<HTMLInputElement>(null);
+  const uploadedFile = useRef<{ file: File; media: Media } | null>(null);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const correctHintId = useId();
   const selected = questions.find((item) => item.id === selectedId);
   const {
     options, setOptions, pairs, setPairs, childLoadFailed,
@@ -70,6 +87,10 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   }, [base]);
 
   useEffect(() => resetAnswerData(selected), [base, selectedId]);
+  useEffect(() => {
+    setMediaFile(null); uploadedFile.current = null; setUploadStatus('');
+    if (mediaFileInput.current) mediaFileInput.current.value = '';
+  }, [selectedId]);
 
   useEffect(() => {
     if (!targetQuestion?.questionId || targetQuestion === appliedTarget.current || !questions.some(item => item.id === targetQuestion.questionId)) return;
@@ -94,7 +115,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   function schedule(key: string, path: string, body: QuestionFields | OptionFields | PairFields, owner: string) {
     saves.schedule(key, async () => { await api(path, json('PUT', body)); onPersistedChange?.(); }, undefined, owner);
   }
-  async function afterSaves(action: () => Promise<void>, discardOwner?: string, failureKey?: string): Promise<boolean> {
+  async function afterSaves(action: () => Promise<void>, discardOwner?: string, failureKey?: string, operationOwner?: string): Promise<boolean> {
     setBusy(true);
     try {
       let release: (() => void) | undefined;
@@ -106,7 +127,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
           await action();
           if (discardOwner) (barrier ?? saves).discard(discardOwner);
           onPersistedChange?.();
-        }, failureKey, Boolean(discardOwner), discardOwner); setError('');
+        }, failureKey, Boolean(discardOwner), operationOwner ?? discardOwner); setError('');
         return true;
       } finally { release?.(); }
     }
@@ -157,36 +178,71 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     answerTimeSeconds: selected.answerTimeSeconds, showCorrectCount: selected.showCorrectCount ?? true, media: selected.media ?? [],
   } : null;
 
-  return <section className="questions">
-    <div className="editor-heading"><h3>Questions</h3><span role="status" className="question-status" aria-live="polite">{status === 'Saving...' ? 'Saving…' : status}</span></div>
-    {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
-    {loading ? <p>Loading questions...</p> : <>
+  const questionTextRequired = Boolean(selected && (selected.textRu.trim() || selected.textEn.trim() || !selected.media?.length));
+  const explanationRequired = Boolean(selected?.explanationRu?.trim() || selected?.explanationEn?.trim());
+  const correctCount = visibleOptions.filter(option => option.isCorrect).length;
+  const correctHint = selected?.type === 'multiple_choice'
+    ? correctCount < 2 ? 'Choose at least two correct answers.' : undefined
+    : correctCount !== 1 ? 'Choose exactly one correct answer.' : undefined;
+
+  async function uploadAndAttach() {
+    if (!selected || !fields || !mediaFile || busy) return;
+    setUploadStatus('');
+    const attached = await afterSaves(async () => {
+      let item = uploadedFile.current?.file === mediaFile ? uploadedFile.current.media : undefined;
+      if (!item) {
+        const data = new FormData(); data.append('file', mediaFile);
+        item = await api<Media>(`/api/quizzes/${quizId}/media`, { method: 'POST', body: data });
+        uploadedFile.current = { file: mediaFile, media: item };
+        retryMedia(); onMediaChange?.();
+      }
+      const refs = fields.media ?? [];
+      const question = await api<Question>(`${base}/${selected.id}`, json('PUT', {
+        ...fields, media: refs.some(ref => ref.mediaId === item.id) ? refs : [...refs, { mediaId: item.id, playBeforeTimer: false }],
+      }));
+      setQuestions(items => items.map(value => value.id === question.id ? question : value));
+      setUploadStatus(`Attached ${item.name}.`); setMediaFile(null); uploadedFile.current = null;
+      if (mediaFileInput.current) mediaFileInput.current.value = '';
+    }, undefined, `upload:question:${roundId}:${selected.id}`, questionOwner(selected.id));
+    if (!attached && uploadedFile.current) setUploadStatus('File uploaded. Press Upload & attach to retry attaching it.');
+  }
+
+  const navigator = <nav className="authoring-navigator question-navigator" aria-label="Questions">
       <div className="authoring-actions add-question"><label>New question type<select value={addType} disabled={busy} onChange={event => setAddType(event.target.value as Question['type'])}>
         <option value="single_choice">Single Choice</option><option value="yes_no">Yes / No</option><option value="multiple_choice">Multiple Choice</option><option value="matching">Matching</option>
       </select></label><button disabled={busy} onClick={() => void afterSaves(async () => {
         const question = await api<Question>(base, addType === 'single_choice' ? { method: 'POST' } : json('POST', { type: addType }));
         setQuestions(items => [...items, question]); setSelectedId(question.id);
       })}>Add question</button></div>
-      <div className="question-workspace"><nav className="authoring-navigator" aria-label="Questions">
       {questions.length === 0 ? <p>No questions yet.</p> : <ol className="round-list">{questions.map((question, index) => <li key={question.id}>
         <button aria-current={selectedId === question.id ? 'true' : undefined} className={selectedId === question.id ? 'selected-round' : 'subtle'} disabled={busy}
           onClick={() => void selectQuestion(question.id)}>
           <span className="navigator-title">{index + 1}. {question.textEn || question.textRu || 'Untitled question'}</span>
         </button>
+        {problems.some(problem => problem.questionId === question.id) && <span className="navigator-problem" aria-label="Question has problems" title={problems.filter(problem => problem.questionId === question.id).map(problem => problem.message).join('\n')}>!</span>}
         <div className="round-order">
           <button className="subtle" aria-label={`Move question ${index + 1} up`} disabled={busy || index === 0} onClick={() => moveQuestion(index, -1)}>↑</button>
           <button className="subtle" aria-label={`Move question ${index + 1} down`} disabled={busy || index === questions.length - 1} onClick={() => moveQuestion(index, 1)}>↓</button>
         </div>
       </li>)}</ol>}
-      </nav><div className="selected-question-content">
+      </nav>;
+  return <section className="questions">
+    <div className="editor-heading"><h3>Questions</h3><span role="status" className="question-status" aria-live="polite">{status === 'Saving...' ? 'Saving…' : status}</span></div>
+    {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
+    {loading ? <p>Loading questions...</p> : <>
+      <div className="question-workspace" data-integrated={navigationTarget !== undefined} data-preview-open={previewOpen && Boolean(selected)}>
+      {navigationTarget ? createPortal(navigator, navigationTarget) : navigator}
+      <div className="selected-question-content">
       <div id="question-preview" className="authoring-actions preview-entry">
         <div><h4>{selected ? `Question ${questions.indexOf(selected) + 1}` : 'Preview'}</h4><p>See how the selected question looks to Players, Screen, and Host.</p></div>
-        <button disabled={!selected} onClick={() => setPreviewOpen(open => !open)} aria-expanded={previewOpen}>Preview question</button>
+        <button ref={previewButton} disabled={!selected} onClick={() => setPreviewOpen(!previewOpen)} aria-expanded={previewOpen}>Preview question</button>
       </div>
-      {selected && previewOpen && <QuizPreview key={selected.id} quizId={quizId} quiz={quiz} question={selected} options={visibleOptions} pairs={visiblePairs} media={media}
-        roundNumber={roundNumber} questionNumber={questions.indexOf(selected) + 1} questionCount={questions.length} onClose={() => setPreviewOpen(false)} />}
       {selected && fields && <div className="question-editor fields" ref={editor} tabIndex={-1}>
-        <h4>{selected.type === 'matching' ? 'Matching' : selected.type === 'yes_no' ? 'Yes / No' : selected.type === 'multiple_choice' ? 'Multiple Choice' : 'Single Choice'} question</h4>
+        <div className="authoring-actions"><h4>{selected.type === 'matching' ? 'Matching' : selected.type === 'yes_no' ? 'Yes / No' : selected.type === 'multiple_choice' ? 'Multiple Choice' : 'Single Choice'} question</h4>
+        <button className="subtle" disabled={busy} onClick={() => void afterSaves(async () => {
+          const copy = await api<Question>(`${base}/${selected.id}/duplicate`, { method: 'POST' });
+          setQuestions(items => [...items, copy]); setSelectedId(copy.id);
+        })}>Duplicate question</button></div>
         <details className="authoring-secondary"><summary>Change question type</summary><div className="fields"><label>Question type<select value={selected.type} disabled={busy} onChange={event => {
           const type = event.target.value as Question['type'];
           void (async () => {
@@ -203,27 +259,32 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
             if (saved && confirmed) await loadAnswerData(confirmed);
           })();
         }}><option value="single_choice">Single Choice</option><option value="yes_no">Yes / No</option><option value="multiple_choice">Multiple Choice</option><option value="matching">Matching</option></select></label><p>Changing between Matching and other types clears the current answers. Matching starts with two blank pairs.</p></div></details>
-        <label>Question text RU<textarea maxLength={5000} value={selected.textRu} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textRu: event.target.value })} /></label>
+        <div className="bilingual-fields">
+        <AuthoringField label="Question text RU" error={textHint(selected.textRu, 'RU', questionTextRequired)}><textarea maxLength={5000} value={selected.textRu} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textRu: event.target.value })} /></AuthoringField>
         {childLoadFailed && <p>Could not load the answers. <button disabled={busy} onClick={() => void loadAnswerData(selected)}>Try loading answers again</button></p>}
-        <label>Question text EN<textarea maxLength={5000} value={selected.textEn} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textEn: event.target.value })} /></label>
+        <AuthoringField label="Question text EN" error={textHint(selected.textEn, 'EN', questionTextRequired)}><textarea maxLength={5000} value={selected.textEn} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, textEn: event.target.value })} /></AuthoringField>
+        </div>
         <details className="authoring-secondary" open={settingsOpen} onToggle={event => setSettingsOpen(event.currentTarget.open)}><summary>Timing, points & explanation</summary><div className="fields">
-        <label>Explanation RU (after Reveal)<textarea maxLength={5000} value={selected.explanationRu ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationRu: event.target.value })} /></label>
-        <label>Explanation EN (after Reveal)<textarea maxLength={5000} value={selected.explanationEn ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationEn: event.target.value })} /></label>
+        <div className="bilingual-fields">
+        <AuthoringField label="Explanation RU (after Reveal)" error={textHint(selected.explanationRu ?? '', 'RU', explanationRequired)}><textarea maxLength={5000} value={selected.explanationRu ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationRu: event.target.value })} /></AuthoringField>
+        <AuthoringField label="Explanation EN (after Reveal)" error={textHint(selected.explanationEn ?? '', 'EN', explanationRequired)}><textarea maxLength={5000} value={selected.explanationEn ?? ''} disabled={busy} onChange={event => editQuestion(selected, { ...fields, explanationEn: event.target.value })} /></AuthoringField>
+        </div>
         {(selected.textRu.length > 1000 || selected.textEn.length > 1000 || visibleOptions.some(option => option.textRu.length > 200 || option.textEn.length > 200)) && <p role="status">Long text may be hard to read on phones or TV. Check Preview; text is not truncated.</p>}
-        <label>Points<input type="number" min="1" step="1" value={selected.points} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, points: Number(event.target.value) })} /></label>
+        <AuthoringField label="Points" error={!Number.isSafeInteger(selected.points) || selected.points < 1 ? 'Use a positive whole number.' : undefined}><input type="number" min="1" step="1" value={selected.points} disabled={busy} onChange={(event) => editQuestion(selected, { ...fields, points: Number(event.target.value) })} /></AuthoringField>
         <label>Answer time<select value={selected.answerTimeSeconds === null ? 'default' : 'custom'} disabled={busy}
           onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: event.target.value === 'default' ? null : 30 })}>
           <option value="default">Use quiz default</option><option value="custom">Custom</option>
         </select></label>
-        {selected.answerTimeSeconds !== null && <label>Custom answer time (seconds)<input type="number" min="1" max="3600" step="1" value={selected.answerTimeSeconds} disabled={busy}
-          onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: Number(event.target.value) })} /></label>}
+        {selected.answerTimeSeconds !== null && <AuthoringField label="Custom answer time (seconds)" error={!Number.isInteger(selected.answerTimeSeconds) || selected.answerTimeSeconds < 1 || selected.answerTimeSeconds > 3600 ? 'Use 1–3600 whole seconds.' : undefined}><input type="number" min="1" max="3600" step="1" value={selected.answerTimeSeconds} disabled={busy}
+          onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: Number(event.target.value) })} /></AuthoringField>}
         </div></details>
         {selected.type === 'matching' ? <>
           <h4>Matching pairs</h4>
+          {visiblePairs.length < 2 && <p className="field-hint">Add at least two matching pairs.</p>}
           <p>At least 2 complete pairs. Each side uses bilingual text or an uploaded image.</p>
           {visiblePairs.map((pair, index) => <div className="option-editor" key={pair.id} data-authoring-item={pair.id} tabIndex={-1}>
             <h5>Pair {index + 1}</h5>
-            {(['left', 'right'] as const).map(side => <div key={side}>
+            <div className="matching-pair-fields">{(['left', 'right'] as const).map(side => <div className="matching-side" key={side}>
               <label>Pair {index + 1} {side} kind<select value={pair[side].kind} disabled={busy} onChange={event => {
                 if (event.target.value === 'text') editPair(pair, side, { kind: 'text', textRu: '', textEn: '' });
                 else {
@@ -237,12 +298,13 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
                   {media.filter(item => item.kind === 'image').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select></label>
                 <MediaImage src={`/api/quizzes/${quizId}/media/${pair[side].mediaId}/content`} alt={`Pair ${index + 1} ${side} image`} className="editor-media-preview" />
-              </> : (['textRu', 'textEn'] as const).map(language => <label key={language}>
-                Pair {index + 1} {side} {language === 'textRu' ? 'RU' : 'EN'}
+              </> : <div className="bilingual-fields">{(['textRu', 'textEn'] as const).map(language => <AuthoringField key={language}
+                label={`Pair ${index + 1} ${side} ${language === 'textRu' ? 'RU' : 'EN'}`}
+                error={textHint((pair[side] as TextSide)[language], language === 'textRu' ? 'RU' : 'EN', true, 500)}>
                 <input maxLength={500} value={(pair[side] as TextSide)[language]} disabled={busy}
                   onChange={event => editPair(pair, side, { ...(pair[side] as TextSide), [language]: event.target.value })} />
-              </label>)}
-            </div>)}
+              </AuthoringField>)}</div>}
+            </div>)}</div>
             <div className="authoring-actions"><div className="round-order">
               <button className="subtle" aria-label={`Move pair ${index + 1} up`} disabled={busy || index === 0} onClick={() => movePair(index, -1)}>↑</button>
               <button className="subtle" aria-label={`Move pair ${index + 1} down`} disabled={busy || index === visiblePairs.length - 1} onClick={() => movePair(index, 1)}>↓</button>
@@ -258,13 +320,15 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
           })}>Add pair</button>
         </> : <>
         <h4>Answer options</h4>
+        {(selected.type === 'yes_no' ? visibleOptions.length !== 2 : visibleOptions.length < 2 || visibleOptions.length > 10) && <p className="field-hint">{selected.type === 'yes_no' ? 'Use exactly two answer options.' : 'Use 2–10 answer options.'}</p>}
+        {correctHint && <p className="field-hint" id={correctHintId}>{correctHint}</p>}
         {selected.type === 'multiple_choice' && <>
           <p>Use 2–10 options and mark at least 2 correct.</p>
           <label className="checkbox"><input type="checkbox" checked={selected.showCorrectCount ?? true} disabled={busy}
             onChange={event => editQuestion(selected, { ...fields, showCorrectCount: event.target.checked })} /> Show correct-option count to Player</label>
         </>}
         {visibleOptions.map((option, index) => <div className="option-editor" key={option.id} data-authoring-item={option.id} tabIndex={-1}>
-          <label className="checkbox"><input type={selected.type === 'multiple_choice' ? 'checkbox' : 'radio'} name={`correct-${selected.id}`} checked={option.isCorrect} disabled={busy}
+          <label className="checkbox"><input type={selected.type === 'multiple_choice' ? 'checkbox' : 'radio'} name={`correct-${selected.id}`} aria-invalid={correctHint ? true : undefined} aria-describedby={correctHint ? correctHintId : undefined} checked={option.isCorrect} disabled={busy}
             onChange={event => {
               if (selected.type === 'multiple_choice') { editOption(option, { textRu: option.textRu, textEn: option.textEn, isCorrect: event.target.checked }); return; }
               void afterSaves(async () => {
@@ -272,10 +336,12 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
                 commitChildChange(selected, () => setOptions(corrected));
               });
             }} /> Correct answer, option {index + 1}</label>
-          <label>Option {index + 1} RU<input maxLength={500} value={option.textRu} disabled={busy}
-            onChange={(event) => editOption(option, { textRu: event.target.value, textEn: option.textEn, isCorrect: option.isCorrect })} /></label>
-          <label>Option {index + 1} EN<input maxLength={500} value={option.textEn} disabled={busy}
-            onChange={(event) => editOption(option, { textRu: option.textRu, textEn: event.target.value, isCorrect: option.isCorrect })} /></label>
+          <div className="bilingual-fields">
+          <AuthoringField label={`Option ${index + 1} RU`} error={textHint(option.textRu, 'RU', true, 500)}><input maxLength={500} value={option.textRu} disabled={busy}
+            onChange={(event) => editOption(option, { textRu: event.target.value, textEn: option.textEn, isCorrect: option.isCorrect })} /></AuthoringField>
+          <AuthoringField label={`Option ${index + 1} EN`} error={textHint(option.textEn, 'EN', true, 500)}><input maxLength={500} value={option.textEn} disabled={busy}
+            onChange={(event) => editOption(option, { textRu: option.textRu, textEn: event.target.value, isCorrect: option.isCorrect })} /></AuthoringField>
+          </div>
           {selected.type !== 'yes_no' && <div className="authoring-actions"><div className="round-order">
             <button className="subtle" aria-label={`Move option ${index + 1} up`} disabled={busy || index === 0} onClick={() => moveOption(index, -1)}>↑</button>
             <button className="subtle" aria-label={`Move option ${index + 1} down`} disabled={busy || index === visibleOptions.length - 1} onClick={() => moveOption(index, 1)}>↓</button>
@@ -292,7 +358,14 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         })}>Add option</button>}
         </>}
         <section className="question-media-editor" aria-label="Question media"><h4>Question media (Screen/TV)</h4>
-        <p><a href="#quiz-media">Upload in the media library</a>, then attach a file here.</p>
+        <div className="authoring-actions media-upload">
+          <label>Question media file<input ref={mediaFileInput} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp3,.wav,.ogg,.mp4,.webm" disabled={busy} onChange={event => {
+            setMediaFile(event.target.files?.[0] ?? null); uploadedFile.current = null; setUploadStatus('');
+          }} /></label>
+          <button disabled={busy || !mediaFile} onClick={() => void uploadAndAttach()}>Upload &amp; attach</button>
+        </div>
+        {uploadStatus && <p role="status">{uploadStatus}</p>}
+        <p>Or choose a file from the <a href="#quiz-media">media library</a>.</p>
         {mediaError && <p role="alert">{mediaError} <button className="subtle" disabled={busy} onClick={retryMedia}>Try loading media again</button></p>}
         <label>Attach question media<select value="" disabled={busy} onChange={event => {
           if (event.target.value) editQuestion(selected, { ...fields, media: [...(selected.media ?? []), { mediaId: event.target.value, playBeforeTimer: false }] });
@@ -319,7 +392,12 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
           }, questionOwner(selected.id), `delete:question:${roundId}:${selected.id}`);
         }}>Delete question</button></div>
       </div>}
-      </div></div>
+      </div>
+      {selected && previewOpen && <aside className="question-preview-pane" aria-label="Live preview">
+        <QuizPreview quizId={quizId} quiz={quiz} question={selected} options={visibleOptions} pairs={visiblePairs} media={media}
+          roundNumber={roundNumber} questionNumber={questions.indexOf(selected) + 1} questionCount={questions.length} onClose={() => { setPreviewOpen(false); previewButton.current?.focus(); }} />
+      </aside>}
+      </div>
     </>}
   </section>;
 }

@@ -17,6 +17,53 @@ function showEditor() {
   </Routes></MemoryRouter>);
 }
 
+test('round navigation includes its questions and keeps preview open after saving and changing rounds', async () => {
+  let reply!: (response: Response) => void;
+  let pending = false;
+  const first = question('one');
+  globalThis.fetch = async (input, init) => {
+    const path = String(input);
+    if (init?.method === 'PUT') {
+      assert.equal(path, '/api/quizzes/quiz/rounds/first/questions/one');
+      assert.equal(JSON.parse(String(init.body)).textEn, 'Latest edit');
+      pending = true;
+      return new Promise(done => { reply = done; });
+    }
+    if (path.endsWith('/validation')) return Response.json({ ready: true, problems: [] });
+    if (path.endsWith('/rounds')) return Response.json([round('first'), round('second')]);
+    if (path.endsWith('/questions')) return Response.json(path.includes('/first/') ? [first, question('two')] : [question('three', 'second')]);
+    if (path.endsWith('/options') || path.endsWith('/media')) return Response.json([]);
+    return Response.json(quiz);
+  };
+  const view = showEditor();
+  await waitFor(() => assert.ok(view.getByLabelText('Question text EN')));
+  const tree = within(view.getByRole('navigation', { name: 'Rounds' }));
+  fireEvent.click(tree.getByRole('button', { name: '2. Question two' }));
+  await waitFor(() => assert.equal((view.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Question two'));
+  fireEvent.click(tree.getByRole('button', { name: '1. Question one' }));
+  await waitFor(() => assert.equal((view.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Question one'));
+  fireEvent.click(view.getByRole('button', { name: 'Preview question' }));
+  assert.equal(view.getByRole('button', { name: 'Preview question' }).getAttribute('aria-expanded'), 'true');
+  assert.equal(view.getByRole('region', { name: 'Question preview' }).closest('.selected-question-content'), null);
+  fireEvent.change(view.getByLabelText('Preview mode'), { target: { value: 'EN Player' } });
+  fireEvent.click(tree.getByRole('button', { name: '2. Question two' }));
+  await waitFor(() => assert.ok(within(view.getByRole('region', { name: 'Question preview' })).getByText('Question two')));
+  assert.equal((view.getByLabelText('Preview mode') as HTMLSelectElement).value, 'EN Player');
+  fireEvent.click(tree.getByRole('button', { name: '1. Question one' }));
+  await waitFor(() => assert.equal((view.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Question one'));
+  fireEvent.change(view.getByLabelText('Question text EN'), { target: { value: 'Latest edit' } });
+  fireEvent.click(tree.getByRole('button', { name: 'Round second / Раунд second' }));
+  await waitFor(() => assert.ok(pending));
+  assert.equal((view.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Latest edit');
+  await act(async () => reply(Response.json({ ...first, textEn: 'Latest edit' })));
+  await waitFor(() => assert.equal((view.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Question three'));
+  assert.ok(within(view.getByRole('region', { name: 'Question preview' })).getByText('Вопрос three'));
+  assert.equal(tree.getByRole('button', { name: '1. Question three' }).getAttribute('aria-current'), 'true');
+  fireEvent.click(view.getByRole('button', { name: 'Close preview' }));
+  assert.equal(view.queryByRole('region', { name: 'Question preview' }), null);
+  assert.equal(document.activeElement, view.getByRole('button', { name: 'Preview question' }));
+});
+
 test('compact Add question offers all four types and selects each new question for editing and preview', async () => {
   const questions: ReturnType<typeof question>[] = [];
   const created: string[] = [];
@@ -81,6 +128,8 @@ test('readiness selects the affected round, question and answer after waiting fo
   await waitFor(() => assert.equal((view.getByLabelText('Question text EN') as HTMLTextAreaElement).value, 'Question three'));
   assert.equal(view.getByRole('button', { name: 'Round second / Раунд second' }).getAttribute('aria-current'), 'true');
   assert.equal(view.getByRole('button', { name: '2. Question three' }).getAttribute('aria-current'), 'true');
+  assert.ok(view.getByLabelText('Round has problems'));
+  assert.ok(within(view.getByRole('navigation', { name: 'Questions' })).getByLabelText('Question has problems').getAttribute('title')?.includes('missing English text'));
   await waitFor(() => assert.equal((document.activeElement as HTMLElement).dataset.authoringItem, 'answer'));
   fireEvent.click(view.getByRole('button', { name: 'Preview question' }));
   assert.ok(within(view.getByRole('region', { name: 'Question preview' })).getByText('Вопрос three'));

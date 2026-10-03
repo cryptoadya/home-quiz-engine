@@ -18,7 +18,7 @@ export type Quiz = {
 
 type QuizSettings = Pick<Quiz, 'title' | 'themeId' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'>;
 export type AuthoringTarget = { id: string; questionId?: string; optionId?: string; pairId?: string; code?: string };
-type ValidationProblem = { code: string; message: string; roundId?: string; questionId?: string; optionId?: string; pairId?: string };
+export type ValidationProblem = { code: string; message: string; roundId?: string; questionId?: string; optionId?: string; pairId?: string };
 type QuizValidation = { ready: boolean; problems: ValidationProblem[] };
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -259,8 +259,10 @@ function QuizEditorContent() {
   };
 
   return <ThemeSurface themeId={quiz.themeId} className="admin editor">
-    <button className="subtle" disabled={exiting || opening || exporting} onClick={() => void exitEditor()}>← Quiz list</button>
-    <div className="editor-heading"><h1>Edit quiz</h1><span role="status" aria-live="polite">{status === 'Saving...' ? 'Saving…' : status}</span><a className="authoring-button" href="#play-quiz">Play</a></div>
+    <header className="editor-toolbar">
+      <button className="subtle" disabled={exiting || opening || exporting} onClick={() => void exitEditor()}>← Quiz list</button>
+      <div className="editor-heading"><h1>Edit quiz</h1><span className="editor-quiz-title">{quiz.title}</span><span role="status" aria-live="polite">{status === 'Saving...' ? 'Saving…' : status}</span><a className="authoring-button" href="#play-quiz">Play</a></div>
+    </header>
     <nav className="authoring-steps" aria-label="Quiz authoring"><a href="#quiz-basics">1. Quiz basics</a><a href="#rounds-questions">2. Rounds & questions</a><a href="#question-preview">3. Preview</a><a href="#play-quiz">4. Play</a></nav>
     {(saves.error || error) && <p role="alert" className="error">{saves.error || error} Review the fields or your connection, then try again. Your edits are still here.</p>}
     {launchError && <p role="alert" className="error">{launchError} Check readiness and your connection, then try the action again.</p>}
@@ -294,8 +296,8 @@ function QuizEditorContent() {
       <label className="checkbox"><input type="checkbox" checked={quiz.shuffleAnswers} onChange={(event) => change({ ...settings, shuffleAnswers: event.target.checked })} /> Shuffle answers</label>
       </div></details>
     </div></section>
-    <Rounds quiz={quiz} quizId={quiz.id} mediaRevision={mediaRevision} targetRound={targetRound} onPersistedChange={refreshValidation} />
-    <MediaManager key={quiz.id} quizId={quiz.id} disabled={opening || exporting || exiting} onPersistedChange={() => { setMediaRevision(value => value + 1); refreshValidation(); }} />
+    <Rounds onMediaChange={() => { setMediaRevision(value => value + 1); refreshValidation(); }} quiz={quiz} quizId={quiz.id} mediaRevision={mediaRevision} targetRound={targetRound} problems={validation?.problems} onPersistedChange={refreshValidation} />
+    <MediaManager revision={mediaRevision} key={quiz.id} quizId={quiz.id} disabled={opening || exporting || exiting} onPersistedChange={() => { setMediaRevision(value => value + 1); refreshValidation(); }} />
     </fieldset>
     <section id="play-quiz" className="authoring-panel" aria-label="Play quiz"><h2>Play</h2>
       <p>When your quiz is ready, open a lobby and invite your players.</p>

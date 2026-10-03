@@ -17,7 +17,7 @@ export function useQuizMedia(quizId: string, revision = 0, previewOpen = false) 
   }, [quizId, revision, previewOpen, retry]);
   return { items, error, retry: () => setRetry(value => value + 1) };
 }
-export function MediaManager({ quizId, onPersistedChange, disabled = false }: { quizId: string; onPersistedChange: () => void; disabled?: boolean }) {
+export function MediaManager({ quizId, onPersistedChange, disabled = false, revision = 0 }: { quizId: string; onPersistedChange: () => void; disabled?: boolean; revision?: number }) {
   const saves = useEditorSave();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Media[]>([]);
@@ -42,7 +42,7 @@ export function MediaManager({ quizId, onPersistedChange, disabled = false }: { 
       .catch(cause => { if (active) { setError(cause.message); setStatus(''); } })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
-  }, [quizId, open]);
+  }, [quizId, open, revision]);
   async function upload() {
     if (!file || busy || disabled) return;
     setBusy(true); setError(''); setStatus('Uploading...');

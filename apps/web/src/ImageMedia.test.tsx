@@ -59,8 +59,8 @@ test('Screen/Host images, GIF URLs and mixed Matching render; Player only render
   const base = { state: 'ANSWERING' as const, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Question', showOptionsOnScreen: true, media: [{ mediaId: 'gif', name: 'animation.gif', mediaUrl: '/api/rooms/room/media/gif/content' }], leftItems: [image], rightItems: [{ ...right, textRu: 'Кот', textEn: 'Cat' }] };
   for (const host of [false, true]) {
     const view = render(createElement(QuestionContent, { host, question: { ...base, ...(host ? { correctMapping: mapping } : {}) } }));
-    assert.equal(view.getAllByRole('img').length, 2);
-    const gif = view.getByAltText('animation.gif');
+    assert.equal(view.getAllByRole('img').length, host ? 2 : 1);
+    const gif = view.getByAltText(host ? 'animation.gif' : 'Изображение / Image');
     assert.equal(gif.getAttribute('src'), base.media[0].mediaUrl);
     fireEvent.error(gif);
     assert.ok(view.getByText('Изображение недоступно / Image unavailable'));

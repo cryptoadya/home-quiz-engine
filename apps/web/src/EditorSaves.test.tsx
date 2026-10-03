@@ -23,7 +23,7 @@ test('round description editors cap both languages at 5000 characters', async ()
 async function editor(matching = false, secondRound = false) {
   const quiz = { id: 'q', title: 'Quiz', themeId: 'default', defaultAnswerTimeSeconds: 30, shuffleAnswers: false };
   const round = { id: 'r', quizId: 'q', titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '', showLeaderboardAfter: false, position: 0 };
-  const question = { id: 'a', roundId: 'r', type: matching ? 'matching' : 'single_choice', textRu: '', textEn: '', points: 1, answerTimeSeconds: null, showOptionsOnScreen: false, position: 0 };
+  const question = { id: 'a', roundId: 'r', type: matching ? 'matching' : 'single_choice', textRu: '', textEn: '', points: 1, answerTimeSeconds: null, position: 0 };
   const option = { id: 'o', questionId: 'a', textRu: '', textEn: '', isCorrect: false, position: 0 };
   const pair = { id: 'p', questionId: 'a', left: { kind: 'text', textRu: '', textEn: '' }, right: { kind: 'text', textRu: '', textEn: '' }, position: 0 };
   const writes: { path: string; body: Record<string, unknown>; reply: ReturnType<typeof deferred<Response>> }[] = [];
@@ -645,7 +645,7 @@ for (const outcome of ['success', 'retained failure', 'unrelated failure', 'fail
     const originalFetch = globalThis.fetch;
     const base = '/api/quizzes/q/rounds/r/questions';
     let question: Question = { id: 'a', roundId: 'r', type: 'multiple_choice', textRu: '', textEn: '', points: 1,
-      answerTimeSeconds: null, showOptionsOnScreen: false, position: 0, createdAt: '', updatedAt: '' };
+      answerTimeSeconds: null, position: 0, createdAt: '', updatedAt: '' };
     let options: Option[] = [1, 2, 3].map((number, position) => ({ id: `o${number}`, questionId: 'a',
       textRu: `Ответ ${number}`, textEn: `Answer ${number}`, isCorrect: number < 3, position, createdAt: '', updatedAt: '' }));
     let failReload = outcome === 'retry GET';

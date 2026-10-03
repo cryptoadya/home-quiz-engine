@@ -107,7 +107,7 @@ test('blocked pre-timer autoplay and projected EOF cannot advance after reload',
   const question = (positionSeconds: number, revision = 3): CurrentQuestion => ({ state: 'QUESTION', questionId: 'q', preTimer: { mediaId: 'a', number: 1, total: 2 }, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: ['a', 'b'].map(mediaId => ({ mediaId, kind: 'audio', name: mediaId, mediaUrl: `/media/${mediaId}`, playback: { playing: mediaId === 'a', positionSeconds, serverNow: 0, revision } })) });
   try {
     let view = render(createElement(QuestionContent, { question: question(0), onMediaEnded: (...args: unknown[]) => completions.push(args) }));
-    assert.ok(view.getByText(/Before timer.*1.*2/));
+    assert.equal(view.queryByText(/Before timer/), null);
     const element = view.container.querySelector('audio')!;
     Object.defineProperty(element, 'duration', { get: () => 5 });
     Object.defineProperty(element, 'readyState', { get: () => 1 });

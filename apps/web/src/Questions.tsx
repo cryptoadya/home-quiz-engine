@@ -8,7 +8,7 @@ import { useQuestionAnswerData } from './useQuestionAnswerData';
 
 export type Question = {
   id: string; roundId: string; type: 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching'; textRu: string; textEn: string;
-  points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean; showCorrectCount?: boolean;
+  points: number; answerTimeSeconds: number | null; showCorrectCount?: boolean;
   explanationRu?: string; explanationEn?: string; media?: MediaRef[]; position: number; createdAt: string; updatedAt: string;
 };
 export type Option = {
@@ -21,7 +21,7 @@ type TextSide = { kind: 'text'; textRu: string; textEn: string };
 export type Side = TextSide | { kind: 'image'; mediaId: string };
 export type Pair = { id: string; questionId: string; left: Side; right: Side; position: number };
 type PairFields = Pick<Pair, 'left' | 'right'>;
-type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'showCorrectCount' | 'media' | 'explanationRu' | 'explanationEn'>;
+type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showCorrectCount' | 'media' | 'explanationRu' | 'explanationEn'>;
 type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -154,7 +154,7 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
   }
   const fields: QuestionFields | null = selected ? {
     explanationRu: selected.explanationRu ?? '', explanationEn: selected.explanationEn ?? '', type: selected.type, textRu: selected.textRu, textEn: selected.textEn, points: selected.points,
-    answerTimeSeconds: selected.answerTimeSeconds, showOptionsOnScreen: selected.showOptionsOnScreen, showCorrectCount: selected.showCorrectCount ?? true, media: selected.media ?? [],
+    answerTimeSeconds: selected.answerTimeSeconds, showCorrectCount: selected.showCorrectCount ?? true, media: selected.media ?? [],
   } : null;
 
   return <section className="questions">
@@ -217,8 +217,6 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         </select></label>
         {selected.answerTimeSeconds !== null && <label>Custom answer time (seconds)<input type="number" min="1" max="3600" step="1" value={selected.answerTimeSeconds} disabled={busy}
           onChange={(event) => editQuestion(selected, { ...fields, answerTimeSeconds: Number(event.target.value) })} /></label>}
-        <label className="checkbox"><input type="checkbox" checked={selected.showOptionsOnScreen} disabled={busy}
-          onChange={(event) => editQuestion(selected, { ...fields, showOptionsOnScreen: event.target.checked })} /> Show answer options on Screen</label>
         </div></details>
         {selected.type === 'matching' ? <>
           <h4>Matching pairs</h4>

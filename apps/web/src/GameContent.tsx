@@ -18,7 +18,7 @@ export function RoundIntroContent({ round }: { round: RoundIntro }) {
 
 export function QuestionContent({ question, host = false, onMediaControl, onMediaEnded, mediaBusy = false, localMediaControls = false }: { localMediaControls?: boolean; question: CurrentQuestion; host?: boolean; onMediaControl?: (mediaId: string, action: MediaAction) => void; mediaBusy?: boolean; onMediaEnded?: (mediaId: string, revision: number, duration: number) => void }) {
   return <div className="question-presentation" data-reveal={question.state === 'ANSWER_REVEAL' || undefined}>
-    {question.preTimer && <p className="state-notice waiting" role="status">До таймера / Before timer: {question.preTimer.number} / {question.preTimer.total} — {question.media?.find(media => media.mediaId === question.preTimer!.mediaId)?.name}</p>}
+    {host && question.preTimer && <p className="state-notice waiting" role="status">До таймера / Before timer: {question.preTimer.number} / {question.preTimer.total} — {question.media?.find(media => media.mediaId === question.preTimer!.mediaId)?.name}</p>}
     <div className="question-meta">
     <p className="phase-chip">Раунд {question.roundNumber} / Round {question.roundNumber} · Вопрос / Question {question.questionNumber} / {question.questionCount}</p>
     {question.answers && <p className="answer-count">Ответили / Answered: {question.answers.answered} / {question.answers.expected}</p>}
@@ -31,18 +31,24 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
     </div>
     <div className={host ? 'host-media' : 'question-media'}>{question.media?.map(media => media.kind === 'audio' || media.kind === 'video'
       ? host ? <div key={media.mediaId}><p>{media.name} — {media.playback?.playing ? 'Playing' : 'Paused'}</p>{(['play', 'pause', 'restart'] as const).map(action => <button key={action} aria-label={`${action[0].toUpperCase() + action.slice(1)} ${media.name}`} disabled={mediaBusy || Boolean(question.preTimer && question.preTimer.mediaId !== media.mediaId)} onClick={() => onMediaControl?.(media.mediaId, action)}>{action[0].toUpperCase() + action.slice(1)}</button>)}</div>
-        : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} media={media} onEnded={onMediaEnded} localControls={localMediaControls} />
-      : <MediaImage key={media.mediaId} src={media.mediaUrl} alt={media.name} className="question-image" />)}</div>
+        : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} media={{ ...media, name: media.kind === 'video' ? 'Видео / Video' : 'Аудио / Audio' }} onEnded={onMediaEnded} localControls={localMediaControls} />
+      : <MediaImage key={media.mediaId} src={media.mediaUrl} alt={host ? media.name : 'Изображение / Image'} className="question-image" />)}</div>
     {(host || question.state === 'ANSWER_REVEAL') && (question.explanationRu || question.explanationEn) && <section className="explanation"><h3>Объяснение / Explanation</h3><p lang="ru">{question.explanationRu}</p><p lang="en">{question.explanationEn}</p></section>}
-    {(host || question.showOptionsOnScreen || question.state === 'ANSWER_REVEAL') && question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul className="matching-pairs correct-pairs">{question.correctMapping.map(pair => {
+    {(host || question.state === 'ANSWER_REVEAL') && question.leftItems && <>{question.correctMapping ? <><h3>Верные пары / Correct pairs</h3><ul className="matching-pairs correct-pairs">{question.correctMapping.map(pair => {
       const left = question.leftItems!.find(item => item.id === pair.leftId), right = question.rightItems?.find(item => item.id === pair.rightId);
       return <li key={pair.leftId}><MatchingItemContent item={left} /> → <MatchingItemContent item={right} /></li>;
-    })}</ul></> : <div className="matching-columns">{[question.leftItems, question.rightItems].map((items, index) => <ul key={index}>{items?.map(item => <li key={item.id}><MatchingItemContent item={item} /></li>)}</ul>)}</div>}</>}
-    {(host || question.showOptionsOnScreen || question.state === 'ANSWER_REVEAL') && <ol className="game-options">{question.options?.map((option, index) => <li key={index} className={option.isCorrect ? 'correct-option' : question.state === 'ANSWER_REVEAL' ? 'incorrect-option' : undefined}>
+    })}</ul></> : host && <div className="matching-columns">{[question.leftItems, question.rightItems].map((items, index) => <ul key={index}>{items?.map(item => <li key={item.id}><MatchingItemContent item={item} /></li>)}</ul>)}</div>}</>}
+    {host && <ol className="game-options">{question.options?.map((option, index) => <li key={index} className={option.isCorrect ? 'correct-option' : question.state === 'ANSWER_REVEAL' ? 'incorrect-option' : undefined}>
       <span className="option-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span>
       <span lang="ru">{option.textRu}</span> / <span lang="en">{option.textEn}</span>
       {(host || question.state === 'ANSWER_REVEAL') && option.isCorrect && <> — <strong>{host ? 'Correct answer' : 'Верный ответ / Correct answer'}</strong></>}
     </li>)}</ol>}
+    {!host && question.state === 'ANSWER_REVEAL' && question.options?.some(option => option.isCorrect) && <section className="correct-answers">
+      <h3>{question.type === 'multiple_choice' ? 'Правильные ответы / Correct answers' : 'Правильный ответ / Correct answer'}</h3>
+      <ul className="revealed-answers">{question.options.filter(option => option.isCorrect).map((option, index) => <li key={index} className="correct-option">
+        <span lang="ru">{option.textRu}</span> / <span lang="en">{option.textEn}</span>
+      </li>)}</ul>
+    </section>}
   </div>;
 }
 

@@ -16,7 +16,7 @@ import { matchingContent } from './matching-game.js';
 import { answerOrder } from './answer-order.js';
 import { submitAnswer } from './answers.js';
 
-for (const shuffle of [false, true]) for (const hint of [false, true]) test(`mixed frozen quiz: shuffle=${shuffle}, hint=${hint}, Players/reconnect/restart/scoring`, async () => {
+for (const legacyFlag of [false, true]) for (const shuffle of [false, true]) for (const hint of [false, true]) test(`mixed frozen quiz: legacy=${legacyFlag}, shuffle=${shuffle}, hint=${hint}, Players/reconnect/restart/scoring`, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'quiz-behavior-'));
   const path = join(dir, 'quiz.sqlite');
   let db = initializeDatabase(path);
@@ -26,7 +26,7 @@ for (const shuffle of [false, true]) for (const hint of [false, true]) test(`mix
     db.prepare('UPDATE quizzes SET shuffle_answers = ? WHERE id = ?').run(Number(shuffle), quiz.id);
     for (const type of ['single_choice', 'yes_no', 'multiple_choice', 'matching'] as const) {
       const q = createQuestion(db, round.id, type);
-      const fields = { type, textRu: 'Вопрос', textEn: 'Question', points: 5, answerTimeSeconds: 30, showOptionsOnScreen: true, showCorrectCount: hint };
+      const fields = { type, textRu: 'Вопрос', textEn: 'Question', points: 5, answerTimeSeconds: 30, showOptionsOnScreen: legacyFlag, showCorrectCount: hint };
       const base = `/api/quizzes/${quiz.id}/rounds/${round.id}/questions/${q.id}`;
       await api.put(base).send({ ...fields, showCorrectCount: 'invalid' }).expect(400);
       assert.equal((await api.put(base).send(fields).expect(200)).body.showCorrectCount, hint);
@@ -60,8 +60,14 @@ for (const shuffle of [false, true]) for (const hint of [false, true]) test(`mix
     await api.post(`${root}/start-round`).expect(200);
     for (const [index, q] of snapshot.rounds[0].questions.entries()) {
       if (index) await api.post(`${root}/next`).expect(200);
+      const prepared = (getSurfaceState(db, room.id, 'screen') as any).game;
+      assert.equal(prepared.textEn, ''); assert.deepEqual(prepared.media, []);
+      assert.doesNotMatch(JSON.stringify(prepared), /options|leftItems|rightItems|correctMapping|isCorrect|requiredCorrectCount|showOptionsOnScreen/);
       assert.ok('room' in startQuestion(db, room.id, Date.now()));
       const game = getPlayerGame(db, room.id, 'en', players[0].player.id) as any;
+      const screen = (getSurfaceState(db, room.id, 'screen') as any).game;
+      assert.equal(screen.textEn, 'Question'); assert.ok(Array.isArray(screen.media));
+      assert.doesNotMatch(JSON.stringify(screen), /options|leftItems|rightItems|correctMapping|isCorrect|requiredCorrectCount|showOptionsOnScreen/);
       const order = (g: any) => ({ options: g.options, leftItems: g.leftItems, rightItems: g.rightItems });
       assert.deepEqual(order(getPlayerGame(db, room.id, 'en', players[1].player.id)), order(game));
       assert.doesNotMatch(JSON.stringify(game), /isCorrect|correctOptionIds?|correctMapping|showCorrectCount|"position"|"pairs"/);
@@ -83,8 +89,6 @@ for (const shuffle of [false, true]) for (const hint of [false, true]) test(`mix
         }
       } else {
         assert.deepEqual(game.options.map((o: any) => o.id), answerOrder(q.options, shuffle, room.id, q.id).map(o => o.id));
-        const screen = (getSurfaceState(db, room.id, 'screen') as any).game;
-        assert.deepEqual(screen.options.map((o: any) => o.textEn), game.options.map((o: any) => o.text));
       }
       db.close(); db = initializeDatabase(path); api = request(createApp(db));
       assert.deepEqual(order(getPlayerGame(db, room.id, 'en', players[0].player.id)), order(game));
@@ -95,6 +99,16 @@ for (const shuffle of [false, true]) for (const hint of [false, true]) test(`mix
       for (const [i, p] of players.entries()) {
         const answer = q.type === 'matching' ? { mapping: i === 0 ? mapping : mapping.map((pair, n) => ({ ...pair, rightId: mapping[(n + 1) % mapping.length].rightId })) } : q.type === 'multiple_choice' ? { optionIds: i === 0 ? correct : [correct[0]] } : { optionId: i === 0 ? correct[0] : q.options.find(o => !o.isCorrect)!.id };
         assert.ok('submission' in submitAnswer(db, room.id, { token: p.token, questionId: q.id, ...answer }));
+      }
+      const revealed = (getSurfaceState(db, room.id, 'screen') as any).game;
+      if (q.type === 'matching') {
+        assert.deepEqual(revealed.correctMapping, mapping);
+        assert.equal(revealed.leftItems.length, q.pairs!.length);
+        assert.equal(revealed.rightItems.length, q.pairs!.length);
+        assert.equal(revealed.options, undefined);
+      } else {
+        assert.deepEqual(revealed.options.map((o: any) => o.textEn).sort(), q.options.filter(o => o.isCorrect).map(o => o.textEn).sort());
+        assert.ok(revealed.options.every((o: any) => o.isCorrect));
       }
       assert.deepEqual((getPlayerGame(db, room.id, 'en', players[0].player.id) as any).result, { outcome: 'correct', points: 5 });
       assert.deepEqual((getPlayerGame(db, room.id, 'en', players[1].player.id) as any).result, { outcome: 'wrong', points: 0 });

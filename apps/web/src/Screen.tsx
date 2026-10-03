@@ -21,7 +21,7 @@ export function Screen({ roomId: resolvedId }: { roomId?: string } = {}) {
     {state && <>
       <h2 className="quiz-title">{state.room.quizTitle}</h2>
       {state.room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
-      <p className="connection-chip" data-connected={connected}>{connected ? 'Connected' : 'Reconnecting…'}</p>
+      {!connected && <p className="connection-chip" data-connected={false}>Переподключение… / Reconnecting…</p>}
     </>}
     </header>
     {error && <p role="alert">{error}</p>}

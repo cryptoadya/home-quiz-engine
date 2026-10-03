@@ -40,7 +40,7 @@ test('tap-to-pair requires completeness, permits reassignment, retries and locks
 test('Matching bilingual Host/Screen content and localized Reveal show correct mapping and personal result', () => {
   const base = { state: 'ANSWERING' as const, roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Match', leftItems, rightItems, showOptionsOnScreen: true };
   const screen = render(createElement(QuestionContent, { question: base }));
-  assert.ok(screen.getByText('Apple', { exact: false })); assert.equal(screen.queryByText('Верные пары / Correct pairs'), null); screen.unmount();
+  assert.equal(screen.queryByText('Apple', { exact: false }), null); assert.equal(screen.queryByText('Верные пары / Correct pairs'), null); screen.unmount();
   const host = render(createElement(QuestionContent, { host: true, question: { ...base, correctMapping: mapping } }));
   assert.ok(host.getByText('Верные пары / Correct pairs')); host.unmount();
   const reveal = render(createElement(PlayerRevealContent, { language: 'en', question: { ...question(), state: 'ANSWER_REVEAL', correctMapping: mapping, result: { outcome: 'wrong', points: 0 } } }));
@@ -49,7 +49,7 @@ test('Matching bilingual Host/Screen content and localized Reveal show correct m
   assert.ok(ru.getByText('Верно! +5')); assert.ok(ru.getByText('Слева 0 → Справа 0'));
 });
 
-test('Screen hides Matching sides before Reveal when option display is off, including paused content', () => {
+test('Screen hides Matching sides before Reveal regardless of legacy flag, including paused content', () => {
   const base = { roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Match', leftItems, rightItems, showOptionsOnScreen: false };
   for (const state of ['QUESTION', 'ANSWERING'] as const) {
     const content = { ...base, state };
@@ -60,8 +60,9 @@ test('Screen hides Matching sides before Reveal when option display is off, incl
     assert.equal(paused.queryByText('Apple'), null); paused.unmount();
     const host = render(createElement(QuestionContent, { host: true, question: content }));
     assert.ok(host.getByText('Apple', { exact: false })); host.unmount();
-    const shown = render(createElement(QuestionContent, { question: { ...content, showOptionsOnScreen: true } }));
-    assert.ok(shown.getByText('Apple', { exact: false })); shown.unmount();
+    const legacyContent = { ...content, showOptionsOnScreen: true };
+    const shown = render(createElement(QuestionContent, { question: legacyContent }));
+    assert.equal(shown.queryByText('Apple', { exact: false }), null); shown.unmount();
   }
   const reveal = render(createElement(QuestionContent, { question: { ...base, state: 'ANSWER_REVEAL', correctMapping: mapping } }));
   assert.ok(reveal.getByText('Верные пары / Correct pairs'));

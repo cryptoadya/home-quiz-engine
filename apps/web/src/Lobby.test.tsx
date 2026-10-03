@@ -241,17 +241,21 @@ for (const showOptionsOnScreen of [false, true]) test(`Screen preparation hides 
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'QUESTION' }, game: { ...game, preTimer: { mediaId: 'audio', number: 1, total: 1 } } }); });
   assert.ok(view.getByText('First question'));
   assert.ok(view.getByText('Первый вопрос'));
-  assert.equal(Boolean(view.queryByText('One')), showOptionsOnScreen);
-  assert.equal(Boolean(view.queryByText('Один')), showOptionsOnScreen);
-  assert.equal(Boolean(view.queryByText(/Private matching/)), showOptionsOnScreen);
+  assert.equal(Boolean(view.queryByText('One')), false);
+  assert.equal(Boolean(view.queryByText('Один')), false);
+  assert.equal(Boolean(view.queryByText(/Private matching/)), false);
   assert.equal(view.queryByText(/correct/i), null);
   assert.equal(view.queryByRole('button'), null);
   assert.equal(view.queryByText('Private explanation'), null);
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWERING' }, game: { ...game, state: 'ANSWERING' } }); });
   assert.ok(view.getByText('First question'));
-  assert.equal(Boolean(view.queryByText('One')), showOptionsOnScreen);
-  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...game, state: 'ANSWER_REVEAL' } }); });
-  assert.ok(view.getByText('One'));
+  await act(async () => { live.emit('connect'); });
+  assert.equal(view.queryByText('Connected'), null);
+  assert.equal(view.container.querySelector('.connection-chip'), null);
+  assert.equal(Boolean(view.queryByText('One')), false);
+  await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...game, state: 'ANSWER_REVEAL', options } }); });
+  assert.equal(view.queryByText('One'), null);
+  assert.ok(view.getByText('Two'));
   assert.ok(view.getByText('Private explanation'));
 });
 
@@ -343,7 +347,7 @@ for (const showOptionsOnScreen of [false, true]) test(`Screen Answering resyncs 
   globalThis.fetch = async () => Response.json(state());
   let view = show('/screen/room');
   await waitFor(() => assert.equal(view.getByRole('timer').textContent, '12'));
-  assert.equal(Boolean(view.queryByText('One')), showOptionsOnScreen);
+  assert.equal(Boolean(view.queryByText('One')), false);
   assert.equal(view.queryByText(/Correct answer/), null);
   timer = { ...answerTimer, serverNow: new Date(timerStart + 7000).toISOString(), remainingMs: 5000 };
   await act(async () => { live.emit('lobby:state', state()); });
@@ -498,6 +502,7 @@ for (const audience of ['host', 'screen']) test(`${audience} Reveal shows correc
   await act(async () => { live.emit('lobby:state', reveal); });
   assert.ok(view.getByText(/Correct answer/));
   assert.ok(view.getByText('Right'));
+  assert.equal(Boolean(view.queryByText('Wrong')), audience === 'host');
   assert.ok(view.getByText(/Answered: 2 \/ 2/));
   assert.equal(view.queryByRole('timer'), null);
   assert.equal(view.queryByRole('button', { name: /Next|Reveal/ }), null);

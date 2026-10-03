@@ -28,6 +28,9 @@ test('Single Choice drafts, options, ordering, ownership, and cascades', async (
     const q = `${base}/${first.body.id}`;
     const draft = { type: 'single_choice', textRu: 'Вопрос', textEn: '', points: 2, answerTimeSeconds: 45, showOptionsOnScreen: true };
     assert.equal((await app.put(q).send(draft)).status, 200);
+    const { showOptionsOnScreen: _legacy, ...normalDraft } = draft;
+    const normalSave = await app.put(q).send(normalDraft).expect(200);
+    assert.equal(normalSave.body.showOptionsOnScreen, true, 'Omitted legacy field preserves stored archive compatibility');
     assert.equal((await app.get(base)).body[0].textEn, '');
     for (const changes of [
       { ...draft, type: 'other' }, { ...draft, textRu: 1 }, { ...draft, textEn: 'x'.repeat(5001) },

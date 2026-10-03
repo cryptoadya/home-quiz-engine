@@ -173,11 +173,11 @@ test('Matching image references enforce image kind/ownership, remap on duplicate
     await f.app.post(`/api/rooms/${room.id}/start-question`).expect(200);
     const host = (await f.app.get(`/api/rooms/${room.id}/game/host`)).body.game;
     const screen = (await f.app.get(`/api/rooms/${room.id}/game/screen`)).body.game;
-    assert.equal(screen.leftItems[0].mediaId, media.id);
-    assert.equal(screen.rightItems[0].kind, 'text');
+    assert.equal(screen.leftItems, undefined);
+    assert.equal(screen.rightItems, undefined);
     assert.equal(screen.correctMapping, undefined);
     assert.ok(host.correctMapping);
-    assert.deepEqual((await f.app.get(screen.leftItems[0].mediaUrl).expect(200)).body, png);
+    assert.deepEqual((await f.app.get(host.leftItems[0].mediaUrl).expect(200)).body, png);
     const restored = (await f.app.post(`/api/rooms/${room.id}/reconnect`).send({ token: player.token }).expect(200)).body.game;
     assert.equal(restored.leftItems[0].mediaId, media.id);
     assert.equal(restored.correctMapping, undefined);
@@ -191,7 +191,7 @@ test('Matching image references enforce image kind/ownership, remap on duplicate
     assert.equal(frozen.rounds[0].questions[0].pairs?.[0].left.kind, 'image');
     assert.throws(() => parseGameSnapshot(JSON.stringify({ ...frozen, media: [] })), /reference/);
     await f.app.delete(`/api/quizzes/${quiz.id}/media/${media.id}`).expect(204);
-    assert.deepEqual((await f.app.get(screen.leftItems[0].mediaUrl).expect(200)).body, png);
+    assert.deepEqual((await f.app.get(host.leftItems[0].mediaUrl).expect(200)).body, png);
     assert.ok((await f.app.get(`/api/quizzes/${quiz.id}/validation`)).body.problems.some((p: { code: string }) => p.code === 'MATCHING_MEDIA_MISSING'));
     assert.deepEqual((await f.app.get(`${base}/pairs`)).body[0].left, left);
   } finally { f.close(); }

@@ -128,7 +128,7 @@ test('Halloween Reveal has a decorative ghost outside answer content and keeps H
   assert.ok(ghost?.closest('.question-meta'));
   assert.equal(ghost?.closest('.game-options'), null);
   assert.equal(view.queryByRole('img'), null);
-  assert.ok(view.getByText('Верный ответ / Correct answer'));
+  assert.ok(view.getByText('Правильный ответ / Correct answer'));
   view.rerender(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(QuestionContent, { question, host: true })));
   assert.equal(view.container.querySelector('.halloween-art--reveal'), null);
   view.rerender(createElement(ThemeSurface, { themeId: 'default' }, createElement(QuestionContent, { question })));

@@ -78,9 +78,9 @@ test('selected round edits draft questions and options, saves, reorders, and con
   fireEvent.change(view.getByLabelText('Points'), { target: { value: '3' } });
   fireEvent.change(view.getByLabelText('Answer time'), { target: { value: 'custom' } });
   fireEvent.change(view.getByLabelText('Custom answer time (seconds)'), { target: { value: '42' } });
-  fireEvent.click(view.getByLabelText('Show answer options on Screen'));
+  assert.equal(view.queryByLabelText('Show answer options on Screen'), null);
   await waitFor(() => assert.equal(questions[1].answerTimeSeconds, 42), { timeout: 2000 });
-  assert.deepEqual([questions[1].textRu, questions[1].textEn, questions[1].points, questions[1].showOptionsOnScreen], ['Вопрос', 'Question', 3, true]);
+  assert.deepEqual([questions[1].textRu, questions[1].textEn, questions[1].points, questions[1].showOptionsOnScreen], ['Вопрос', 'Question', 3, false]);
   fireEvent.click(view.getByRole('button', { name: 'Add option' }));
   await waitFor(() => assert.equal(options.length, 1));
   fireEvent.change(view.getByLabelText('Option 1 RU'), { target: { value: 'Да' } });

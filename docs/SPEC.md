@@ -102,7 +102,8 @@ Rules:
 - GIF animates;
 - preserve aspect ratio and fit within layout;
 - each audio/video may be flagged **Play before timer**;
-- flagged audio/video plays in defined order before answer timer starts;
+- Host initiates question/media flow; required pre-timer media may begin as part of **Start Question** and must complete in defined order before the answer timer starts;
+- Host controls non-required audio/video with Play/Pause/Restart; Screen renders/plays according to Host/game commands;
 - after timer starts, replaying media must not reset the game phase/timer;
 - only one audible source at a time;
 - manual Pause pauses both active media and timer.
@@ -188,7 +189,11 @@ Before Host presses **Start Question**, `QUESTION` is a Host preparation state: 
 
 After **Start Question**, Screen shows the bilingual question and media, including while required pre-timer media keeps the state in `QUESTION`. The timer and `Answered n / total` appear during answering. Do not show names of players still thinking.
 
-Answer choices are normally Player-only, but `showOptionsOnScreen` may display them on Screen after public start. When false, choices and Matching content stay hidden until Reveal.
+Answer choices are always Player-only during active answering. Screen never displays answer choices or Matching candidates before Reveal. There are no per-question exceptions or correct-count hints on Screen. The server Screen projection excludes options, Matching candidate lists, correctness and correct mappings before Reveal.
+
+Screen Reveal shows only the correct answer(s) or correct Matching pairs, not the full set of wrong alternatives. Single Choice and Yes/No show one bilingual correct answer; Multiple Choice shows only the bilingual correct set; Matching shows only correct pairs.
+
+Screen hides healthy connection status, internal state names, media sequence counters and raw filenames. Actionable connection/playback recovery remains available.
 
 Pause overlays `Пауза / Paused` without revealing answer.
 
@@ -216,7 +221,7 @@ Server is authoritative for accepted submissions, score, timer, roster and game-
 
 ## Preview / Test Game
 
-Preview: visual inspection modes for RU Player, EN Player, Screen, Host.
+Preview: visual inspection modes for RU Player, EN Player, Screen, Host. Screen Preview follows the same answer boundary: no choices or Matching candidates while answering; only correct answers/pairs on Reveal.
 
 Test Game: real temporary session used with actual phones/Wi-Fi to verify QR, browsers, realtime, reconnect/disconnect, media, scoring, leaderboard, theme and final flow. Mark `isTest=true`; exclude from normal history and clean stale tests automatically.
 

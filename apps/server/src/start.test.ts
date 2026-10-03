@@ -190,7 +190,7 @@ test('snapshot access validates stored version and nested types instead of trust
   } finally { db.close(); }
 });
 
-for (const showOptions of [true, false]) test(`Round navigation restores frozen content with screen options ${showOptions}`, async () => {
+for (const showOptions of [true, false]) test(`Round navigation restores frozen Host content and Screen ready state with legacy flag ${showOptions}`, async () => {
   const directory = mkdtempSync(join(tmpdir(), 'quiz-game-'));
   const path = join(directory, 'quiz.sqlite');
   let db = initializeDatabase(path);
@@ -221,8 +221,9 @@ for (const showOptions of [true, false]) test(`Round navigation restores frozen 
     assert.equal(host.game.points, 3);
     assert.deepEqual(host.game.options.map((o: any) => o.isCorrect).sort(), [false, true]);
     const screen = (await api.get(`/api/rooms/${room.id}/game/screen`).expect(200)).body;
-    assert.equal(screen.game.textRu, 'Вопрос 1/1');
-    assert.deepEqual(screen.game.options, showOptions ? host.game.options.map(({ textRu, textEn }: any) => ({ textRu, textEn })) : undefined);
+    assert.equal(screen.game.textRu, '');
+    assert.deepEqual(screen.game.media, []);
+    assert.equal(screen.game.options, undefined);
     assert.doesNotMatch(JSON.stringify(screen), /isCorrect|snapshot|Question 1\/0|points|answerTimeSeconds/);
     const player = (await api.post(`/api/rooms/${room.id}/reconnect`).send({ token: identities[0].token }).expect(200)).body;
     assert.equal(player.room.state, 'QUESTION');

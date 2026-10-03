@@ -160,7 +160,7 @@ test('Start broadcasts ROUND_INTRO to Host, Screen and Player without answers an
         assert.equal(payload.game.options[0].isCorrect, true);
       } else {
         assert.doesNotMatch(JSON.stringify(payload), /isCorrect|snapshot|options|points|answerTimeSeconds/);
-        if (i === 1) assert.equal(payload.game.textRu, 'Вопрос');
+        if (i === 1) { assert.equal(payload.game.textRu, ''); assert.deepEqual(payload.game.media, []); }
         else assert.equal(payload.game, undefined);
       }
       const socket = sockets[i];

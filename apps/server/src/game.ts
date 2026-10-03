@@ -36,8 +36,12 @@ function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience,
   const reveal = room.state === 'ANSWER_REVEAL';
   const timer = room.state === 'ANSWERING' || reveal ? { timer: readTimer(db, roomId, now), answers: getAnswerCounts(db, roomId, question.id) } : {};
   const preTimer = preTimerMediaId(db, roomId);
+  // QUESTION without an active required-media cursor is Host preparation only.
+  if (audience === 'screen' && room.state === 'QUESTION' && !preTimer) return {
+    state: 'QUESTION' as const, ...numbering, questionNumber: questionIndex! + 1, textRu: '', textEn: '', media: [],
+  };
   const ordered = question.media?.filter(ref => ref.playBeforeTimer) ?? [];
-  const common = { ...(preTimer ? { preTimer: { mediaId: preTimer, number: ordered.findIndex(ref => ref.mediaId === preTimer) + 1, total: ordered.length } } : {}), ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
+  const common = { ...(preTimer ? { preTimer: { mediaId: preTimer, number: ordered.findIndex(ref => ref.mediaId === preTimer) + 1, total: ordered.length } } : {}), ...(audience === 'host' && reveal ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}), state: room.state as 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL', type: question.type, ...(reveal ? { statistics: getRevealStats(db, roomId, question.id) } : {}), ...timer, ...numbering, questionNumber: questionIndex! + 1,
     questionId: question.id, textRu: question.textRu, textEn: question.textEn,
     ...(audience === 'host' || reveal ? { explanationRu: question.explanationRu ?? '', explanationEn: question.explanationEn ?? '' } : {}),
     media: (question.media ?? []).flatMap(ref => {
@@ -46,14 +50,15 @@ function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience,
     }) };
   const matching = question.type === 'matching' ? matchingContent(roomId, question, snapshot.shuffleAnswers) : undefined;
   const matchingProjection = matching ? { type: 'matching' as const,
-    ...(audience === 'host' || question.showOptionsOnScreen || reveal ? { leftItems: matching.leftItems, rightItems: matching.rightItems } : {}),
+    ...(audience === 'host' || reveal ? { leftItems: matching.leftItems, rightItems: matching.rightItems } : {}),
     ...(audience === 'host' || reveal ? { correctMapping: matching.correctMapping } : {}) } : {};
   if (audience === 'host') return { ...common, ...matchingProjection, points: question.points,
     answerTimeSeconds: effectiveDuration(question.answerTimeSeconds, snapshot.defaultAnswerTimeSeconds),
     options: answerOrder(question.options, snapshot.shuffleAnswers, roomId, question.id).map(option => ({ textRu: option.textRu, textEn: option.textEn, isCorrect: option.isCorrect })),
   };
-  return { ...common, ...matchingProjection, showOptionsOnScreen: question.showOptionsOnScreen,
-    ...(question.showOptionsOnScreen || reveal ? { options: answerOrder(question.options, snapshot.shuffleAnswers, roomId, question.id).map(option => ({ textRu: option.textRu, textEn: option.textEn, ...(reveal ? { isCorrect: option.isCorrect } : {}) })) } : {}),
+  return { ...common, ...matchingProjection,
+    ...(reveal && question.type !== 'matching' ? { options: answerOrder(question.options, snapshot.shuffleAnswers, roomId, question.id)
+      .filter(option => option.isCorrect).map(option => ({ textRu: option.textRu, textEn: option.textEn, isCorrect: true })) } : {}),
   };
 }
 

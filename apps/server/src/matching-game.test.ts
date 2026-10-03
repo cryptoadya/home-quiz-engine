@@ -45,26 +45,26 @@ async function fixture(db: ReturnType<typeof initializeDatabase>, mixed = false,
   return { room, players, root, snapshot, q, content, answer };
 }
 
-for (const visible of [false, true]) test(`Matching Screen option visibility follows setting through Question, Answering, Pause and Reveal (${visible})`, async () => {
+for (const visible of [false, true]) test(`Matching Screen hides candidates regardless of legacy setting through Question, Answering, Pause and Reveal (${visible})`, async () => {
   const db = initializeDatabase(':memory:');
   try {
     const f = await fixture(db, false, visible);
     const screen = () => (getSurfaceState(db, f.room.id, 'screen', 2000) as any).game;
     const host = () => (getSurfaceState(db, f.room.id, 'host', 2000) as any).game;
     const check = (game: any, expected: boolean) => {
-      assert.equal(game.textEn, 'Question'); assert.ok(Array.isArray(game.media));
+      assert.ok(Array.isArray(game.media));
       assert.equal('leftItems' in game, expected); assert.equal('rightItems' in game, expected);
       assert.equal(game.correctMapping, undefined);
     };
     assert.ok(host().leftItems.length > 0);
-    check(screen(), visible);
+    check(screen(), false);
     assert.ok('room' in pauseGame(db, f.room.id, () => 2000));
-    check(screen().content, visible); assert.ok(host().content.leftItems.length > 0);
+    check(screen().content, false); assert.ok(host().content.leftItems.length > 0);
     assert.ok('room' in resumeGame(db, f.room.id, () => 2000));
     db.prepare("UPDATE game_sessions SET state = 'QUESTION', answer_started_at = NULL, answer_deadline_at = NULL WHERE id = ?").run(f.room.id);
-    check(screen(), visible);
+    check(screen(), false);
     assert.ok('room' in pauseGame(db, f.room.id, () => 2000));
-    check(screen().content, visible);
+    check(screen().content, false);
     assert.ok('room' in resumeGame(db, f.room.id, () => 2000));
     assert.ok('room' in startQuestion(db, f.room.id, 2000));
     assert.equal(completeQuestion(db, f.room.id, () => 33000), true);
@@ -101,7 +101,7 @@ test('Matching rejects incomplete, malformed, duplicate, foreign and mixed submi
     assert.doesNotMatch(JSON.stringify(safe), /correctMapping|isCorrect|correctOption|"pairs"|"position"/);
     for (const pair of f.q.pairs!) assert.ok(!JSON.stringify(safe).includes(pair.id));
     const screen = getSurfaceState(db, f.room.id, 'screen') as any;
-    assert.equal(screen.game.leftItems.length, 3); assert.equal(screen.game.correctMapping, undefined);
+    assert.equal(screen.game.leftItems, undefined); assert.equal(screen.game.rightItems, undefined); assert.equal(screen.game.correctMapping, undefined);
     assert.deepEqual((getSurfaceState(db, f.room.id, 'host') as any).game.correctMapping, f.content.correctMapping);
     const accepted = submitAnswer(db, f.room.id, { ...f.answer, mapping: [...f.answer.mapping].reverse() }, () => 2000) as any;
     const alternate = f.answer.mapping.map((pair, i) => ({ ...pair, rightId: f.answer.mapping[(i + 1) % 3].rightId }));

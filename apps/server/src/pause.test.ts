@@ -357,7 +357,7 @@ test('paused Reveal reload preserves scored answers and completed timer context'
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-for (const showOptions of [false, true]) test(`text-only paused Answering preserves Screen visibility (options=${showOptions})`, async () => {
+for (const showOptions of [false, true]) test(`text-only paused Answering hides choices regardless of legacy setting (options=${showOptions})`, async () => {
   const db = initializeDatabase(':memory:');
   try {
     const { api, root, room, question } = await setup(db);
@@ -369,8 +369,7 @@ for (const showOptions of [false, true]) test(`text-only paused Answering preser
     const screen = (await api.get(`${root}/game/screen`).expect(200)).body.game;
     assert.equal(screen.content?.textEn, 'Question');
     assert.equal(screen.content.state, 'ANSWERING');
-    assert.equal(Boolean(screen.content.options), showOptions);
-    if (showOptions) assert.equal(screen.content.options.length, 2);
+    assert.equal(screen.content.options, undefined);
     assert.equal(screen.content.timer, undefined);
     assert.equal(JSON.stringify(screen).includes('isCorrect'), false);
     assert.equal(JSON.stringify(screen).includes('explanation'), false);

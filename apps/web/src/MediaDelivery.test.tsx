@@ -32,7 +32,8 @@ const answering = () => ({ room: room('ANSWERING'), game: { ...question().game, 
 
 function setup(autoplay = true) {
   let plays = 0;
-  proto.play = function () { plays++; return autoplay ? Promise.resolve() : Promise.reject(new Error('blocked')); };
+  const played: string[] = [];
+  proto.play = function () { plays++; played.push(this.getAttribute('src') ?? ''); return autoplay ? Promise.resolve() : Promise.reject(new Error('blocked')); };
   proto.pause = function () {};
   Object.defineProperty(proto, 'readyState', { configurable: true, get: () => 1 });
   Object.defineProperty(proto, 'duration', { configurable: true, get: () => 5 });
@@ -51,7 +52,7 @@ function setup(autoplay = true) {
     await waitFor(() => assert.ok(plays > 0));
     await act(async () => { fireEvent.ended(view.container.querySelector('audio')!); });
   };
-  return { live, show, connect, disconnect, end, subscribe, setSnapshot: (next: any) => { snapshot = next; } };
+  return { live, show, connect, disconnect, end, subscribe, played, setSnapshot: (next: any) => { snapshot = next; } };
 }
 
 test('Screen completion while disconnected survives remount and advances after reconnect', async () => {
@@ -65,7 +66,8 @@ test('Screen completion while disconnected survives remount and advances after r
   await h.connect();
   await waitFor(() => assert.equal(deliveries.length, 1));
   assert.deepEqual(deliveries[0], { roomId: 'delivery-room', questionId: 'q', mediaId: 'a', revision: 1, duration: 5 });
-  await waitFor(() => assert.ok(view.getByText(/Before timer.*2.*2/)));
+  await waitFor(() => assert.ok(h.played.includes('/b')), { timeout: 1000 });
+  assert.equal(view.queryByText(/Before timer/), null);
 });
 
 test('lost ACK retries the identical completion and only one delivery advances the lifecycle', async () => {

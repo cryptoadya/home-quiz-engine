@@ -90,7 +90,8 @@ for (const tied of [false, true]) test(`complete frozen multi-round loop, durabl
     assert.deepEqual(db.prepare('SELECT * FROM player_answers').all(), answersBefore);
     const questionProjection = (await api.get(`${root}/game/screen`)).body.game;
     assert.equal(questionProjection.state, 'QUESTION');
-    assert.equal(questionProjection.textEn, 'Question 0/1');
+    assert.equal(questionProjection.textEn, '');
+    assert.deepEqual(questionProjection.media, []);
     assert.equal(questionProjection.timer, undefined);
     await api.post(`${root}/next`).expect(409);
     await play(0, 1);

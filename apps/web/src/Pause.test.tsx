@@ -313,8 +313,8 @@ for (const state of ['QUESTION', 'ANSWERING', 'ANSWER_REVEAL']) test(`Screen ren
   assert.equal(Boolean(view.queryByText('Вопрос')), state !== 'QUESTION');
   if (state === 'QUESTION') assert.ok(view.getByText('Следующий вопрос готов / Next question is ready'));
   assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
-  assert.equal(Boolean(view.queryByText('Answer')), state !== 'QUESTION');
-  assert.equal(Boolean(view.queryByText('Верный ответ / Correct answer')), state === 'ANSWER_REVEAL');
+  assert.equal(Boolean(view.queryByText('Answer')), state === 'ANSWER_REVEAL');
+  assert.equal(Boolean(view.queryByText('Правильный ответ / Correct answer')), state === 'ANSWER_REVEAL');
   assert.equal(Boolean(view.queryByText('Because')), state === 'ANSWER_REVEAL');
   assert.equal(view.queryByRole('timer'), null);
 });

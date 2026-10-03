@@ -9,7 +9,7 @@ const base = '/api/quizzes/quiz/rounds/round/questions';
 const blank = () => ({ kind: 'text' as const, textRu: '', textEn: '' });
 const question = (id: string, type: Question['type'] = 'single_choice'): Question => ({
   id, roundId: 'round', type, textRu: '', textEn: id.toUpperCase(), points: 1,
-  answerTimeSeconds: null, showOptionsOnScreen: false, position: id === 'a' ? 0 : 1,
+  answerTimeSeconds: null, position: id === 'a' ? 0 : 1,
   createdAt: '', updatedAt: '',
 });
 const option = (id: string, questionId: string, position = 0): Option => ({

@@ -62,6 +62,7 @@ test('all four previews share current editor content, localization and themes wi
     assert.ok(panel.getByText(mode === 'EN Player' ? 'Question EN' : 'Вопрос RU'));
     if (mode === 'Screen' || mode === 'Host') assert.ok(panel.getByText('Question EN'));
     if (mode === 'Host') assert.ok(panel.getByText('Correct answer'));
+    if (mode === 'Screen') { assert.equal(panel.queryByText('Right EN'), null); assert.equal(panel.queryByText('Wrong EN'), null); }
   }
   assert.equal(requests.filter(request => request.method !== 'GET').length, 0);
   assert.equal(writes.length, 0);
@@ -85,7 +86,8 @@ test('all four previews share current editor content, localization and themes wi
   assert.ok(panel.getByText('Correct answer: Right EN'));
   assert.equal(panel.queryByText(/Верный ответ/), null);
   fireEvent.change(panel.getByLabelText('Preview mode'), { target: { value: 'Screen' } });
-  assert.ok(panel.getByText('Верный ответ / Correct answer'));
+  assert.ok(panel.getByText('Правильный ответ / Correct answer'));
+  assert.equal(panel.queryByText('Wrong EN'), null);
   assert.equal((view.getByLabelText('Correct answer, option 1') as HTMLInputElement).checked, true);
   fireEvent.click(panel.getByRole('button', { name: 'Close preview' }));
   assert.equal(view.queryByRole('region', { name: 'Question preview' }), null);
@@ -115,7 +117,7 @@ test('Player answering props omit hidden correctness, mappings, scores, normal m
     }
   }
   assert.equal(previewContent({ ...previewProps, question: { ...previewProps.question, type: 'multiple_choice', showCorrectCount: true } }, 'EN Player', false).player?.requiredCorrectCount, 1);
-  assert.equal(previewContent(previewProps, 'Screen', false).question?.options?.[0].isCorrect, undefined);
+  assert.equal(previewContent(previewProps, 'Screen', false).question?.options, undefined);
   assert.equal(previewContent(previewProps, 'Host', false).question?.options?.[0].isCorrect, true);
 });
 
@@ -172,14 +174,14 @@ test('Matching text/images and ordered question media use shared rendering and f
     fireEvent.change(view.getByLabelText('Pair 1 left EN'), { target: { value: 'Edited cat' } });
     assert.ok(panel.getByText(/Edited cat/));
     fireEvent.change(panel.getByLabelText('Preview mode'), { target: { value: 'Screen' } });
-    await waitFor(() => assert.equal((panel.getByLabelText('Clip') as HTMLVideoElement).src, 'http://localhost/api/quizzes/quiz/media/clip/content'));
+    await waitFor(() => assert.equal((panel.getByLabelText('Видео / Video') as HTMLVideoElement).src, 'http://localhost/api/quizzes/quiz/media/clip/content'));
     assert.ok(panel.getByText('Верные пары / Correct pairs'));
-    assert.equal((panel.getByLabelText('Clip') as HTMLVideoElement).controls, true);
-    assert.equal((panel.getByLabelText('Sound') as HTMLAudioElement).controls, true);
+    assert.equal((panel.getByLabelText('Видео / Video') as HTMLVideoElement).controls, true);
+    assert.equal((panel.getByLabelText('Аудио / Audio') as HTMLAudioElement).controls, true);
     assert.deepEqual([...root.querySelectorAll('.question-media img, .question-media video, .question-media audio')].map(element => element.getAttribute('src')), ['/api/quizzes/quiz/media/cat/content', '/api/quizzes/quiz/media/clip/content', '/api/quizzes/quiz/media/sound/content']);
-    fireEvent.play(panel.getByLabelText('Clip'));
+    fireEvent.play(panel.getByLabelText('Видео / Video'));
     assert.equal(pauses, 1, 'Local video pauses its audio peer');
-    fireEvent.error(panel.getByLabelText('Clip'));
+    fireEvent.error(panel.getByLabelText('Видео / Video'));
     assert.ok(panel.getByText(/Playback failed/));
     fireEvent.change(panel.getByLabelText('Preview state'), { target: { value: 'answering' } });
     assert.equal(panel.queryByText('Верные пары / Correct pairs'), null);

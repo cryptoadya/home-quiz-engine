@@ -45,11 +45,12 @@ export function previewContent({ quizId, quiz, question, options, pairs, media, 
     return { playerReveal: result, duration };
   }
   const content: CurrentQuestion = {
-    state: reveal ? 'ANSWER_REVEAL' : 'ANSWERING', questionId: question.id, roundNumber, questionNumber, questionCount,
+    state: reveal ? 'ANSWER_REVEAL' : 'ANSWERING', type: question.type, questionId: question.id, roundNumber, questionNumber, questionCount,
     textRu: question.textRu, textEn: question.textEn, points: question.points, answerTimeSeconds: duration,
-    ...((reveal || mode === 'Host') ? { explanationRu: question.explanationRu, explanationEn: question.explanationEn } : {}), showOptionsOnScreen: question.showOptionsOnScreen,
-    options: matching ? [] : options.map(option => ({ textRu: option.textRu, textEn: option.textEn, ...((reveal || mode === 'Host') ? { isCorrect: option.isCorrect } : {}) })),
-    ...(matching ? { leftItems: leftItems as MatchingItem[], rightItems: rightItems as MatchingItem[], ...((reveal || mode === 'Host') ? { correctMapping } : {}) } : {}),
+    ...((reveal || mode === 'Host') ? { explanationRu: question.explanationRu, explanationEn: question.explanationEn } : {}),
+    ...(!matching && (reveal || mode === 'Host') ? { options: options.filter(option => mode === 'Host' || option.isCorrect)
+      .map(option => ({ textRu: option.textRu, textEn: option.textEn, isCorrect: option.isCorrect })) } : {}),
+    ...(matching && (reveal || mode === 'Host') ? { leftItems: leftItems as MatchingItem[], rightItems: rightItems as MatchingItem[], ...((reveal || mode === 'Host') ? { correctMapping } : {}) } : {}),
     media: (question.media ?? []).map(ref => {
       const item = media.find(item => item.id === ref.mediaId);
       return { mediaId: ref.mediaId, name: item?.name ?? 'Media unavailable', kind: item?.kind ?? 'image', mediaUrl: item ? url(item.id) : '', playBeforeTimer: ref.playBeforeTimer };

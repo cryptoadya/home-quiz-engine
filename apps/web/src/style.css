@@ -104,6 +104,7 @@ legend { font-size: .9rem; font-weight: 650; color: var(--theme-muted); margin-b
 .correct-option, .game-options li.correct-option { border: 2px solid var(--theme-correctBorder); background: var(--theme-correctBackground); color: var(--theme-correctText); border-radius: 1rem; padding: 1rem; }
 .incorrect-option, .game-options li.incorrect-option { border: 1px solid var(--theme-wrongText); background: var(--theme-wrongBackground); color: var(--theme-wrongText); border-radius: 1rem; padding: 1rem; }
 .game-options li.correct-option, .game-options li.incorrect-option { padding-left: 4rem; }
+.revealed-answers { display: grid; gap: .9rem; list-style: none; padding: 0; text-align: left; }
 .reveal-statistics { color: var(--theme-correctText); background: var(--theme-correctBackground); padding: .75rem 1rem; border-radius: .8rem; font-size: .85em; }
 .explanation { border-left: 3px solid var(--theme-accent); padding: .1rem 1.25rem; margin: 1.5rem 0; text-align: left; }
 .explanation h3 { color: var(--theme-accent); }

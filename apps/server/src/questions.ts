@@ -7,6 +7,7 @@ import { getRound } from './rounds.js';
 export type QuestionType = 'single_choice' | 'yes_no' | 'multiple_choice' | 'matching';
 export type Question = {
   id: string; roundId: string; type: QuestionType; textRu: string; textEn: string;
+  // Legacy storage/archive field only; ignored by gameplay and absent from authoring controls.
   points: number; answerTimeSeconds: number | null; showOptionsOnScreen: boolean; showCorrectCount: boolean;
   explanationRu: string; explanationEn: string; media: MediaReference[]; position: number; createdAt: string; updatedAt: string;
 };
@@ -57,17 +58,17 @@ export function createQuestion(db: DatabaseSync, roundId: string, type: Question
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return toQuestion(db.prepare('SELECT * FROM questions WHERE id = ?').get(id) as QuestionRow);
 }
-export type QuestionChanges = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen'> & { explanationRu?: string; explanationEn?: string; showCorrectCount?: boolean; media?: MediaReference[] };
+export type QuestionChanges = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds'> & { showOptionsOnScreen?: boolean; explanationRu?: string; explanationEn?: string; showCorrectCount?: boolean; media?: MediaReference[] };
 export function validateQuestionChanges(value: unknown): { changes: QuestionChanges } | { error: string } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'Question fields must be an object.' };
   const input = value as Record<string, unknown>;
-  const keys = ['type', 'textRu', 'textEn', 'points', 'answerTimeSeconds', 'showOptionsOnScreen'];
-  if (keys.some(key => !(key in input)) || Object.keys(input).some(key => ![...keys, 'showCorrectCount', 'media', 'explanationRu', 'explanationEn'].includes(key))) return { error: 'Provide all question fields.' };
+  const keys = ['type', 'textRu', 'textEn', 'points', 'answerTimeSeconds'];
+  if (keys.some(key => !(key in input)) || Object.keys(input).some(key => ![...keys, 'showOptionsOnScreen', 'showCorrectCount', 'media', 'explanationRu', 'explanationEn'].includes(key))) return { error: 'Provide all question fields.' };
   if (input.type !== 'single_choice' && input.type !== 'yes_no' && input.type !== 'multiple_choice' && input.type !== 'matching') return { error: 'Choose single_choice, yes_no, multiple_choice or matching.' };
   if (typeof input.textRu !== 'string' || typeof input.textEn !== 'string' || input.textRu.length > 5000 || input.textEn.length > 5000) return { error: 'Question text must be strings of at most 5000 characters.' };
   if (!Number.isSafeInteger(input.points) || (input.points as number) < 1) return { error: 'Points must be a positive integer.' };
   if (input.answerTimeSeconds !== null && (!Number.isInteger(input.answerTimeSeconds) || (input.answerTimeSeconds as number) < 1 || (input.answerTimeSeconds as number) > 3600)) return { error: 'Answer time must be null or 1–3600 seconds.' };
-  if (typeof input.showOptionsOnScreen !== 'boolean') return { error: 'showOptionsOnScreen must be a boolean.' };
+  if ('showOptionsOnScreen' in input && typeof input.showOptionsOnScreen !== 'boolean') return { error: 'showOptionsOnScreen must be a boolean.' };
   if ('showCorrectCount' in input && typeof input.showCorrectCount !== 'boolean') return { error: 'showCorrectCount must be a boolean.' };
   if (('explanationRu' in input || 'explanationEn' in input) && (typeof input.explanationRu !== 'string' || typeof input.explanationEn !== 'string' || input.explanationRu.length > 5000 || input.explanationEn.length > 5000)) return { error: 'Provide both explanations, at most 5000 characters each.' };
   if ('media' in input && !validMediaReferences(input.media)) return { error: 'Invalid ordered media references.' };
@@ -78,9 +79,9 @@ export function updateQuestion(db: DatabaseSync, roundId: string, id: string, ch
   db.exec('BEGIN');
   try {
     db.prepare(`UPDATE questions SET type = ?, text_ru = ?, text_en = ?, points = ?, answer_time_seconds = ?,
-      explanation_ru = COALESCE(?, explanation_ru), explanation_en = COALESCE(?, explanation_en), show_options_on_screen = ?, show_correct_count = COALESCE(?, show_correct_count), media_json = COALESCE(?, media_json), updated_at = ? WHERE round_id = ? AND id = ?`).run(
+      explanation_ru = COALESCE(?, explanation_ru), explanation_en = COALESCE(?, explanation_en), show_options_on_screen = COALESCE(?, show_options_on_screen), show_correct_count = COALESCE(?, show_correct_count), media_json = COALESCE(?, media_json), updated_at = ? WHERE round_id = ? AND id = ?`).run(
       changes.type, changes.textRu, changes.textEn, changes.points, changes.answerTimeSeconds,
-      changes.explanationRu ?? null, changes.explanationEn ?? null, Number(changes.showOptionsOnScreen), changes.showCorrectCount === undefined ? null : Number(changes.showCorrectCount), changes.media === undefined ? null : JSON.stringify(changes.media), new Date().toISOString(), roundId, id,
+      changes.explanationRu ?? null, changes.explanationEn ?? null, changes.showOptionsOnScreen === undefined ? null : Number(changes.showOptionsOnScreen), changes.showCorrectCount === undefined ? null : Number(changes.showCorrectCount), changes.media === undefined ? null : JSON.stringify(changes.media), new Date().toISOString(), roundId, id,
     );
     if (previous?.type !== changes.type && (previous?.type === 'matching' || changes.type === 'matching')) {
       db.prepare('DELETE FROM answer_options WHERE question_id = ?').run(id);

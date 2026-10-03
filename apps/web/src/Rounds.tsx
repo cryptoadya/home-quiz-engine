@@ -13,13 +13,13 @@ export type Round = {
   titleEn: string;
   descriptionRu: string;
   descriptionEn: string;
-  artMediaId?: string | null; showLeaderboardAfter: boolean;
+  artMediaId?: string | null; isTiebreak?: boolean; showLeaderboardAfter: boolean;
   position: number;
   createdAt: string;
   updatedAt: string;
 };
 
-type RoundChanges = Pick<Round, 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'artMediaId'>;
+type RoundChanges = Pick<Round, 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'artMediaId' | 'isTiebreak'>;
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -151,7 +151,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevi
   const fields: RoundChanges | null = selected ? {
     artMediaId: selected.artMediaId ?? null, titleRu: selected.titleRu, titleEn: selected.titleEn,
     descriptionRu: selected.descriptionRu, descriptionEn: selected.descriptionEn,
-    showLeaderboardAfter: selected.showLeaderboardAfter,
+    isTiebreak: Boolean(selected.isTiebreak), showLeaderboardAfter: selected.showLeaderboardAfter,
   } : null;
 
   return <section id="rounds-questions" className="rounds" aria-label="Rounds & questions">
@@ -162,7 +162,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevi
       <nav className="authoring-navigator" aria-label="Rounds">
       {rounds.length === 0 ? <p>No rounds yet.</p> : <ol className="round-list">{rounds.map((round, index) => <li key={round.id}>
         <button aria-current={selectedId === round.id ? 'true' : undefined} className={selectedId === round.id ? 'selected-round' : 'subtle'} onClick={() => void selectRound(round.id)} disabled={busy || incomplete.current}>
-          <span className="navigator-title">{round.titleEn} / {round.titleRu}</span>
+          <span className="navigator-title">{round.titleEn} / {round.titleRu}{round.isTiebreak && ' · Tiebreak'}</span>
         </button>
         <div className="round-order">
           <button className="subtle" aria-label={`Move ${round.titleEn} up`} disabled={busy || incomplete.current || index === 0} onClick={() => void move(index, -1)}>↑</button>
@@ -185,6 +185,8 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevi
           {artMedia.filter(item => item.kind === 'image').map(item => <option key={item.id} value={item.id}>{item.name} (image)</option>)}
         </select></label>
         {selected.artMediaId && <MediaImage src={`/api/quizzes/${quizId}/media/${selected.artMediaId}/content`} alt="Round art" className="editor-media-preview" />}
+        <label className="checkbox"><input type="checkbox" checked={Boolean(selected.isTiebreak)} disabled={busy} onChange={event => change(selected, { ...fields, isTiebreak: event.target.checked })} /> Reserve round for final tiebreak / Допвопросы при ничьей</label>
+        {selected.isTiebreak && <p>Skipped in the main quiz. Only players sharing first place can answer after the final results; points are unchanged.</p>}
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
         </div></details>
         </div><div className="destructive-actions"><button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button></div>

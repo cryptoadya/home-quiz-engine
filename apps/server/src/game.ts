@@ -10,6 +10,7 @@ import { getRoom } from './rooms.js';
 import { effectiveDuration, projectAnswerTimer } from './timer.js';
 import { getLeaderboard, navigationAction } from './navigation.js';
 import { listPlayers } from './players.js';
+import { getTiebreak, reserveQuestions } from './tiebreak.js';
 
 export type Audience = 'host' | 'screen' | 'player';
 
@@ -18,7 +19,7 @@ function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience,
   if (underlyingState) room.state = underlyingState as typeof room.state;
   if (room.closedAt || room.state === 'LOBBY' || audience === 'player') return null;
   const { snapshot, round, roundIndex, questionIndex } = currentContent(db, roomId);
-  const numbering = { roundNumber: roundIndex + 1, questionCount: round.questions.length };
+  const numbering = { roundNumber: round.isTiebreak ? snapshot.rounds.slice(0, roundIndex + 1).filter(r => r.isTiebreak).length : snapshot.rounds.slice(0, roundIndex + 1).filter(r => !r.isTiebreak).length, questionCount: round.questions.length, ...(round.isTiebreak ? { isTiebreak: true } : {}) };
   if (room.state === 'ROUND_INTRO') return {
     ...(round.artMediaId ? { artUrl: `/api/rooms/${roomId}/media/${round.artMediaId}/content` } : {}), state: 'ROUND_INTRO' as const, ...numbering,
     titleRu: round.titleRu, titleEn: round.titleEn,
@@ -26,8 +27,10 @@ function projectActiveGame(db: DatabaseSync, roomId: string, audience: Audience,
   };
   if (room.state === 'ROUND_END' || room.state === 'LEADERBOARD' || room.state === 'FINAL_RESULTS' || room.state === 'WINNER_SCREEN') {
     const leaderboard = room.state === 'ROUND_END' ? undefined : getLeaderboard(db, roomId);
+    const tie = getTiebreak(db, roomId);
     return { state: room.state, ...numbering, titleRu: round.titleRu, titleEn: round.titleEn,
-      ...(leaderboard ? { leaderboard: room.state === 'WINNER_SCREEN' ? leaderboard.filter(player => player.rank === 1) : leaderboard } : {}),
+      ...(leaderboard ? { leaderboard: room.state === 'WINNER_SCREEN' ? leaderboard.filter(player => tie?.completed ? tie.contenderIds.includes(player.playerId) : player.rank === 1) : leaderboard } : {}),
+      ...(audience === 'host' && room.state === 'FINAL_RESULTS' ? { canStartTiebreak: !tie && (leaderboard?.filter(p => p.rank === 1).length ?? 0) > 1 && reserveQuestions(snapshot).length > 0 } : {}),
       ...(audience === 'host' ? { nextAction: navigationAction(room.state, snapshot, roundIndex, questionIndex) } : {}),
     };
   }
@@ -125,6 +128,8 @@ export function getPlayerGame(db: DatabaseSync, roomId: string, language: 'ru' |
   if (!question) throw new Error('Current question not found.');
   const reveal = room.state === 'ANSWER_REVEAL';
   const excluded = isQuestionExcluded(db, roomId, question.id, playerId);
+  const tie = getTiebreak(db, roomId);
+  if (tie && !tie.questionPlayerIds.includes(playerId)) return null;
   const matching = question.type === 'matching' ? matchingContent(roomId, question, snapshot.shuffleAnswers) : undefined;
   const localizedItems = (items: NonNullable<typeof matching>['leftItems']) => items.map(item => item.kind === 'text'
     ? { id: item.id, kind: item.kind, text: language === 'ru' ? item.textRu : item.textEn }

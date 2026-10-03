@@ -66,10 +66,11 @@ export function PlayerAnswerContent({ question, language, seconds, onSubmit, dra
   }
 
   return <div className="player-answer" data-answer-state={submission?.submitted ? 'submitted' : locked ? 'disabled' : 'editing'}>
+    <form onSubmit={event => { event.preventDefault(); void submit(); }}>
+      <div className="answer-scroll">
     <h2 className="player-question">{question.text}</h2>
     {multiple && question.requiredCorrectCount !== undefined && <p>{ru ? 'Количество верных вариантов' : 'Required correct options'}: {question.requiredCorrectCount}</p>}
     <CountdownDisplay seconds={timedOut ? 0 : seconds} language={language} />
-    <form onSubmit={event => { event.preventDefault(); void submit(); }}>
       {matching ? <fieldset disabled={locked} className="matching-answer">
         <legend>{ru ? 'Нажмите слева, затем справа' : 'Tap a left item, then a right item'}</legend>
         <div className="matching-columns">
@@ -90,7 +91,8 @@ export function PlayerAnswerContent({ question, language, seconds, onSubmit, dra
         </label>)}
       </fieldset>}
       {!submission?.submitted && <p>{ru ? 'Выбор можно изменить до отправки' : 'You can change your choice before Submit'}</p>}
-      <button className="submit-answer" type="submit" disabled={locked || !complete}>{ru ? 'Отправить' : 'Submit'}</button>
+      </div>
+      <div className="answer-actions"><button className="submit-answer" type="submit" disabled={locked || !complete}>{ru ? 'Отправить' : 'Submit'}</button></div>
     </form>
     {submission?.submitted && <p className="state-notice submitted" role="status">{ru ? 'Ответ принят' : 'Answer submitted'}</p>}
     {error && <p role="alert">{ru ? 'Не удалось подтвердить ответ. Попробуйте отправить снова или обновить страницу.' : 'Could not confirm your answer. Retry Submit or refresh the page.'}</p>}

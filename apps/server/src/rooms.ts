@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { validateQuizReadiness, type QuizValidation } from './validation.js';
 import { createGameSnapshot } from './snapshot.js';
+import { getTiebreak, type Tiebreak } from './tiebreak.js';
 
 export type Room = {
   id: string;
@@ -11,6 +12,7 @@ export type Room = {
   quizTitle: string;
   themeId: string;
   isTest: boolean;
+  tiebreak?: Tiebreak;
   state: 'LOBBY' | 'ROUND_INTRO' | 'QUESTION' | 'ANSWERING' | 'ANSWER_REVEAL' | 'ROUND_END' | 'LEADERBOARD' | 'FINAL_RESULTS' | 'WINNER_SCREEN' | 'PAUSED';
   createdAt: string;
   closedAt: string | null;
@@ -27,7 +29,9 @@ function publicRoom(row: Record<string, unknown> | undefined): Room | null {
 }
 
 export function getRoom(db: DatabaseSync, id: string): Room | null {
-  return publicRoom(db.prepare(`${roomQuery} WHERE s.id = ?`).get(id));
+  const room = publicRoom(db.prepare(`${roomQuery} WHERE s.id = ?`).get(id));
+  const tiebreak = room && getTiebreak(db, id);
+  return room && tiebreak ? { ...room, tiebreak } : room;
 }
 
 export function getRoomByCode(db: DatabaseSync, code: string): Room | null {
@@ -94,8 +98,8 @@ export function startRoom(db: DatabaseSync, id: string): { room: Room } | { stat
     snapshot.media = freezeMedia(db, room.quizId!, id, mediaIds);
     db.prepare('INSERT INTO game_history (session_id, quiz_id, quiz_title) VALUES (?, ?, ?)').run(id, room.quizId!, snapshot.title);
     db.prepare('UPDATE session_players SET in_roster = 1 WHERE session_id = ? AND removed_at IS NULL').run(id);
-    db.prepare(`UPDATE game_sessions SET snapshot_json = ?, roster_locked_at = ?, state = 'ROUND_INTRO', current_round_index = 0, current_question_index = NULL WHERE id = ?`)
-      .run(JSON.stringify(snapshot), new Date().toISOString(), id);
+    db.prepare(`UPDATE game_sessions SET snapshot_json = ?, roster_locked_at = ?, state = 'ROUND_INTRO', current_round_index = ?, current_question_index = NULL WHERE id = ?`)
+      .run(JSON.stringify(snapshot), new Date().toISOString(), snapshot.rounds.findIndex(round => !round.isTiebreak), id);
     const started = getRoom(db, id)!;
     db.exec('COMMIT');
     committed = true;

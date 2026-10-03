@@ -33,6 +33,7 @@ export function validateQuizReadiness(db: DatabaseSync, quizId: string): QuizVal
 
   const rounds = listRounds(db, quizId);
   if (rounds.length === 0) add('QUIZ_NO_ROUNDS', 'Quiz has no rounds');
+  if (rounds.length > 0 && rounds.every(round => round.isTiebreak)) add('QUIZ_NO_REGULAR_ROUNDS', 'Quiz needs at least one regular round; tiebreak rounds are reserve questions');
   for (const round of rounds) {
     const roundName = round.titleEn.trim() || round.titleRu.trim() || `Round ${round.position + 1}`;
     const roundLocation = { roundId: round.id };

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import type { Quiz } from './Admin';
 import type { Question, Option, Pair, Media, Side } from './Questions';
 import type { CurrentQuestion, PlayerQuestion, PlayerReveal, MatchingItem, PlayerMatchingItem } from './lobby';
@@ -7,6 +7,7 @@ import { PlayerAnswerContent } from './PlayerAnswer';
 import { PlayerRevealContent } from './PlayerReveal';
 import { CountdownDisplay } from './Countdown';
 import { ThemeSurface } from './themes/ThemeSurface';
+import { ThemeDecoration } from './themes/ThemeDecoration';
 
 export type PreviewMode = 'RU Player' | 'EN Player' | 'Screen' | 'Host';
 type Props = {
@@ -62,6 +63,7 @@ export function previewContent({ quizId, quiz, question, options, pairs, media, 
 export function QuizPreview(props: Props) {
   const [mode, setMode] = useState<PreviewMode>('RU Player');
   const [reveal, setReveal] = useState(false);
+  const [shape, setShape] = useState('16 / 9');
   const content = useMemo(() => previewContent(props, mode, reveal),
     [props.quizId, props.quiz, props.question, props.options, props.pairs, props.media, props.roundNumber, props.questionNumber, props.questionCount, mode, reveal]);
   const language = mode === 'RU Player' ? 'ru' : 'en';
@@ -74,11 +76,14 @@ export function QuizPreview(props: Props) {
         <option value="answering">Answering</option><option value="reveal">Reveal / correct answers</option>
       </select></label>
       <button onClick={props.onClose}>Close preview</button>
+      {mode === 'Screen' && <label>Screen format<select value={shape} onChange={event => setShape(event.target.value)}><option value="16 / 9">Wide · 16:9</option><option value="4 / 3">Standard · 4:3</option><option value="9 / 16">Portrait · 9:16</option></select></label>}
     </div>
     <p className="preview-banner">Visual preview · timer is frozen · answers stay local. Reveal uses an unanswered sample result.</p>
+    <div className="preview-viewport" data-mode={mode === 'Screen' ? 'screen' : mode === 'Host' ? 'host' : 'player'} style={{ '--preview-ratio': shape } as CSSProperties}>
     <ThemeSurface as="div" themeId={props.quiz?.themeId} data-phase={reveal ? 'ANSWER_REVEAL' : 'ANSWERING'} className={mode === 'Screen' ? 'screen-lobby' : mode === 'Host' ? 'preview-host' : 'player'}>
-      <h1>{mode === 'Screen' ? (reveal ? 'Ответ / Answer Reveal' : 'Вопрос / Question') : mode === 'Host' ? 'Host' : language === 'ru' ? 'Игрок' : 'Player'}</h1>
-      {(mode === 'Host' || mode === 'Screen') && <h2>{props.quiz?.title}</h2>}
+      {mode === 'Screen' && <ThemeDecoration kind="corners" />}
+      <header className={mode === 'Screen' ? 'screen-header' : 'preview-header'}><h1>{mode === 'Screen' ? (reveal ? 'Ответ / Answer Reveal' : 'Вопрос / Question') : mode === 'Host' ? 'Host' : language === 'ru' ? 'Игрок' : 'Player'}</h1>
+      {(mode === 'Host' || mode === 'Screen') && <h2 className="quiz-title">{props.quiz?.title}</h2>}</header>
       <div className="game-content">
         {content.player && <PlayerAnswerContent key={`${mode}:${JSON.stringify(content.player)}`} question={content.player} language={language} seconds={content.duration}
           onSubmit={async answer => ({ submitted: true, ...answer })} />}
@@ -90,5 +95,7 @@ export function QuizPreview(props: Props) {
         </>}
       </div>
     </ThemeSurface>
+    </div>
+    {mode === 'Screen' && <p className="preview-overflow-warning" role="status">Текст не помещается при читаемом размере. Сократите вопрос или разделите его содержимое. / Text exceeds the available space at a readable size.</p>}
   </section>;
 }

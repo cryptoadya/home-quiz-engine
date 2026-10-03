@@ -8,6 +8,17 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 type Identity = { player: { id: string; name: string; language: 'ru' | 'en'; joinedAt: string }; room: Room; active: boolean; game?: PlayerQuestion | PlayerReveal | null };
 const storageKey = (code: string) => `quiz-player:${code}`;
+type SavedDraft = { owner: string; questionId: string; value: PlayerDraft };
+function restoreDraft(code: string): SavedDraft | null {
+  try {
+    const draft = JSON.parse(window.sessionStorage.getItem(`quiz-draft:${code}`) ?? 'null');
+    if (typeof draft?.owner !== 'string' || typeof draft.questionId !== 'string'
+      || !Array.isArray(draft.value?.selection) || !draft.value.selection.every((id: unknown) => typeof id === 'string')
+      || !Array.isArray(draft.value.mapping) || !draft.value.mapping.every((pair: { leftId?: unknown; rightId?: unknown } | null) => typeof pair?.leftId === 'string' && typeof pair?.rightId === 'string')
+      || !(draft.value.activeLeft === null || typeof draft.value.activeLeft === 'string')) return null;
+    return draft;
+  } catch { return null; }
+}
 
 export function Play() {
   const { code = '' } = useParams();
@@ -30,7 +41,14 @@ function PlayerRoom({ code }: { code: string }) {
   const [retry, setRetry] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const identityRevision = useRef(0);
-  const [answerDraft, setAnswerDraft] = useState<{ owner: string; questionId: string; value: PlayerDraft } | null>(null);
+  const [answerDraft, setAnswerDraft] = useState<SavedDraft | null>(() => restoreDraft(code));
+  useEffect(() => {
+    if (!identity) return; // Wait for authenticated identity before invalidating stored data.
+    try {
+      if (answerDraft) window.sessionStorage.setItem(`quiz-draft:${code}`, JSON.stringify(answerDraft));
+      else window.sessionStorage.removeItem(`quiz-draft:${code}`);
+    } catch { /* Restricted storage must not prevent answering. */ }
+  }, [answerDraft, identity, code]);
 
   useEffect(() => {
     if (!code) return;
@@ -153,7 +171,7 @@ function PlayerRoom({ code }: { code: string }) {
     && ['ANSWERING', 'PAUSED'].includes(currentRoom?.state ?? '')
     && (!draftQuestion || (draftQuestion.questionId === answerDraft.questionId
       && !draftQuestion.excluded && !draftQuestion.submission?.submitted));
-  if (answerDraft && !validDraft) setAnswerDraft(null);
+  if (answerDraft && identity && !validDraft) setAnswerDraft(null);
   const emptyDraft: PlayerDraft = { selection: [], mapping: [], activeLeft: null };
   return <ThemeSurface themeId={(currentRoom ?? room)?.themeId} className="player" data-phase={currentRoom?.closedAt ? 'CLOSED' : currentRoom?.state} data-excluded={identity?.game?.excluded || undefined}>
     <div className="app-masthead player-masthead"><span className="wordmark">Home Quiz</span><h1>Player<ThemeDecoration kind="player" /></h1></div>
@@ -179,7 +197,7 @@ function PlayerRoom({ code }: { code: string }) {
       </header>
       {removed && <p className="state-notice excluded" role="status">{ru ? 'Ведущий удалил вас из игры.' : 'The host removed you from the game.'}</p>}
       {isActive && !connected && !subscriptionError && <p className="connection-chip" data-connected={false}>{ru ? 'Переподключение…' : 'Reconnecting…'}</p>}
-      {!removed && (isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
+      {!removed && isActive && currentRoom?.tiebreak && !currentRoom.tiebreak.completed && !currentRoom.tiebreak.questionPlayerIds.includes(identity.player.id) ? <p className="state-notice player-waiting" role="status">{ru ? 'Допвопросы играют финалисты. Смотрите на общий экран.' : 'Finalists are playing the tiebreak. Watch the main screen.'}</p> : (!removed && (isActive && (currentRoom?.state === 'ANSWERING' || currentRoom?.state === 'ANSWER_REVEAL') ? <section>
         {identity.game?.state === 'ANSWER_REVEAL' ? <PlayerRevealContent question={identity.game} language={identity.player.language} /> : identity.game?.excluded && currentRoom?.state === 'ANSWERING' ? <p className="state-notice excluded" role="status">{ru ? 'Этот вопрос продолжен без вас' : 'This question continued without you'}</p> : identity.game && token && currentRoom?.state === 'ANSWERING' ? <PlayerAnswer key={JSON.stringify([draftOwner, identity.game.questionId])} question={identity.game}
           token={token} roomId={identity.room.id} language={identity.player.language}
           draft={validDraft ? answerDraft.value : emptyDraft}
@@ -195,7 +213,7 @@ function PlayerRoom({ code }: { code: string }) {
           : currentRoom?.state === 'FINAL_RESULTS' ? (ru ? 'Финальные результаты' : 'Final results')
           : currentRoom?.state === 'WINNER_SCREEN' ? (ru ? 'Игра завершена' : 'Game finished')
           : (ru ? 'Ожидайте ведущего…' : 'Waiting for the host…'))
-        : (ru ? 'Комната закрыта' : 'Room closed')}</p>)}
+        : (ru ? 'Комната закрыта' : 'Room closed')}</p>))}
     </> : <>
       <form className="fields" onSubmit={(event) => {
         event.preventDefault();

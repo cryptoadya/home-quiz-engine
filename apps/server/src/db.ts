@@ -627,6 +627,14 @@ const migrations: readonly { version: number; sql: string; rebuildForeignKeys?: 
   { version: 26, sql: `ALTER TABLE questions ADD COLUMN explanation_ru TEXT NOT NULL DEFAULT '';
     ALTER TABLE questions ADD COLUMN explanation_en TEXT NOT NULL DEFAULT '';
     ALTER TABLE rounds ADD COLUMN art_media_id TEXT;` },
+  { version: 27, sql: `ALTER TABLE rounds ADD COLUMN is_tiebreak INTEGER NOT NULL DEFAULT 0 CHECK (is_tiebreak IN (0, 1));
+    CREATE TABLE session_tiebreaks (
+      session_id TEXT PRIMARY KEY REFERENCES game_sessions(id) ON DELETE CASCADE,
+      initial_ids_json TEXT NOT NULL CHECK (json_valid(initial_ids_json)),
+      contender_ids_json TEXT NOT NULL CHECK (json_valid(contender_ids_json)),
+      question_ids_json TEXT NOT NULL CHECK (json_valid(question_ids_json)),
+      completed INTEGER NOT NULL DEFAULT 0 CHECK (completed IN (0, 1))
+    );` },
 ];
 
 export function initializeDatabase(filePath = process.env.QUIZ_DB_PATH ?? defaultPath): DatabaseSync {

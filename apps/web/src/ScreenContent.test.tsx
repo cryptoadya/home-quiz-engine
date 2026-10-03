@@ -9,6 +9,22 @@ import type { CurrentQuestion } from './lobby';
 import type { Question, Option, Pair } from './Questions';
 
 afterEach(cleanup);
+test('playing video gets the presentation area while other media stay mounted for playback continuity', () => {
+  const oldPause = window.HTMLMediaElement.prototype.pause;
+  window.HTMLMediaElement.prototype.pause = () => {};
+  try {
+    const question: CurrentQuestion = { state: 'ANSWERING', roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: '', textEn: '', media: [
+      { mediaId: 'photo', name: 'Photo', mediaUrl: '/photo' },
+      { mediaId: 'video', name: 'Video', kind: 'video', mediaUrl: '/video', playback: { playing: true, positionSeconds: 0, serverNow: 0, revision: 1 } },
+    ] };
+    const view = render(createElement(QuestionContent, { question }));
+    assert.equal(view.container.querySelector('.question-video')?.getAttribute('data-featured'), 'true');
+    assert.ok(view.getByAltText('Изображение / Image'));
+    const video = view.container.querySelector('video');
+    view.rerender(createElement(QuestionContent, { question: { ...question, answers: { answered: 1, expected: 2 } } }));
+    assert.equal(view.container.querySelector('video'), video);
+  } finally { cleanup(); window.HTMLMediaElement.prototype.pause = oldPause; }
+});
 const base = { roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Вопрос', textEn: 'Question' };
 const cases = [
   { type: 'single_choice', correct: ['Верно / Right'], wrong: ['Неверно / Wrong'], heading: 'Правильный ответ / Correct answer' },

@@ -14,7 +14,7 @@ const timer = { serverNow: new Date(0).toISOString(), deadlineAt: new Date(30000
 const question = { state: 'ANSWERING', questionId: 'q1', text: 'First question', options: [{ id: 'a', text: 'Apple' }], submission: { submitted: true, optionId: 'a' }, timer };
 const identity = { room, active: true, player: { id: 'p', name: 'Alice', language: 'en' }, game: question };
 const originalFetch = globalThis.fetch;
-afterEach(() => { cleanup(); mock.restoreAll(); globalThis.fetch = originalFetch; dom.window.localStorage.clear(); });
+afterEach(() => { cleanup(); mock.restoreAll(); globalThis.fetch = originalFetch; dom.window.localStorage.clear(); dom.window.sessionStorage.clear(); });
 function show(path: string) { return render(createElement(MemoryRouter, { initialEntries: [path] }, createElement(App))); }
 function socket() {
   const live = Object.assign(new EventEmitter(), { connect() {}, disconnect() {} });
@@ -22,6 +22,54 @@ function socket() {
   return live;
 }
 function save() { dom.window.localStorage.setItem('quiz-player:ABCDE', JSON.stringify({ roomId: 'room', token: 'secret' })); }
+
+test('reload restores an unsubmitted draft only for the same identity and current question', async () => {
+  socket(); save();
+  const active = { ...identity, game: { ...question, submission: { submitted: false } } };
+  globalThis.fetch = async () => Response.json(active);
+  let view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByLabelText('Apple')));
+  fireEvent.click(view.getByLabelText('Apple'));
+  assert.equal((view.getByLabelText('Apple') as HTMLInputElement).checked, true);
+  view.unmount();
+  view = show('/play/ABCDE');
+  await waitFor(() => assert.equal((view.getByLabelText('Apple') as HTMLInputElement).checked, true));
+  view.unmount();
+  globalThis.fetch = async () => Response.json({ ...active, game: { ...active.game, questionId: 'q2' } });
+  view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByLabelText('Apple')));
+  assert.equal((view.getByLabelText('Apple') as HTMLInputElement).checked, false);
+});
+
+test('tiebreak spectators see a waiting message instead of answer controls', async () => {
+  socket(); save();
+  const tiebreak = { initialIds: ['finalist'], contenderIds: ['finalist'], questionPlayerIds: ['finalist'], completed: false };
+  globalThis.fetch = async () => Response.json({ ...identity, room: { ...room, tiebreak }, game: null });
+  const view = show('/play/ABCDE');
+  await waitFor(() => assert.ok(view.getByText('Finalists are playing the tiebreak. Watch the main screen.')));
+  assert.equal(view.queryByRole('radio'), null);
+  assert.equal(view.queryByRole('button', { name: 'Submit' }), null);
+});
+
+test('Host can start reserve questions from tied final results', async () => {
+  socket();
+  const finalRoom = { ...room, state: 'FINAL_RESULTS' };
+  let started = false;
+  const game = { state: 'FINAL_RESULTS', roundNumber: 1, questionCount: 1, titleRu: '', titleEn: '', canStartTiebreak: true, nextAction: 'show-winner', leaderboard: [] };
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === 'POST') {
+      assert.equal(String(url), '/api/rooms/room/start-tiebreak');
+      started = true;
+      return Response.json({ ...room, state: 'QUESTION' });
+    }
+    return Response.json(started ? { room: { ...room, state: 'QUESTION' }, game: { ...question, state: 'QUESTION', questionNumber: 1, questionCount: 1, textRu: 'Допвопрос', textEn: 'Reserve question', roundNumber: 1 } } : { room: finalRoom, game });
+  };
+  const view = show('/host/room');
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Определить победителя / Start Tiebreak' })));
+  fireEvent.click(view.getByRole('button', { name: 'Определить победителя / Start Tiebreak' }));
+  await waitFor(() => assert.ok(view.getByText('Reserve question')));
+  assert.ok(view.getByRole('button', { name: 'Start Question' }));
+});
 
 test('Player cleanup removes socket listeners and ignores an in-flight live refresh after remount', async () => {
   const live = socket(); save();

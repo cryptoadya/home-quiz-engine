@@ -90,7 +90,7 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
       primaryAction = game.nextAction;
       primaryLabel = game.nextAction === 'next'
         ? ('questionNumber' in game && game.questionNumber < game.questionCount ? 'Next Question' : 'Next')
-        : { 'show-leaderboard': 'Show Leaderboard', 'next-round': 'Next Round', 'final-results': 'Final Results', 'show-winner': 'Show Winner' }[game.nextAction];
+        : { 'show-leaderboard': 'Show Leaderboard', 'next-round': 'Next Round', 'final-results': 'Final Results', 'show-winner': 'Show Winner', 'start-tiebreak': 'Определить победителя / Start Tiebreak' }[game.nextAction];
     }
   }
 
@@ -110,6 +110,8 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
       </section>
       <section className="host-controls" aria-label="Game controls">
       {primaryAction && <button className="host-primary-action" onClick={() => void start(primaryAction)} disabled={primaryDisabled}>{primaryLabel}</button>}
+      {!room.closedAt && state?.game?.state === 'FINAL_RESULTS' && state.game.canStartTiebreak && <button className="host-primary-action" disabled={busy} onClick={() => void start('start-tiebreak')}>Определить победителя / Start Tiebreak</button>}
+      {room.tiebreak && <p role="status">{room.tiebreak.completed ? (room.tiebreak.contenderIds.length === 1 ? 'Победитель определён / Winner decided' : 'Допвопросы закончились: совместная победа / Reserve exhausted: shared win') : `Допвопросы / Tiebreak · Осталось / Remaining: ${room.tiebreak.contenderIds.length}`}</p>}
       {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&
         <div className="host-secondary-actions"><button className="subtle" onClick={() => void start('pause')} disabled={busy}>Pause</button></div>}
       {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
@@ -143,7 +145,7 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
       <section className="host-roster-section" aria-label="Players">
       <ul className="host-roster">{state?.players?.map(player => <li key={player.id} data-present={player.present}>
         <span>{player.name} — {player.language.toUpperCase()}{player.present !== undefined && ` — ${player.present ? 'Online' : 'Disconnected'}`}</span>
-        {!room.closedAt && !['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) && !(state?.game?.state === 'PAUSED' && state.game.pausedFromState === 'FINAL_RESULTS') &&
+        {!room.closedAt && !room.tiebreak && !['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) && !(state?.game?.state === 'PAUSED' && state.game.pausedFromState === 'FINAL_RESULTS') &&
           <button className="subtle danger" aria-label={`Kick ${player.name}`} disabled={busy} onClick={() => void kick(player)}>Kick</button>}
       </li>)}</ul>
       </section>

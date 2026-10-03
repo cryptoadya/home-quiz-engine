@@ -168,7 +168,7 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
       return state ? response.json(state) : response.status(404).json({ error: 'Room not found.' });
     });
   }
-  for (const action of ['next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner'] satisfies NavigationAction[]) {
+  for (const action of ['next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner', 'start-tiebreak'] satisfies NavigationAction[]) {
     app.post(`/api/rooms/:roomId/${action}`, (request, response) => {
       const result = navigate(db, request.params.roomId, action);
       if ('room' in result) {

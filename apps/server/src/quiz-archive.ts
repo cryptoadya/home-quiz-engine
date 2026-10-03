@@ -38,9 +38,9 @@ function validateManifest(value: unknown): QuizArchiveManifest {
   identity(q.id);
   let questions = 0;
   for (const r of q.rounds) {
-    fields(r, [...(Object.hasOwn(r, 'artMediaId') ? ['artMediaId'] : []), 'id', 'titleRu', 'titleEn', 'descriptionRu', 'descriptionEn', 'showLeaderboardAfter', 'position', 'questions']);
+    fields(r, [...(Object.hasOwn(r, 'artMediaId') ? ['artMediaId'] : []), ...(Object.hasOwn(r, 'isTiebreak') ? ['isTiebreak'] : []), 'id', 'titleRu', 'titleEn', 'descriptionRu', 'descriptionEn', 'showLeaderboardAfter', 'position', 'questions']);
     identity(r.id);
-    checked(validateRoundChanges({ titleRu: r.titleRu, titleEn: r.titleEn, descriptionRu: r.descriptionRu, descriptionEn: r.descriptionEn, showLeaderboardAfter: r.showLeaderboardAfter, artMediaId: r.artMediaId }));
+    checked(validateRoundChanges({ titleRu: r.titleRu, titleEn: r.titleEn, descriptionRu: r.descriptionRu, descriptionEn: r.descriptionEn, showLeaderboardAfter: r.showLeaderboardAfter, artMediaId: r.artMediaId, isTiebreak: r.isTiebreak }));
     if (!Array.isArray(r.questions)) invalid('Invalid round content.');
     questions += r.questions.length;
     if (questions > archiveLimits.questions) invalid('Too many questions.');
@@ -227,6 +227,7 @@ export async function importQuizArchive(db: DatabaseSync, path: string) {
       db.prepare('INSERT INTO rounds (id, quiz_id, title_ru, title_en, description_ru, description_en, show_leaderboard_after, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(roundId, id, r.titleRu, r.titleEn, r.descriptionRu, r.descriptionEn, Number(r.showLeaderboardAfter), r.position, now, now);
       db.prepare('UPDATE rounds SET art_media_id = ? WHERE id = ?').run(r.artMediaId ? remap(r.artMediaId) : null, roundId);
+      db.prepare('UPDATE rounds SET is_tiebreak = ? WHERE id = ?').run(Number(Boolean(r.isTiebreak)), roundId);
       for (const question of r.questions) {
         const questionId = remap(question.id);
         db.prepare('INSERT INTO questions (id, round_id, type, text_ru, text_en, points, answer_time_seconds, show_options_on_screen, show_correct_count, media_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')

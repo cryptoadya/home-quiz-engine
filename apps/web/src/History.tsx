@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 type HistoryEntry = {
+  tiebreak?: { completed: boolean; winnerIds: string[] };
   sessionId: string;
   completedAt: string;
   quizId: string | null;
@@ -33,6 +34,7 @@ export function History() {
         <h2>{entry.quizTitle}</h2>
         <p><time dateTime={entry.completedAt}>{new Date(entry.completedAt).toLocaleString()}</time></p>
         <p>Game: {entry.sessionId}<br />Original quiz: {entry.quizId ?? 'Unavailable (legacy game)'}</p>
+        {entry.tiebreak && <p>{entry.tiebreak.completed ? `Tiebreak winners: ${entry.players.filter(p => entry.tiebreak!.winnerIds.includes(p.playerId)).map(p => p.displayName).join(', ')}` : 'Tiebreak in progress'}</p>}
         <table className="leaderboard"><caption>Final player scores</caption><thead><tr><th scope="col">Player</th><th scope="col">Points</th></tr></thead>
           <tbody>{entry.players.map(player => <tr key={player.playerId}><td>{player.displayName}</td><td>{player.totalPoints}</td></tr>)}</tbody>
         </table>

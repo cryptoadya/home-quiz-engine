@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { matchingContent } from './matching-game.js';
 import { getAnswerCounts, type StoredAnswer } from './answers.js';
 import { currentContent } from './snapshot.js';
+import { getTiebreak, resolveTiebreakQuestion } from './tiebreak.js';
 
 // Caller owns BEGIN IMMEDIATE. Answers, scores and transition commit together.
 export function completeQuestionInTransaction(db: DatabaseSync, roomId: string, now: number, expectedQuestionId?: string, resolveDisconnectPause = false): boolean {
@@ -21,14 +22,17 @@ export function completeQuestionInTransaction(db: DatabaseSync, roomId: string, 
   if (answered !== expected && (paused || now < Date.parse(String(session.answer_deadline_at)))) return false;
   const correct = question.options.filter(option => option.isCorrect).map(option => option.id);
   const insert = db.prepare('INSERT INTO question_scores (session_id, question_id, player_id, result, awarded_points) VALUES (?, ?, ?, ?, ?)');
+  const tie = getTiebreak(db, roomId);
   for (const player of players) {
+    if (tie && !tie.questionPlayerIds.includes(String(player.id))) continue;
     const answer = player.answer_json === null ? null : JSON.parse(String(player.answer_json)) as StoredAnswer;
     const exact = answer?.kind === 'matching' && question.type === 'matching'
       ? answer.mapping.length === question.pairs!.length && matchingContent(roomId, question).correctMapping.every(pair => answer.mapping.some(entry => entry.leftId === pair.leftId && entry.rightId === pair.rightId))
       : answer?.kind === 'options' && question.type !== 'matching' && answer.optionIds.length === correct.length && correct.every(id => answer.optionIds.includes(id));
     const result = player.excluded !== null || answer === null ? 'unanswered' : exact ? 'correct' : 'wrong';
-    insert.run(roomId, question.id, player.id, result, result === 'correct' ? question.points : 0);
+    insert.run(roomId, question.id, player.id, result, result === 'correct' && !tie ? question.points : 0);
   }
+  if (tie) resolveTiebreakQuestion(db, roomId, question.id);
   // Retain navigation and original timer timestamps as completed-question context.
   db.prepare(`UPDATE game_sessions SET state = 'ANSWER_REVEAL',
     paused_from_state = NULL, paused_at = NULL, paused_remaining_ms = NULL, pause_reason = NULL, paused_player_id = NULL WHERE id = ?`).run(roomId);

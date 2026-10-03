@@ -101,6 +101,8 @@ Rules:
 - multiple media files allowed and reorderable;
 - GIF animates;
 - preserve aspect ratio and fit within layout;
+- Screen automatically adapts to available window width and height; question text, timer, media grid and theme decoration share a bounded presentation area. Playing video gets the main media area. Fonts retain readable lower and upper bounds; excessive text remains accessible and is flagged in the editor preview rather than silently clipped.
+- Player and Player preview scroll answer content independently of a stable bottom Submit row; suppress pull-to-refresh where the browser supports it. Unsubmitted drafts survive reload in the same tab for the same player/question; accepted answers remain server-authoritative.
 - each audio/video may be flagged **Play before timer**;
 - Host initiates question/media flow; required pre-timer media may begin as part of **Start Question** and must complete in defined order before the answer timer starts;
 - Host controls non-required audio/video with Play/Pause/Restart; Screen renders/plays according to Host/game commands;
@@ -209,9 +211,14 @@ Speed does not affect scoring in V1.
 
 - Intermediate leaderboard appears only after rounds configured to show it.
 - Equal scores share the same rank (`1, 1, 3`).
-- No tie-break mode in V1.
+- Optional reserve rounds are marked `isTiebreak` in the editor and skipped during the main quiz. They are frozen with the session and preserved by export/import.
+- At Final Results, if at least two players share first place and reserve questions exist, Host may start a tie-break before Show Winner.
+- Only tied first-place players participate; others watch Screen and cannot submit or trigger disconnect Pause during reserve questions.
+- After each reserve question, if anyone is correct, only correct players advance. If everyone is wrong or unanswered, all current finalists remain. A single remaining player wins; if reserve questions run out, remaining finalists share the win.
+- Main quiz scores and ranks remain unchanged. Tie-break results are recorded separately in game history. Existing timer, explicit Submit, reveal, pause/reconnect and media rules still apply to participating finalists.
+- Host advances after each Reveal. No repeated reserve questions and no automatic replay of the main quiz.
 - Final flow: Final Leaderboard -> Host `Show Winner` -> themed Winner Screen.
-- Winner Screen may show multiple first-place players. If there is one physical prize, Host resolves that outside the system.
+- Winner Screen shows the tie-break winner(s), or all first-place players if no tie-break was played.
 
 ## Security / information boundaries
 
@@ -255,4 +262,4 @@ Import validates schema and restores media as a new local quiz. Missing theme mu
 
 ## Explicit non-goals for V1
 
-No SaaS, public accounts, multi-owner roles, payments, marketplace, cloud sync, achievements, avatars, teams, chat, global rankings, free-text questions, zero-point questions, tie-break engine, manual save, undo/redo, forced reveal, question rollback/restart, answer reset, next-question preview for Host, late join, detailed analytics or enterprise recovery systems.
+No SaaS, public accounts, multi-owner roles, payments, marketplace, cloud sync, achievements, avatars, teams, chat, global rankings, free-text questions, zero-point questions, manual save, undo/redo, forced reveal, question rollback/restart, answer reset, next-question preview for Host, late join, detailed analytics or enterprise recovery systems.

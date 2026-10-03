@@ -15,7 +15,7 @@ function playbackError(element: HTMLMediaElement, cause?: unknown): PlaybackErro
   return 'failed';
 }
 
-export function PlayableMedia({ media, onEnded, localControls = false }: { localControls?: boolean; media: QuestionMedia; onEnded?: (mediaId: string, revision: number, duration: number) => void }) {
+export function PlayableMedia({ media, onEnded, localControls = false, featured = false }: { featured?: boolean; localControls?: boolean; media: QuestionMedia; onEnded?: (mediaId: string, revision: number, duration: number) => void }) {
   const ref = useRef<HTMLMediaElement>(null);
   const projection = useRef({ playback: media.playback, receivedAt: performance.now() });
   if (projection.current.playback !== media.playback) projection.current = { playback: media.playback, receivedAt: performance.now() };
@@ -80,6 +80,6 @@ export function PlayableMedia({ media, onEnded, localControls = false }: { local
   }, [media.mediaUrl, media.playback?.revision, media.playback?.playing, media.kind, localControls]);
   const props = { src: media.mediaUrl, preload: 'metadata', 'aria-label': media.name, controls: localControls, onPlay: () => { if (localControls) ref.current?.parentElement?.querySelectorAll<HTMLMediaElement>('audio, video').forEach(peer => { if (peer !== ref.current) peer.pause(); }); }, onError: () => setError(playbackError(ref.current!)) };
   return <>{media.kind === 'video'
-    ? <video key={media.playback?.revision} {...props} ref={ref as Ref<HTMLVideoElement>} playsInline className="question-video" />
+    ? <video key={media.playback?.revision} {...props} ref={ref as Ref<HTMLVideoElement>} playsInline className="question-video" data-featured={featured || undefined} />
     : <audio key={media.playback?.revision} {...props} ref={ref as Ref<HTMLAudioElement>} />}{error && <div className="media-recovery"><p role="alert">{messages[error]}</p>{error !== 'unsupported' && <button disabled={media.playback ? !media.playback.playing : !localControls} onClick={() => retry.current()}>{error === 'replay' ? 'Повторить медиа / Replay media' : 'Воспроизвести медиа / Play media'}</button>}</div>}</>;
 }

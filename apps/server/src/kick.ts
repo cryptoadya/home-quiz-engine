@@ -11,7 +11,7 @@ export function kickPlayer(db: DatabaseSync, roomId: string, playerId: string, c
     const room = getRoom(db, roomId);
     if (!room) return { status: 404, error: 'Room not found.' };
     const session = db.prepare('SELECT paused_from_state, paused_player_id FROM game_sessions WHERE id = ?').get(roomId)!;
-    if (room.closedAt || ['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) || session.paused_from_state === 'FINAL_RESULTS') {
+    if (room.closedAt || room.tiebreak || ['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) || session.paused_from_state === 'FINAL_RESULTS') {
       return { status: 409, error: 'Players cannot be removed after game completion or closure.' };
     }
     const removed = db.prepare(`UPDATE session_players SET removed_at = ? WHERE session_id = ? AND id = ? AND removed_at IS NULL

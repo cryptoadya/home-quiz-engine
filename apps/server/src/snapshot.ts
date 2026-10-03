@@ -7,7 +7,7 @@ import { listQuestions, listOptions, type Question, type AnswerOption } from './
 
 type SnapshotOption = Pick<AnswerOption, 'id' | 'textRu' | 'textEn' | 'isCorrect' | 'position'>;
 type SnapshotQuestion = Pick<Question, 'id' | 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showOptionsOnScreen' | 'position'> & { explanationRu?: string; explanationEn?: string; media?: MediaReference[]; showCorrectCount?: boolean; options: SnapshotOption[]; pairs?: Pick<MatchingPair, 'id' | 'left' | 'right' | 'position'>[] };
-type SnapshotRound = Pick<Round, 'id' | 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'position'> & { artMediaId?: string | null; questions: SnapshotQuestion[] };
+type SnapshotRound = Pick<Round, 'id' | 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'position'> & { isTiebreak?: boolean; artMediaId?: string | null; questions: SnapshotQuestion[] };
 export type GameSnapshot = Pick<Quiz, 'title' | 'defaultAnswerTimeSeconds' | 'shuffleAnswers'> & { themeId: string; schemaVersion: 1; media?: Omit<Media, 'quizId'>[]; rounds: SnapshotRound[] };
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -41,6 +41,7 @@ function validQuestion(value: unknown): boolean {
 }
 function validRound(value: unknown): boolean {
   return record(value) && strings(value, ['id', 'titleRu', 'titleEn', 'descriptionRu', 'descriptionEn'])
+    && (value.isTiebreak === undefined || typeof value.isTiebreak === 'boolean')
     && typeof value.showLeaderboardAfter === 'boolean' && ordered(value.questions, validQuestion);
 }
 
@@ -77,7 +78,7 @@ export function readEditableQuizTree(db: DatabaseSync, quizId: string): GameSnap
     rounds: listRounds(db, quizId).map(round => ({
       artMediaId: round.artMediaId ?? null, id: round.id, titleRu: round.titleRu, titleEn: round.titleEn,
       descriptionRu: round.descriptionRu, descriptionEn: round.descriptionEn,
-      showLeaderboardAfter: round.showLeaderboardAfter, position: round.position,
+      ...(round.isTiebreak ? { isTiebreak: true } : {}), showLeaderboardAfter: round.showLeaderboardAfter, position: round.position,
       questions: listQuestions(db, round.id).map(question => ({
         explanationRu: question.explanationRu, explanationEn: question.explanationEn, media: question.media, id: question.id, type: question.type, textRu: question.textRu, textEn: question.textEn,
         points: question.points, answerTimeSeconds: question.answerTimeSeconds,

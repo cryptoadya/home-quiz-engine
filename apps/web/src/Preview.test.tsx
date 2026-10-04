@@ -101,6 +101,89 @@ const previewProps = {
   roundNumber: 1, questionNumber: 1, questionCount: 1, onClose: () => {},
 };
 
+test('Screen previews every phase with local sample players, live round art and no session effects', () => {
+  globalThis.fetch = async () => { throw new Error('Phase selection must not make requests'); };
+  lobbyTransport.connect = () => { throw new Error('Phase preview must not connect'); };
+  const props = { ...previewProps, quiz: { ...previewProps.quiz, themeId: 'halloween' }, round: { ...round, artMediaId: 'art' } };
+  const view = render(createElement(QuizPreview, props));
+  fireEvent.change(view.getByLabelText('Preview mode'), { target: { value: 'Screen' } });
+  const phase = view.getByLabelText('Preview state');
+  fireEvent.click(view.getByRole('button', { name: 'Expand preview' }));
+  assert.equal(view.getByRole('button', { name: 'Compact preview' }).getAttribute('aria-expanded'), 'true');
+  const phases = ['lobby', 'round-intro', 'ready', 'answering', 'reveal', 'round-end', 'leaderboard', 'final-results', 'winners'];
+  assert.deepEqual([...phase.querySelectorAll('option')].map(option => option.value), phases);
+  for (const value of phases) {
+    fireEvent.change(phase, { target: { value } });
+    assert.equal((phase as HTMLSelectElement).value, value);
+    assert.equal(view.queryByRole('timer') !== null, value === 'answering');
+    if (value === 'round-intro') assert.equal(view.getByRole('img', { name: 'Round art' }).getAttribute('src'), '/api/quizzes/quiz/media/art/content');
+    if (value === 'ready') assert.equal(view.queryByText('Question EN'), null, 'Ready must not show next-question content');
+    if (value === 'answering') assert.equal(view.queryByText('Right EN'), null);
+    if (value === 'leaderboard' || value === 'final-results') {
+      fireEvent.change(view.getByLabelText('Sample players'), { target: { value: '30' } });
+      assert.equal(view.container.querySelectorAll('tbody tr').length, 30);
+      assert.equal(view.container.querySelectorAll('tr[data-rank="1"]').length, 2);
+      fireEvent.change(view.getByLabelText('Sample players'), { target: { value: '0' } });
+      assert.ok(view.getByRole('status').textContent?.includes('No remaining players'));
+    }
+    if (value === 'winners') {
+      fireEvent.change(view.getByLabelText('Sample winners'), { target: { value: '30' } });
+      assert.equal(view.container.querySelectorAll('.winner-card').length, 30);
+    }
+  }
+  fireEvent.change(phase, { target: { value: 'round-intro' } });
+  view.rerender(createElement(QuizPreview, { ...props, round: { ...props.round, titleRu: 'Живое название', artMediaId: null } }));
+  assert.ok(view.getByText('Живое название'));
+  assert.equal(view.queryByRole('img', { name: 'Round art' }), null);
+  fireEvent.change(view.getByLabelText('Preview mode'), { target: { value: 'RU Player' } });
+  assert.equal((phase as HTMLSelectElement).value, 'answering');
+  assert.ok(view.getByLabelText('Верный RU'));
+});
+
+test('round art opens the shared Screen preview before a round has any questions', async () => {
+  const requests: string[] = [];
+  globalThis.fetch = async input => {
+    const path = String(input); requests.push(path);
+    if (path.endsWith('/rounds')) return Response.json([{ ...round, artMediaId: 'art' }]);
+    if (path.endsWith('/questions')) return Response.json([]);
+    if (path.endsWith('/media')) return Response.json([{ id: 'art', kind: 'image', name: 'Manor' }, { id: 'video', kind: 'video', name: 'Clip' }]);
+    if (path.endsWith('/validation')) return Response.json({ ready: false, problems: [] });
+    return Response.json(quiz);
+  };
+  lobbyTransport.connect = () => { throw new Error('Round preview must not connect'); };
+  const view = render(createElement(MemoryRouter, { initialEntries: ['/admin/quizzes/quiz'] },
+    createElement(Routes, null, createElement(Route, { path: '/admin/quizzes/:quizId', element: createElement(QuizEditor) }))));
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Preview round' })));
+  fireEvent.click(view.getByRole('button', { name: 'Preview round' }));
+  const panel = within(view.getByRole('region', { name: 'Question preview' }));
+  assert.equal((panel.getByLabelText('Preview mode') as HTMLSelectElement).value, 'Screen');
+  assert.equal((panel.getByLabelText('Preview state') as HTMLSelectElement).value, 'round-intro');
+  assert.ok(panel.getByRole('img', { name: 'Round art' }));
+  fireEvent.change(panel.getByLabelText('Preview state'), { target: { value: 'answering' } });
+  assert.ok(panel.getByText('Add a question to preview its content.'));
+  assert.ok(requests.every(path => !/rooms|sessions|players|history|answers/.test(path)));
+});
+
+test('round image choices update the shared preview immediately and can be cleared', async () => {
+  const { view, writes } = show(question, [], [{ id: 'art', kind: 'image', name: 'Manor' }, { id: 'clip', kind: 'video', name: 'Clip' }]);
+  await waitFor(() => assert.ok(view.getByLabelText('Option 2 EN')));
+  fireEvent.click(view.getByText('Round introduction & settings'));
+  fireEvent.click(view.getByText('Choose round art from the media library'));
+  const choose = view.getByRole('button', { name: 'Choose round art: Manor' });
+  assert.equal(view.queryByRole('button', { name: 'Choose round art: Clip' }), null);
+  fireEvent.click(choose);
+  assert.equal(choose.getAttribute('aria-pressed'), 'true');
+  fireEvent.click(view.getByRole('button', { name: 'Preview round' }));
+  const panel = within(view.getByRole('region', { name: 'Question preview' }));
+  assert.equal(panel.getByRole('img', { name: 'Round art' }).getAttribute('src'), '/api/quizzes/quiz/media/art/content');
+  fireEvent.change(view.getByLabelText('Round title RU'), { target: { value: 'Живой раунд' } });
+  assert.ok(panel.getByText('Живой раунд'));
+  fireEvent.change(view.getByLabelText('Round art'), { target: { value: '' } });
+  assert.equal(panel.queryByRole('img', { name: 'Round art' }), null);
+  assert.equal(choose.getAttribute('aria-pressed'), 'false');
+  await waitFor(() => assert.ok(writes.some((write: any) => write.artMediaId === null && write.titleRu === 'Живой раунд')));
+});
+
 test('Player answering props omit hidden correctness, mappings, scores, normal media and session identity', () => {
   const pairs = [{ id: 'secret-pair', questionId: 'question', position: 0,
     left: { kind: 'text', textRu: 'Кот', textEn: 'Cat' }, right: { kind: 'text', textRu: 'Животное', textEn: 'Animal' } }] as Pair[];

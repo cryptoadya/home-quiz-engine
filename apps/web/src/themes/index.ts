@@ -28,7 +28,14 @@ export type ThemeTokens = { readonly [Key in keyof typeof defaultTheme.tokens]: 
 export type Theme = { readonly manifest: ThemeManifest; readonly tokens?: Partial<ThemeTokens> };
 // Both palettes share layout and gameplay; missing optional parts inherit Default.
 export const halloweenTheme: Theme = {
-  manifest: { id: 'halloween', name: 'Halloween', version: '1.0.0', author: 'Home Quiz Engine', resources: [], features: [] },
+  manifest: { id: 'halloween', name: 'Halloween', version: '1.1.0', author: 'Home Quiz Engine',
+    resources: [
+      'halloween/assets/halloween_banner_haunted_house.webp', 'halloween/assets/halloween_pumpkin_cluster.webp',
+      'halloween/assets/halloween_winner_trophy.webp', 'halloween/assets/halloween_spooky_candle_scene.webp',
+      'halloween/assets/halloween_ghost_mascot.webp', 'halloween/assets/halloween_corner_web_top_left.webp',
+      'halloween/assets/halloween_corner_web_top_right.webp', 'halloween/assets/halloween_manor_hall.webp',
+      'halloween/assets/halloween_manor_finale.webp',
+    ], features: ['local-artwork', 'screen-scenery'] },
   tokens: {
     text: '#fff1de', background: '#1c1426', muted: '#c8b5d3',
     primary: '#ffad62', onPrimary: '#301c24', surface: '#2c203b',

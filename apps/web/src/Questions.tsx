@@ -1,6 +1,7 @@
 import { request as api } from './request';
 import { AuthoringField, textHint } from './AuthoringField';
 import { QuizPreview } from './QuizPreview';
+import type { Round } from './Rounds';
 import type { AuthoringTarget, Quiz, ValidationProblem } from './Admin';
 import { createPortal } from 'react-dom';
 import { useQuizMedia } from './Media';
@@ -30,12 +31,12 @@ type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
 const json = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 type QuestionsProps = {
-  quiz?: Quiz; roundNumber?: number; quizId: string; roundId: string; onPersistedChange?: () => void;
+  quiz?: Quiz; round?: Round; previewRequest?: number; roundNumber?: number; quizId: string; roundId: string; onPersistedChange?: () => void;
   onMediaChange?: () => void; mediaRevision?: number; targetQuestion?: AuthoringTarget | null; navigationTarget?: HTMLElement | null;
   previewOpen?: boolean; onPreviewOpenChange?: (open: boolean) => void; problems?: ValidationProblem[];
 };
 
-export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumber = 1, mediaRevision = 0, targetQuestion,
+export function Questions({ quizId, roundId, onPersistedChange, quiz, round, previewRequest = 0, roundNumber = 1, mediaRevision = 0, targetQuestion,
   navigationTarget, onMediaChange, previewOpen: sharedPreviewOpen, onPreviewOpenChange, problems = [] }: QuestionsProps) {
   const base = `/api/quizzes/${quizId}/rounds/${roundId}/questions`;
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -223,11 +224,11 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
     <div className="editor-heading"><h3>Questions</h3><span role="status" className="question-status" aria-live="polite">{status === 'Saving...' ? 'Saving…' : status}</span></div>
     {(saves.error || error) && <p role="alert" className="error">{saves.error || error}</p>}
     {loading ? <p>Loading questions...</p> : <>
-      <div className="question-workspace" data-integrated={navigationTarget !== undefined} data-preview-open={previewOpen && Boolean(selected)}>
+      <div className="question-workspace" data-integrated={navigationTarget !== undefined} data-preview-open={previewOpen}>
       {navigationTarget ? createPortal(navigator, navigationTarget) : navigator}
       <div className="selected-question-content">
       <div id="question-preview" className="authoring-actions preview-entry">
-        <div><h4>{selected ? `Question ${questions.indexOf(selected) + 1}` : 'Preview'}</h4><p>See how the selected question looks to Players, Screen, and Host.</p></div>
+        <div><h4>{selected ? `Question ${questions.indexOf(selected) + 1}` : 'Preview'}</h4><p>Preview the question for Players and Host, or every game phase on Screen.</p></div>
         <button ref={previewButton} disabled={!selected} onClick={() => setPreviewOpen(!previewOpen)} aria-expanded={previewOpen}>Preview question</button>
       </div>
       {selected && fields && <div className="question-editor fields" ref={editor} tabIndex={-1}>
@@ -386,9 +387,9 @@ export function Questions({ quizId, roundId, onPersistedChange, quiz, roundNumbe
         }}>Delete question</button></div>
       </div>}
       </div>
-      {selected && previewOpen && <aside className="question-preview-pane" aria-label="Live preview">
-        <QuizPreview quizId={quizId} quiz={quiz} question={selected} options={visibleOptions} pairs={visiblePairs} media={media}
-          roundNumber={roundNumber} questionNumber={questions.indexOf(selected) + 1} questionCount={questions.length} onClose={() => { setPreviewOpen(false); previewButton.current?.focus(); }} />
+      {previewOpen && <aside className="question-preview-pane" aria-label="Live preview">
+        <QuizPreview key={previewRequest} initialPhase={previewRequest ? 'round-intro' : undefined} quizId={quizId} quiz={quiz} round={round} question={selected} options={visibleOptions} pairs={visiblePairs} media={media}
+          roundNumber={roundNumber} questionNumber={selected ? questions.indexOf(selected) + 1 : 0} questionCount={questions.length} onClose={() => { setPreviewOpen(false); previewButton.current?.focus(); }} />
       </aside>}
       </div>
     </>}

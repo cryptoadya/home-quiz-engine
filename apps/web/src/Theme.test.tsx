@@ -70,7 +70,8 @@ test('Halloween resolves locally and inherits missing optional configuration fro
   assert.equal(theme.tokens.primary, '#ffad62');
   assert.equal(theme.tokens.font, 'system-ui, sans-serif');
   assert.equal(theme.tokens.correctBackground, '#eaf7ee');
-  assert.deepEqual(theme.manifest.resources, []);
+  assert.ok(theme.manifest.resources.includes('halloween/assets/halloween_manor_hall.webp'));
+  assert.ok(theme.manifest.resources.includes('halloween/assets/halloween_manor_finale.webp'));
   for (const id of [undefined, null, '', 'unknown', '__proto__']) {
     assert.equal(resolveTheme(id).manifest.id, 'default');
     assert.equal(resolveTheme(id).tokens.primary, resolveTheme('default').tokens.primary);

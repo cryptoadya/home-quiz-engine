@@ -34,6 +34,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevi
   const [busy, setBusy] = useState(false);
   const [questionNavigation, setQuestionNavigation] = useState<HTMLDivElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewRequest, setPreviewRequest] = useState(0);
   const saves = useEditorSave();
   const barrier = useSaveBarrier();
   const { status } = saves;
@@ -184,6 +185,7 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevi
       <div className="round-content">
       {selected && fields && <div className="selected-round-editor" ref={roundEditor} tabIndex={-1}>
         <div className="authoring-actions"><h3>Round {rounds.indexOf(selected) + 1}: {selected.titleEn || selected.titleRu || 'Untitled round'}</h3>
+        <button disabled={busy} onClick={() => { setPreviewRequest(request => request + 1); setPreviewOpen(true); }}>Preview round</button>
         <button className="subtle" disabled={busy || incomplete.current} onClick={() => void duplicate(selected)}>Duplicate round</button></div>
         <div className="fields bilingual-fields">
         <AuthoringField label="Round title RU" error={textHint(selected.titleRu, 'RU', true, 100)}><input value={selected.titleRu} maxLength={100} disabled={busy} onChange={(event) => change(selected, { ...fields, titleRu: event.target.value })} /></AuthoringField>
@@ -197,7 +199,16 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevi
           {selected.artMediaId && !artMedia.some(item => item.id === selected.artMediaId) && <option value={selected.artMediaId}>Image unavailable — choose another</option>}
           {artMedia.filter(item => item.kind === 'image').map(item => <option key={item.id} value={item.id}>{item.name} (image)</option>)}
         </select></label>
-        {selected.artMediaId && <MediaImage src={`/api/quizzes/${quizId}/media/${selected.artMediaId}/content`} alt="Round art" className="editor-media-preview" />}
+        <p className="full-width round-art-hint">Use a landscape image, ideally 16:9 or 3:2. It is fitted without cropping; keep any lettering large. Preview round shows it with the current theme.</p>
+        {selected.artMediaId && <figure className="full-width selected-round-art"><MediaImage src={`/api/quizzes/${quizId}/media/${selected.artMediaId}/content`} alt="Round art" className="editor-media-preview" />
+          <figcaption>{artMedia.find(item => item.id === selected.artMediaId)?.name ?? 'Selected round image'}</figcaption>
+        </figure>}
+        {artMedia.some(item => item.kind === 'image') ? <details className="full-width round-art-library"><summary>Choose round art from the media library</summary>
+          <div className="round-art-choices">{artMedia.filter(item => item.kind === 'image').map(item => <button type="button" key={item.id} disabled={busy}
+            aria-label={`Choose round art: ${item.name}`} aria-pressed={selected.artMediaId === item.id} onClick={() => change(selected, { ...fields, artMediaId: item.id })}>
+            <MediaImage src={`/api/quizzes/${quizId}/media/${item.id}/content`} alt={item.name} className="round-art-thumbnail" /><span>{item.name}</span>
+          </button>)}</div>
+        </details> : <p className="full-width">Upload an image in the <a href="#quiz-media">media library</a> to use it as round art.</p>}
         <label className="checkbox"><input type="checkbox" checked={Boolean(selected.isTiebreak)} disabled={busy} onChange={event => change(selected, { ...fields, isTiebreak: event.target.checked })} /> Reserve round for final tiebreak / Допвопросы при ничьей</label>
         {selected.isTiebreak && <p>Skipped in the main quiz. Only players sharing first place can answer after the final results; points are unchanged.</p>}
         <label className="checkbox"><input type="checkbox" checked={selected.showLeaderboardAfter} disabled={busy} onChange={(event) => change(selected, { ...fields, showLeaderboardAfter: event.target.checked })} /> Show leaderboard after this round</label>
@@ -205,8 +216,8 @@ export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevi
         </div><div className="destructive-actions"><button className="subtle danger" disabled={busy} onClick={() => void remove(selected)}>Delete round</button></div>
       </div>}
       {selected && <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-        <Questions quiz={quiz} roundNumber={rounds.indexOf(selected) + 1} key={selected.id} quizId={quizId} roundId={selected.id} mediaRevision={mediaRevision} onMediaChange={onMediaChange} targetQuestion={targetRound?.id === selected.id ? targetRound : null} onPersistedChange={onPersistedChange}
-          navigationTarget={questionNavigation} previewOpen={previewOpen} onPreviewOpenChange={setPreviewOpen} problems={problems} />
+        <Questions quiz={quiz} round={selected} previewRequest={previewRequest} roundNumber={rounds.indexOf(selected) + 1} key={selected.id} quizId={quizId} roundId={selected.id} mediaRevision={mediaRevision} onMediaChange={onMediaChange} targetQuestion={targetRound?.id === selected.id ? targetRound : null} onPersistedChange={onPersistedChange}
+          navigationTarget={questionNavigation} previewOpen={previewOpen} onPreviewOpenChange={open => { setPreviewRequest(0); setPreviewOpen(open); }} problems={problems} />
       </fieldset>}
       </div></div>
     </>}

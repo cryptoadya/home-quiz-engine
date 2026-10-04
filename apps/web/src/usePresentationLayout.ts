@@ -19,7 +19,6 @@ export function usePresentationLayout(contentKey: string, mediaCount: number, ho
         scale = Math.max(.6, scale - .05);
         copy.style.setProperty('--copy-scale', String(scale));
       }
-      setOverflow(copy.scrollHeight > copy.clientHeight + 1);
       if (mediaCount && media.clientWidth && media.clientHeight) {
         let columns = 1, best = 0;
         for (let n = 1; n <= mediaCount; n++) {
@@ -29,6 +28,7 @@ export function usePresentationLayout(contentKey: string, mediaCount: number, ho
         media.style.setProperty('--media-columns', String(columns));
         media.style.setProperty('--media-rows', String(Math.ceil(mediaCount / columns)));
       }
+      setOverflow(copy.scrollHeight > copy.clientHeight + 1 || root!.scrollHeight > root!.clientHeight + 1);
     }
     layout();
     const observer = new ResizeObserver(layout);

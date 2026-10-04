@@ -1,7 +1,7 @@
 import './test-dom';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { QuestionContent } from './GameContent';
 import { previewContent } from './QuizPreview';
@@ -9,6 +9,63 @@ import type { CurrentQuestion } from './lobby';
 import type { Question, Option, Pair } from './Questions';
 
 afterEach(cleanup);
+
+test('Reveal warns about overflowing explanation or answer content even when the question fits', () => {
+  const originalObserver = globalThis.ResizeObserver;
+  let measure = () => {};
+  globalThis.ResizeObserver = class {
+    constructor(callback: () => void) { measure = callback; }
+    observe() {} disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  try {
+    const question: CurrentQuestion = { state: 'ANSWER_REVEAL', roundNumber: 1, questionNumber: 1, questionCount: 1,
+      textRu: 'Короткий вопрос', textEn: 'Short question', explanationRu: 'Длинное объяснение', explanationEn: 'Long explanation',
+      options: [{ textRu: 'Ответ', textEn: 'Answer', isCorrect: true }] };
+    const view = render(createElement(QuestionContent, { question }));
+    const root = view.container.querySelector('.question-presentation')!;
+    const copy = view.container.querySelector('.question-copy')!;
+    let contentHeight = 900;
+    Object.defineProperties(root, { clientHeight: { get: () => 700 }, scrollHeight: { get: () => contentHeight } });
+    Object.defineProperties(copy, { clientHeight: { get: () => 100 }, scrollHeight: { get: () => 100 } });
+    act(() => measure());
+    assert.equal(root.getAttribute('data-text-overflow'), 'true');
+    contentHeight = 700;
+    view.rerender(createElement(QuestionContent, { question: { ...question, explanationRu: 'Кратко', explanationEn: 'Brief' } }));
+    assert.equal(root.getAttribute('data-text-overflow'), null, 'Live explanation edits recompute the warning');
+  } finally { globalThis.ResizeObserver = originalObserver; }
+});
+
+test('Screen Reveal puts the answer and explanation before the repeated question and media in reading order', () => {
+  const question: CurrentQuestion = {
+    state: 'ANSWER_REVEAL', roundNumber: 1, questionNumber: 1, questionCount: 1,
+    textRu: 'Какого цвета тыква?', textEn: 'What colour is a pumpkin?',
+    explanationRu: 'Обычно оранжевая.', explanationEn: 'Usually orange.',
+    options: [{ textRu: 'Оранжевый', textEn: 'Orange', isCorrect: true }, { textRu: 'Синий', textEn: 'Blue', isCorrect: false }],
+    media: [{ mediaId: 'photo', name: 'Photo', mediaUrl: '/photo' }],
+  };
+  const view = render(createElement(QuestionContent, { question }));
+  const children = [...view.container.querySelector('.question-presentation')!.children];
+  assert.ok(children.indexOf(view.container.querySelector('.correct-answers')!) < children.indexOf(view.container.querySelector('.explanation')!));
+  assert.ok(children.indexOf(view.container.querySelector('.explanation')!) < children.indexOf(view.container.querySelector('.question-copy')!));
+  assert.ok(children.indexOf(view.container.querySelector('.question-copy')!) < children.indexOf(view.container.querySelector('.question-media')!));
+  assert.equal(view.queryByText('Blue'), null);
+});
+
+test('Matching Reveal uses the same primary answer area and keeps the authored pairs', () => {
+  const question: CurrentQuestion = {
+    state: 'ANSWER_REVEAL', type: 'matching', roundNumber: 1, questionNumber: 1, questionCount: 1, textRu: 'Соедините', textEn: 'Match',
+    leftItems: [{ id: 'left', kind: 'text', textRu: 'Кот', textEn: 'Cat' }],
+    rightItems: [{ id: 'right', kind: 'text', textRu: 'Животное', textEn: 'Animal' }],
+    correctMapping: [{ leftId: 'left', rightId: 'right' }],
+  };
+  const view = render(createElement(QuestionContent, { question }));
+  const summary = view.container.querySelector('.correct-answers');
+  assert.ok(summary);
+  assert.ok(summary.querySelector('.correct-pairs'));
+  assert.ok(summary.textContent?.includes('Cat'));
+  assert.ok(summary.textContent?.includes('Animal'));
+  assert.equal(view.queryByRole('button'), null);
+});
 test('playing video gets the presentation area while other media stay mounted for playback continuity', () => {
   const oldPause = window.HTMLMediaElement.prototype.pause;
   window.HTMLMediaElement.prototype.pause = () => {};

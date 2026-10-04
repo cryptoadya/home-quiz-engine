@@ -763,7 +763,7 @@ test('question owner discard retains another question in the same queue', async 
 
 async function startMedia(e: Awaited<ReturnType<typeof editor>>, mutation: 'upload' | 'delete') {
   if (e.view.queryByRole('button', { name: 'Manage media' })) fireEvent.click(e.view.getByRole('button', { name: 'Manage media' }));
-  await waitFor(() => assert.ok(e.view.getByText('picture.gif')));
+  await waitFor(() => assert.ok(within(e.view.getByRole('region', { name: 'Quiz media' })).getByText('picture.gif')));
   if (mutation === 'upload') {
     fireEvent.change(e.view.getByLabelText('Media file'), { target: { files: [new File(['GIF89a'], 'picture.gif', { type: 'image/gif' })] } });
     fireEvent.click(e.view.getByRole('button', { name: 'Upload media' }));
@@ -820,7 +820,7 @@ for (const mutation of ['upload', 'delete'] as const) {
 for (const action of ['Export Quiz', 'Open lobby', '← Quiz list']) test(`${action} prevents starting media mutations while waiting for other saves`, async () => {
   const e = await editor();
   fireEvent.click(e.view.getByRole('button', { name: 'Manage media' }));
-  await waitFor(() => assert.ok(e.view.getByText('picture.gif')));
+  await waitFor(() => assert.ok(within(e.view.getByRole('region', { name: 'Quiz media' })).getByText('picture.gif')));
   fireEvent.change(e.view.getByLabelText('Media file'), { target: { files: [new File(['GIF89a'], 'picture.gif')] } });
   e.edit('Title', 'Pending settings');
   fireEvent.click(e.view.getByRole('button', { name: action }));

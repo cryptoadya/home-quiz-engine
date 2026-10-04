@@ -6,12 +6,31 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { BoundaryContent, QuestionContent, RoundIntroContent } from './GameContent';
 import { ThemeSurface } from './themes/ThemeSurface';
+import { ThemeScenery } from './themes/ThemeScenery';
+import { resolveTheme } from './themes';
 import { HalloweenDecoration, type DecorationKind } from './themes/halloween/HalloweenDecoration';
 import { PlayerAnswerContent } from './PlayerAnswer';
 import { PlayerRevealContent } from './PlayerReveal';
 import type { PlayerReveal } from './lobby';
 
 afterEach(cleanup);
+
+test('static Screen scenery is optional, decorative, local and covered by the theme manifest', () => {
+  const view = render(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(ThemeScenery, { kind: 'hall' })));
+  const image = view.container.querySelector('img')!;
+  assert.equal(view.queryByRole('img'), null);
+  assert.ok(resolveTheme('halloween').manifest.resources.some(resource => image.src.endsWith(resource)));
+  assert.ok(readFileSync(new URL(image.src)).length > 0);
+  fireEvent.error(image);
+  assert.equal(image.hidden, true, 'missing optional art leaves the solid theme background');
+  view.rerender(createElement(ThemeSurface, { themeId: 'halloween' }, createElement(ThemeScenery, { kind: 'quiet' })));
+  assert.equal(view.container.querySelector('img')?.hidden, false);
+  assert.equal(view.container.querySelector('.theme-scenery')?.getAttribute('data-kind'), 'quiet');
+  for (const themeId of ['default', 'unavailable']) {
+    view.rerender(createElement(ThemeSurface, { themeId }, createElement(ThemeScenery, { kind: 'finale' })));
+    assert.equal(view.container.querySelector('.theme-scenery'), null);
+  }
+});
 
 test('Halloween artwork uses transparent lossless WebP with matching intrinsic dimensions', () => {
   for (const kind of ['lobby', 'round', 'winner', 'waiting', 'reveal', 'player', 'corners'] as DecorationKind[]) {
@@ -82,6 +101,20 @@ test('scoreboard preserves shared first places and multiple Winner cards', () =>
   assert.equal(view.container.querySelector('.party-decoration')?.getAttribute('aria-hidden'), 'true');
   assert.ok(view.getByText('Alex'));
   assert.ok(view.getByText('Sam'));
+});
+
+test('Screen groups thirty standings without dropping players, changing ranks or sorting scores locally', () => {
+  const leaderboard = Array.from({ length: 30 }, (_, index) => ({ playerId: String(index), displayName: index === 0 ? 'Максимилиан-Александр' : `Player ${index + 1}`, rank: index < 2 ? 1 : index + 1, totalPoints: index < 2 ? 100 : 100 - index }));
+  const game = { state: 'FINAL_RESULTS' as const, roundNumber: 1, questionCount: 1, titleRu: '', titleEn: '', leaderboard };
+  const view = render(createElement(BoundaryContent, { game, screen: true }));
+  assert.equal(view.getAllByRole('table').length, 3);
+  assert.deepEqual([...view.container.querySelectorAll('tbody th')].map(cell => cell.textContent), leaderboard.map(player => player.displayName));
+  assert.equal(view.container.querySelectorAll('tr[data-rank="1"]').length, 2);
+  view.rerender(createElement(BoundaryContent, { game }));
+  assert.equal(view.getAllByRole('table').length, 1, 'Host retains its single scrollable list');
+  view.rerender(createElement(BoundaryContent, { game: { ...game, state: 'WINNER_SCREEN', leaderboard: leaderboard.map(player => ({ ...player, rank: 1, totalPoints: 100 })) }, screen: true }));
+  assert.equal(view.container.querySelectorAll('.winner-card').length, 30);
+  assert.equal(view.container.querySelector('.winner-stage')?.getAttribute('data-many-winners'), 'true');
 });
 
 test('Halloween round decoration preserves optional author art and falls back to Default decoration', () => {

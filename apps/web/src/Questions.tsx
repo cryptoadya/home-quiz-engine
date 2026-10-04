@@ -1,3 +1,4 @@
+import { request as api } from './request';
 import { AuthoringField, textHint } from './AuthoringField';
 import { QuizPreview } from './QuizPreview';
 import type { AuthoringTarget, Quiz, ValidationProblem } from './Admin';
@@ -26,14 +27,6 @@ type PairFields = Pick<Pair, 'left' | 'right'>;
 type QuestionFields = Pick<Question, 'type' | 'textRu' | 'textEn' | 'points' | 'answerTimeSeconds' | 'showCorrectCount' | 'media' | 'explanationRu' | 'explanationEn'>;
 type OptionFields = Pick<Option, 'textRu' | 'textEn' | 'isCorrect'>;
 
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, options);
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed (${response.status}).`);
-  }
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
-}
 const json = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 type QuestionsProps = {

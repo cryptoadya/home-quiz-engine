@@ -1,3 +1,5 @@
+import { ScreenCheckPanel } from './ScreenCheck';
+import { request as api } from './request';
 import { EditorSaves, useEditorSave, useSaveBarrier } from './EditorSaves';
 import { ThemeSurface } from './themes/ThemeSurface';
 import { resolveTheme, themes } from './themes';
@@ -20,15 +22,6 @@ type QuizSettings = Pick<Quiz, 'title' | 'themeId' | 'defaultAnswerTimeSeconds' 
 export type AuthoringTarget = { id: string; questionId?: string; optionId?: string; pairId?: string; code?: string };
 export type ValidationProblem = { code: string; message: string; roundId?: string; questionId?: string; optionId?: string; pairId?: string };
 type QuizValidation = { ready: boolean; problems: ValidationProblem[] };
-
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, options);
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed (${response.status}).`);
-  }
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
-}
 
 async function downloadQuiz(id: string) {
   const response = await fetch(`/api/quizzes/${id}/export`);
@@ -235,12 +228,12 @@ function QuizEditorContent() {
     });
   }
 
-  async function openLobby(isTest = false) {
+  async function openLobby() {
     setOpening(true);
     setLaunchError('');
     try {
       await barrier.flush();
-      const room = await api<{ code: string }>(`/api/quizzes/${quizId}/${isTest ? 'test-games' : 'rooms'}`, { method: 'POST' });
+      const room = await api<{ code: string }>(`/api/quizzes/${quizId}/rooms`, { method: 'POST' });
       navigate(`/host/${room.code}`);
     } catch (cause) {
       setLaunchError((cause as Error).message);
@@ -302,10 +295,9 @@ function QuizEditorContent() {
     <section id="play-quiz" className="authoring-panel" aria-label="Play quiz"><h2>Play</h2>
       <p>When your quiz is ready, open a lobby and invite your players.</p>
       <div className="authoring-actions"><button onClick={() => void openLobby()} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Open lobby</button></div>
-      <details className="authoring-secondary"><summary>Rehearse & export</summary>
-        <p>Rehearse with real phones and Wi-Fi. The Host starts the game after players join. Rehearsals are excluded from normal history.</p>
+      <ScreenCheckPanel quizId={quiz.id} />
+      <details className="authoring-secondary"><summary>Export</summary>
         <div className="authoring-actions">
-          <button className="subtle" onClick={() => void openLobby(true)} disabled={opening || exporting || exiting || !validation?.ready || Boolean(validationError)}>Rehearse with devices</button>
           <button className="subtle" disabled={exporting || opening || exiting} onClick={async () => {
             setExporting(true); setExportNotice(''); setLaunchError('');
             try { await barrier.flush(); await downloadQuiz(quiz.id); setExportNotice('Quiz ZIP downloaded.'); }

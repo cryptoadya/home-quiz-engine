@@ -284,12 +284,12 @@ test('ready Admin opens Host, reload recovers the room, and confirmed close upda
   view.unmount();
   view = show('/host/room-1');
   await waitFor(() => assert.ok(view.getByText('ABCDE')));
-  fireEvent.click(view.getByRole('button', { name: 'Close room' }));
+  fireEvent.click(view.getByRole('button', { name: 'Закрыть комнату' }));
   assert.equal(room.closedAt, null);
   confirmed = true;
-  fireEvent.click(view.getByRole('button', { name: 'Close room' }));
-  await waitFor(() => assert.ok(view.getByText('Room closed')));
-  assert.equal(view.queryByRole('button', { name: 'Close room' }), null);
+  fireEvent.click(view.getByRole('button', { name: 'Закрыть комнату' }));
+  await waitFor(() => assert.ok(view.getByText('Комната закрыта')));
+  assert.equal(view.queryByRole('button', { name: 'Закрыть комнату' }), null);
 });
 
 test('draft cannot launch and server launch rejection remains visible', async () => {
@@ -312,42 +312,6 @@ test('draft cannot launch and server launch rejection remains visible', async ()
   fireEvent.click(view.getByRole('button', { name: 'Open lobby' }));
   await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Quiz is not ready.')));
   assert.ok(view.getByRole('heading', { name: 'Edit quiz' }));
-});
-
-test('Admin starts a labeled Test Game lobby for the current quiz and shows launch errors', async () => {
-  let ready = false, fail = true;
-  const calls: string[] = [];
-  const room = { id: 'test-room', code: 'ABCDE', quizTitle: quiz.title, state: 'LOBBY', closedAt: null, isTest: true };
-  globalThis.fetch = async (input, init) => {
-    const path = String(input);
-    if (path.endsWith('/media')) return Response.json([]);
-    if (path.endsWith('/validation')) return Response.json({ ready, problems: [] });
-    if (path.endsWith('/rounds')) return Response.json([]);
-    if (path.endsWith('/test-games') && init?.method === 'POST') {
-      calls.push(path);
-      return fail ? Response.json({ error: 'Quiz is not ready.' }, { status: 409 }) : Response.json(room, { status: 201 });
-    }
-    if (path === '/api/rooms/code/ABCDE') return Response.json(room);
-    if (path.endsWith('/game/host')) return Response.json({ room, players: [] });
-    return Response.json(quiz);
-  };
-  let view = show('/admin/quizzes/quiz-1');
-  await waitFor(() => assert.ok(view.getByText('Rehearse & export')));
-  assert.equal(view.getByRole('button', { name: 'Rehearse with devices', hidden: true }).closest('details')?.open, false);
-  fireEvent.click(view.getByText('Rehearse & export'));
-  assert.equal((view.getByRole('button', { name: 'Rehearse with devices' }) as HTMLButtonElement).disabled, true);
-  view.unmount(); ready = true;
-  view = show('/admin/quizzes/quiz-1');
-  await waitFor(() => assert.ok(view.getByText('Rehearse & export')));
-  fireEvent.click(view.getByText('Rehearse & export'));
-  await waitFor(() => assert.equal((view.getByRole('button', { name: 'Rehearse with devices' }) as HTMLButtonElement).disabled, false));
-  fireEvent.click(view.getByRole('button', { name: 'Rehearse with devices' }));
-  await waitFor(() => assert.ok(view.getByRole('alert').textContent?.includes('Quiz is not ready.')));
-  fail = false;
-  fireEvent.click(view.getByRole('button', { name: 'Rehearse with devices' }));
-  await waitFor(() => assert.ok(view.getByText('Тестовая игра / Test Game')));
-  assert.ok(view.getByText('ABCDE'));
-  assert.deepEqual(calls, ['/api/quizzes/quiz-1/test-games', '/api/quizzes/quiz-1/test-games']);
 });
 
 test('Admin imports ZIP with success/edit link and unavailable-theme warning; failed import can be retried', async () => {

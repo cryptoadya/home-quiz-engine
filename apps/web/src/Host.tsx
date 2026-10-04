@@ -1,3 +1,5 @@
+import { request as api } from './request';
+import { hostError, hostHint, hostPhases } from './host-messages';
 import { ThemeSurface } from './themes/ThemeSurface';
 import { Countdown } from './Countdown';
 import { useState } from 'react';
@@ -15,19 +17,17 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
   const [busy, setBusy] = useState(false);
 
   async function start(action: 'start' | 'start-round' | 'start-question' | NavigationAction | 'pause' | 'resume' | 'wait-for-player' | 'continue-without-player' = 'start') {
-    if (action === 'start' && !window.confirm('Start game? The player list and quiz content will be locked.')) return;
+    if (action === 'start' && !window.confirm('Начать игру? Состав игроков и содержание викторины будут зафиксированы.')) return;
     if (action === 'continue-without-player') {
-      const name = state?.game?.state === 'PAUSED' ? state.game.disconnectedPlayer?.name : 'Player';
-      if (!window.confirm(`Continue without ${name}? ${name} will receive 0 points for this question and can return for the next question.`)) return;
+      const name = state?.game?.state === 'PAUSED' ? state.game.disconnectedPlayer?.name : 'Игрок';
+      if (!window.confirm(`Продолжить без игрока ${name}? За этот вопрос он получит 0 очков и сможет вернуться со следующего вопроса.`)) return;
     }
     setBusy(true);
     setError('');
     try {
-      const response = await fetch(`/api/rooms/${roomId}/${action}`, { method: 'POST' });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Could not advance game.');
+      await api(`/api/rooms/${roomId}/${action}`, { method: 'POST' });
       await refresh();
-    } catch (cause) { setError((cause as Error).message); }
+    } catch (cause) { setError(hostError(cause)); }
     finally { setBusy(false); }
   }
 
@@ -35,41 +35,35 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
     if (!state?.game || !('questionId' in state.game)) return;
     setBusy(true); setError('');
     try {
-      const response = await fetch(`/api/rooms/${roomId}/media/${mediaId}/${action}`, {
+      await api(`/api/rooms/${roomId}/media/${mediaId}/${action}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: state.game.questionId }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Could not control media.');
       await refresh();
-    } catch (cause) { setError((cause as Error).message); }
+    } catch (cause) { setError(hostError(cause)); }
     finally { setBusy(false); }
   }
 
   async function kick(player: { id: string; name: string }) {
-    if (!window.confirm(`Kick ${player.name}? They will be removed from the roster and leaderboard and cannot reconnect as this player.`)) return;
+    if (!window.confirm(`Удалить игрока ${player.name}? Он исчезнет из состава и таблицы результатов и не сможет подключиться снова под этой личностью.`)) return;
     setBusy(true); setError('');
     try {
-      const response = await fetch(`/api/rooms/${roomId}/players/${player.id}/kick`, {
+      await api(`/api/rooms/${roomId}/players/${player.id}/kick`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Could not kick player.');
       await refresh();
-    } catch (cause) { setError((cause as Error).message); }
+    } catch (cause) { setError(hostError(cause)); }
     finally { setBusy(false); }
   }
 
   const gameInProgress = !!room && !['LOBBY', 'WINNER_SCREEN'].includes(room.state);
   async function close() {
-    if (!window.confirm(gameInProgress ? 'End this game and close the room? Players will no longer be able to answer.' : 'Close this room and release its code?')) return;
+    if (!window.confirm(gameInProgress ? 'Завершить игру и закрыть комнату? Игроки больше не смогут отвечать.' : 'Закрыть комнату и освободить её код?')) return;
     setBusy(true);
     setError('');
     try {
-      const response = await fetch(`/api/rooms/${roomId}/close`, { method: 'POST' });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Could not close room.');
+      await api(`/api/rooms/${roomId}/close`, { method: 'POST' });
       await refresh();
-    } catch (cause) { setError((cause as Error).message); }
+    } catch (cause) { setError(hostError(cause)); }
     finally { setBusy(false); }
   }
 
@@ -78,65 +72,65 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
   let primaryDisabled = busy;
   if (room && !room.closedAt) {
     const game = state?.game;
-    if (room.state === 'LOBBY' && state?.players?.length) { primaryAction = 'start'; primaryLabel = 'Start Game'; }
-    else if (game?.state === 'ROUND_INTRO') { primaryAction = 'start-round'; primaryLabel = 'Start Round'; }
-    else if (game?.state === 'QUESTION' && !game.preTimer) { primaryAction = 'start-question'; primaryLabel = 'Start Question'; }
+    if (room.state === 'LOBBY' && state?.players?.length) { primaryAction = 'start'; primaryLabel = 'Начать игру'; }
+    else if (game?.state === 'ROUND_INTRO') { primaryAction = 'start-round'; primaryLabel = 'Начать раунд'; }
+    else if (game?.state === 'QUESTION' && !game.preTimer) { primaryAction = 'start-question'; primaryLabel = 'Начать вопрос'; }
     else if (room.state === 'PAUSED') {
       const waiting = game?.state === 'PAUSED' && game.reason === 'player_disconnect';
       primaryAction = waiting ? 'wait-for-player' : 'resume';
-      primaryLabel = waiting ? 'Wait for Player' : 'Resume';
+      primaryLabel = waiting ? 'Продолжить с игроком' : 'Продолжить';
       primaryDisabled ||= Boolean(waiting && !game.disconnectedPlayer?.present);
     } else if (game && 'nextAction' in game && game.nextAction) {
       primaryAction = game.nextAction;
       primaryLabel = game.nextAction === 'next'
-        ? ('questionNumber' in game && game.questionNumber < game.questionCount ? 'Next Question' : 'Next')
-        : { 'show-leaderboard': 'Show Leaderboard', 'next-round': 'Next Round', 'final-results': 'Final Results', 'show-winner': 'Show Winner', 'start-tiebreak': 'Определить победителя / Start Tiebreak' }[game.nextAction];
+        ? ('questionNumber' in game && game.questionNumber < game.questionCount ? 'Следующий вопрос' : 'Далее')
+        : { 'show-leaderboard': 'Показать результаты', 'next-round': 'Следующий раунд', 'final-results': 'Итоги игры', 'show-winner': 'Показать победителей', 'start-tiebreak': 'Определить победителя' }[game.nextAction];
     }
   }
 
   return <ThemeSurface themeId={room?.themeId} className="host" data-phase={room?.closedAt ? 'CLOSED' : room?.state}>
-    <header className="app-masthead"><div><span className="wordmark">Home Quiz</span><h1>Host</h1></div><Link to="/admin">Quiz list</Link></header>
-    {(error || loadError) && <p role="alert">{error || loadError}</p>}
-    {!room && !error && !loadError && <p>Loading room...</p>}
+    <header className="app-masthead"><div><span className="wordmark">Home Quiz</span><h1>Ведущий</h1></div><Link to="/admin">Список викторин</Link></header>
+    {(error || loadError) && <p role="alert">{error || hostError(new Error(loadError))}</p>}
+    {!room && !error && !loadError && <p>Загрузка комнаты…</p>}
     {room && <>
       <section className="host-overview"><h2>{room.quizTitle}</h2>
-      {room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
-      {(room.closedAt || room.state !== 'LOBBY') && <Link to={`/screen/${room.closedAt ? room.id : room.code}`}>Open Screen</Link>}
-      <p className="connection-chip" data-connected={connected}>{connected ? 'Connected' : 'Reconnecting…'}</p>
-      <p>Players: {state?.players?.length ?? 0} / 30</p>
-      {!state?.players?.length && <p role="status">No players. Ask guests to scan the Screen QR code or enter the room code.</p>}
-      <p>Room code: <strong className="host-room-code">{room.code}</strong></p>
-      {room.state !== 'LOBBY' && <p>State: <span className="phase-chip">{room.state.toLowerCase().split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}</span></p>}
+      {(room.closedAt || room.state !== 'LOBBY') && <Link to={`/screen/${room.closedAt ? room.id : room.code}`}>Открыть Screen</Link>}
+      <p className="connection-chip" data-connected={connected}>{connected ? 'Подключено' : 'Переподключение…'}</p>
+      <p>Игроков: {state?.players?.length ?? 0} / 30</p>
+      {!state?.players?.length && <p role="status">Пока нет игроков. Попросите гостей сканировать QR на Screen или ввести код комнаты.</p>}
+      <p>Код комнаты: <strong className="host-room-code">{room.code}</strong></p>
+      {room.state !== 'LOBBY' && <p>Этап: <span className="phase-chip">{hostPhases[room.state]}</span></p>}
+      {state && <p className="host-hint">{hostHint(state)}</p>}
       </section>
       <section className="host-controls" aria-label="Game controls">
       {primaryAction && <button className="host-primary-action" onClick={() => void start(primaryAction)} disabled={primaryDisabled}>{primaryLabel}</button>}
-      {!room.closedAt && state?.game?.state === 'FINAL_RESULTS' && state.game.canStartTiebreak && <button className="host-primary-action" disabled={busy} onClick={() => void start('start-tiebreak')}>Определить победителя / Start Tiebreak</button>}
-      {room.tiebreak && <p role="status">{room.tiebreak.completed ? (room.tiebreak.contenderIds.length === 1 ? 'Победитель определён / Winner decided' : 'Допвопросы закончились: совместная победа / Reserve exhausted: shared win') : `Допвопросы / Tiebreak · Осталось / Remaining: ${room.tiebreak.contenderIds.length}`}</p>}
+      {!room.closedAt && state?.game?.state === 'FINAL_RESULTS' && state.game.canStartTiebreak && <button className="host-primary-action" disabled={busy} onClick={() => void start('start-tiebreak')}>Определить победителя</button>}
+      {room.tiebreak && <p role="status">{room.tiebreak.completed ? (room.tiebreak.contenderIds.length === 1 ? 'Победитель определён' : 'Допвопросы закончились: совместная победа') : `Допвопросы · Осталось: ${room.tiebreak.contenderIds.length}`}</p>}
       {!room.closedAt && ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(room.state) &&
-        <div className="host-secondary-actions"><button className="subtle" onClick={() => void start('pause')} disabled={busy}>Pause</button></div>}
+        <div className="host-secondary-actions"><button className="subtle" onClick={() => void start('pause')} disabled={busy}>Пауза</button></div>}
       {!room.closedAt && room.state === 'PAUSED' && <section className="game-content">
-        <p className="state-notice paused">Game paused.</p>
-        {state?.game?.state === 'PAUSED' && state.game.content?.state === 'ROUND_INTRO' && <><RoundIntroContent round={state.game.content} /><p>Questions: {state.game.content.questionCount}</p></>}
+        <p className="state-notice paused">Игра приостановлена.</p>
+        {state?.game?.state === 'PAUSED' && state.game.content?.state === 'ROUND_INTRO' && <><RoundIntroContent round={state.game.content} /><p>Вопросов: {state.game.content.questionCount}</p></>}
         {state?.game?.state === 'PAUSED' && state.game.content && 'questionId' in state.game.content && <QuestionContent question={state.game.content as import('./lobby').CurrentQuestion} host mediaBusy />}
         {state?.game?.state === 'PAUSED' && state.game.content && ['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS'].includes(state.game.content.state) && <BoundaryContent game={state.game.content as import('./lobby').GameBoundary} />}
         {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <>
-          <p>{state.game.disconnectedPlayer?.name} disconnected.</p>
-          <p role="status">{state.game.disconnectedPlayer?.present ? `${state.game.disconnectedPlayer.name} is back — Host can resume with Wait for Player.` : 'Waiting for Player to reconnect…'}</p>
+          <p>{state.game.disconnectedPlayer?.name} потерял(а) связь.</p>
+          <p role="status">{state.game.disconnectedPlayer?.present ? `${state.game.disconnectedPlayer.name} снова подключён(а). Нажмите «Продолжить с игроком».` : 'Ожидаем возвращения игрока…'}</p>
         </>}
-        {state?.game?.state === 'PAUSED' && <p>Paused from: {state.game.pausedFromState.toLowerCase().replaceAll('_', ' ')}</p>}
+        {state?.game?.state === 'PAUSED' && <p>До паузы: {hostPhases[state.game.pausedFromState]}</p>}
         {state?.game?.state === 'PAUSED' && state.game.reason === 'player_disconnect' && <div className="host-secondary-actions">
-          <button className="subtle danger" onClick={() => void start('continue-without-player')} disabled={busy}>Continue Without Player</button>
+          <button className="subtle danger" onClick={() => void start('continue-without-player')} disabled={busy}>Продолжить без игрока</button>
         </div>}
       </section>}
       {!room.closedAt && state?.game?.state === 'ROUND_INTRO' && <section className="game-content">
         <RoundIntroContent round={state.game} />
-        <p>Questions: {state.game.questionCount}</p>
+        <p>Вопросов: {state.game.questionCount}</p>
       </section>}
       {!room.closedAt && (state?.game?.state === 'QUESTION' || state?.game?.state === 'ANSWERING' || state?.game?.state === 'ANSWER_REVEAL') && <section className="game-content">
         <QuestionContent question={state.game} host mediaBusy={busy} onMediaControl={(id, action) => void controlMedia(id, action)} />
-        <p>Points: {state.game.points}</p>
-        <p>Answer time: {state.game.answerTimeSeconds} seconds</p>
-        {state.game.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} />}
+        <p>Очков: {state.game.points}</p>
+        <p>Время на ответ: {state.game.answerTimeSeconds} сек.</p>
+        {state.game.state === 'ANSWERING' && state.game.timer && <Countdown timer={state.game.timer} language="ru" />}
       </section>}
       {!room.closedAt && state?.game && ('nextAction' in state.game) && <>
         {['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'].includes(state.game.state) && <section className="game-content"><BoundaryContent game={state.game as import('./lobby').GameBoundary} /></section>}
@@ -144,13 +138,13 @@ export function Host({ roomId: resolvedId }: { roomId?: string } = {}) {
       </section>
       <section className="host-roster-section" aria-label="Players">
       <ul className="host-roster">{state?.players?.map(player => <li key={player.id} data-present={player.present}>
-        <span>{player.name} — {player.language.toUpperCase()}{player.present !== undefined && ` — ${player.present ? 'Online' : 'Disconnected'}`}</span>
+        <span>{player.name} — {player.language.toUpperCase()}{player.present !== undefined && ` — ${player.present ? 'На связи' : 'Нет связи'}`}</span>
         {!room.closedAt && !room.tiebreak && !['FINAL_RESULTS', 'WINNER_SCREEN'].includes(room.state) && !(state?.game?.state === 'PAUSED' && state.game.pausedFromState === 'FINAL_RESULTS') &&
-          <button className="subtle danger" aria-label={`Kick ${player.name}`} disabled={busy} onClick={() => void kick(player)}>Kick</button>}
+          <button className="subtle danger" aria-label={`Удалить игрока ${player.name}`} disabled={busy} onClick={() => void kick(player)}>Удалить</button>}
       </li>)}</ul>
       </section>
       <footer className="host-danger">
-      {room.closedAt ? <p role="status">Room closed</p> : <button className="subtle danger" onClick={() => void close()} disabled={busy}>{gameInProgress ? 'End Game' : 'Close room'}</button>}
+      {room.closedAt ? <p role="status">Комната закрыта</p> : <button className="subtle danger" onClick={() => void close()} disabled={busy}>{gameInProgress ? 'Завершить игру' : 'Закрыть комнату'}</button>}
       </footer>
     </>}
   </ThemeSurface>;

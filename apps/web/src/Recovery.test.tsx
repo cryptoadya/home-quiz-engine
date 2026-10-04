@@ -65,10 +65,10 @@ test('Host can start reserve questions from tied final results', async () => {
     return Response.json(started ? { room: { ...room, state: 'QUESTION' }, game: { ...question, state: 'QUESTION', questionNumber: 1, questionCount: 1, textRu: 'Допвопрос', textEn: 'Reserve question', roundNumber: 1 } } : { room: finalRoom, game });
   };
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Определить победителя / Start Tiebreak' })));
-  fireEvent.click(view.getByRole('button', { name: 'Определить победителя / Start Tiebreak' }));
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Определить победителя' })));
+  fireEvent.click(view.getByRole('button', { name: 'Определить победителя' }));
   await waitFor(() => assert.ok(view.getByText('Reserve question')));
-  assert.ok(view.getByRole('button', { name: 'Start Question' }));
+  assert.ok(view.getByRole('button', { name: 'Начать вопрос' }));
 });
 
 test('Player cleanup removes socket listeners and ignores an in-flight live refresh after remount', async () => {
@@ -122,7 +122,7 @@ for (const audience of ['host', 'screen']) test(`${audience} delayed initial HTT
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: 'PAUSED' }, game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000 } }); });
   await act(async () => { live.emit('lobby:state', { room: { ...room, closedAt: 'closed' } }); });
   await act(async () => { resolve(Response.json({ room, game: { ...question, textRu: 'Старый', textEn: 'Old question', roundNumber: 1, questionNumber: 1, questionCount: 1 } })); });
-  assert.ok(view.getByText(/Room closed/));
+  assert.ok(view.getByText(audience === 'host' ? 'Комната закрыта' : /Room closed/));
   assert.equal(view.queryByRole('timer'), null);
   assert.equal(view.queryByText('Old question'), null);
 });
@@ -159,27 +159,27 @@ test('Host End Game requires confirmation and delayed action refresh cannot repl
     return new Promise(done => { resolve = done; });
   };
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'End Game' })));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'End Game' })); });
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Завершить игру' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Завершить игру' })); });
   assert.equal(posts, 0);
-  assert.match(confirmations[0], /End this game/);
+  assert.match(confirmations[0], /Завершить игру/);
   confirmed = true;
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'End Game' })); });
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Завершить игру' })); });
   assert.equal(posts, 1); assert.equal(confirmations.length, 2);
   await act(async () => { live.emit('lobby:state', { room: { ...room, closedAt: 'closed' } }); });
   await act(async () => { resolve(Response.json({ room })); });
-  assert.ok(view.getByText('Room closed')); assert.equal(view.queryByRole('button'), null);
+  assert.ok(view.getByText('Комната закрыта')); assert.equal(view.queryByRole('button'), null);
 });
 
 const hostCases = [
-  { state: 'LOBBY', game: null, buttons: ['Start Game', 'Close room'] },
-  { state: 'ROUND_INTRO', game: { state: 'ROUND_INTRO', roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '' }, buttons: ['Pause', 'Start Round', 'End Game'] },
-  { state: 'QUESTION', game: { ...question, state: 'QUESTION' }, buttons: ['Pause', 'Start Question', 'End Game'] },
-  { state: 'ANSWERING', game: question, buttons: ['Pause', 'End Game'] },
-  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'manual' }, buttons: ['Resume', 'End Game'] },
-  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'player_disconnect', disconnectedPlayer: { id: 'p', name: 'Alice', present: true } }, buttons: ['Wait for Player', 'Continue Without Player', 'End Game'] },
-  { state: 'ANSWER_REVEAL', game: { ...question, state: 'ANSWER_REVEAL', questionNumber: 1, questionCount: 2, statistics: { correct: 1, wrong: 0, unanswered: 0 }, nextAction: 'next' }, buttons: ['Pause', 'Next Question', 'End Game'] },
-  ...(['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'] as const).map(state => ({ state, game: { state, roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', leaderboard: [{ playerId: 'p', displayName: 'Alice', totalPoints: 1, rank: 1 }], nextAction: state === 'ROUND_END' ? 'show-leaderboard' : state === 'LEADERBOARD' ? 'next-round' : state === 'FINAL_RESULTS' ? 'show-winner' : null }, buttons: state === 'ROUND_END' ? ['Pause', 'Show Leaderboard', 'End Game'] : state === 'LEADERBOARD' ? ['Pause', 'Next Round', 'End Game'] : state === 'FINAL_RESULTS' ? ['Pause', 'Show Winner', 'End Game'] : ['Close room'] })),
+  { state: 'LOBBY', game: null, buttons: ['Начать игру', 'Закрыть комнату'] },
+  { state: 'ROUND_INTRO', game: { state: 'ROUND_INTRO', roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', descriptionRu: '', descriptionEn: '' }, buttons: ['Пауза', 'Начать раунд', 'Завершить игру'] },
+  { state: 'QUESTION', game: { ...question, state: 'QUESTION' }, buttons: ['Пауза', 'Начать вопрос', 'Завершить игру'] },
+  { state: 'ANSWERING', game: question, buttons: ['Пауза', 'Завершить игру'] },
+  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'manual' }, buttons: ['Продолжить', 'Завершить игру'] },
+  { state: 'PAUSED', game: { state: 'PAUSED', pausedFromState: 'ANSWERING', remainingMs: 12000, reason: 'player_disconnect', disconnectedPlayer: { id: 'p', name: 'Alice', present: true } }, buttons: ['Продолжить с игроком', 'Продолжить без игрока', 'Завершить игру'] },
+  { state: 'ANSWER_REVEAL', game: { ...question, state: 'ANSWER_REVEAL', questionNumber: 1, questionCount: 2, statistics: { correct: 1, wrong: 0, unanswered: 0 }, nextAction: 'next' }, buttons: ['Пауза', 'Следующий вопрос', 'Завершить игру'] },
+  ...(['ROUND_END', 'LEADERBOARD', 'FINAL_RESULTS', 'WINNER_SCREEN'] as const).map(state => ({ state, game: { state, roundNumber: 1, questionCount: 2, titleRu: 'Раунд', titleEn: 'Round', leaderboard: [{ playerId: 'p', displayName: 'Alice', totalPoints: 1, rank: 1 }], nextAction: state === 'ROUND_END' ? 'show-leaderboard' : state === 'LEADERBOARD' ? 'next-round' : state === 'FINAL_RESULTS' ? 'show-winner' : null }, buttons: state === 'ROUND_END' ? ['Пауза', 'Показать результаты', 'Завершить игру'] : state === 'LEADERBOARD' ? ['Пауза', 'Следующий раунд', 'Завершить игру'] : state === 'FINAL_RESULTS' ? ['Пауза', 'Показать победителей', 'Завершить игру'] : ['Закрыть комнату'] })),
   { state: 'ANSWERING', closedAt: 'closed', game: question, buttons: [] },
 ];
 for (const [index, scenario] of hostCases.entries()) test(`Host HTTP reload restores exact controls: ${scenario.state} case ${index}`, async () => {
@@ -187,15 +187,15 @@ for (const [index, scenario] of hostCases.entries()) test(`Host HTTP reload rest
   globalThis.fetch = async () => Response.json({ room: { ...room, state: scenario.state, closedAt: 'closedAt' in scenario ? scenario.closedAt : null }, game: scenario.game, players: [{ id: 'p', name: 'Alice', language: 'en', joinedAt: 'now' }] });
   const view = show('/host/room');
   await waitFor(() => assert.ok(view.getByText('Party')));
-  assert.deepEqual(view.queryAllByRole('button').map(button => button.textContent).sort(), (['FINAL_RESULTS', 'WINNER_SCREEN'].includes(scenario.state) || ('closedAt' in scenario && scenario.closedAt) ? [...scenario.buttons] : ['Kick', ...scenario.buttons]).sort());
+  assert.deepEqual(view.queryAllByRole('button').map(button => button.textContent).sort(), (['FINAL_RESULTS', 'WINNER_SCREEN'].includes(scenario.state) || ('closedAt' in scenario && scenario.closedAt) ? [...scenario.buttons] : ['Удалить', ...scenario.buttons]).sort());
   const primary = view.container.querySelector('.host-primary-action');
-  if (scenario.buttons.some(label => !['Pause', 'End Game', 'Close room', 'Continue Without Player'].includes(label))) {
+  if (scenario.buttons.some(label => !['Пауза', 'Завершить игру', 'Закрыть комнату', 'Продолжить без игрока'].includes(label))) {
     assert.ok(primary);
     assert.equal(view.getByRole('region', { name: 'Game controls' }).querySelector('button'), primary);
   }
   if (scenario.game && 'reason' in scenario.game && scenario.game.reason === 'player_disconnect') {
-    assert.ok(view.getByText(/Alice is back/));
-    assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, false);
+    assert.ok(view.getByText(/Alice снова подключён/));
+    assert.equal((view.getByRole('button', { name: 'Продолжить с игроком' }) as HTMLButtonElement).disabled, false);
   }
 });
 
@@ -259,7 +259,7 @@ test('Player retry reconnect cannot overwrite a newer socket-triggered question 
   assert.ok(view.getByText('New question'));
 });
 
-for (const [scenarioIndex, label] of [[1, 'Start Round'], [4, 'Resume']] as const) test(`Host routine ${label} sends intent without confirmation`, async () => {
+for (const [scenarioIndex, label] of [[1, 'Начать раунд'], [4, 'Продолжить']] as const) test(`Host routine ${label} sends intent without confirmation`, async () => {
   socket();
   mock.method(dom.window, 'confirm', () => { throw new Error('Routine controls must not request confirmation'); });
   const scenario = hostCases[scenarioIndex];
@@ -271,7 +271,7 @@ for (const [scenarioIndex, label] of [[1, 'Start Round'], [4, 'Resume']] as cons
   const view = show('/host/room');
   await waitFor(() => assert.ok(view.getByRole('button', { name: label })));
   await act(async () => { fireEvent.click(view.getByRole('button', { name: label })); });
-  assert.deepEqual(commands, [label === 'Resume' ? 'resume' : 'start-round']);
+  assert.deepEqual(commands, [label === 'Продолжить' ? 'resume' : 'start-round']);
   assert.equal(view.queryByRole('alert'), null);
 });
 
@@ -288,14 +288,14 @@ test('Host Kick requires confirmation, sends permanent removal intent, and updat
     return Response.json(snapshot);
   };
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByText(/Alice — EN — Online/)));
-  await act(async () => fireEvent.click(view.getByRole('button', { name: 'Kick Alice' })));
+  await waitFor(() => assert.ok(view.getByText(/Alice — EN — На связи/)));
+  await act(async () => fireEvent.click(view.getByRole('button', { name: 'Удалить игрока Alice' })));
   assert.equal(posts, 0);
   confirmed = true;
-  await act(async () => fireEvent.click(view.getByRole('button', { name: 'Kick Alice' })));
+  await act(async () => fireEvent.click(view.getByRole('button', { name: 'Удалить игрока Alice' })));
   assert.equal(posts, 1);
-  assert.ok(view.getByText(/No players/));
-  assert.equal(view.queryByRole('button', { name: 'Kick Alice' }), null);
+  assert.ok(view.getByText(/Пока нет игроков/));
+  assert.equal(view.queryByRole('button', { name: 'Удалить игрока Alice' }), null);
   await act(async () => live.emit('lobby:state', snapshot));
 });
 

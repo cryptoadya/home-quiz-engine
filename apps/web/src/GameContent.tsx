@@ -5,6 +5,8 @@ import type { CurrentQuestion, RoundIntro } from './lobby';
 import { ThemeDecoration } from './themes/ThemeDecoration';
 import { usePresentationLayout } from './usePresentationLayout';
 
+const hostMediaActions = { play: 'Проиграть', pause: 'Пауза', restart: 'Сначала' };
+
 export function RoundIntroContent({ round }: { round: RoundIntro }) {
   return <div className="round-intro">
     <ThemeDecoration kind="round" />
@@ -34,7 +36,7 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
     <h2 lang="en">{question.textEn}</h2>
     </div>
     <div className={host ? 'host-media' : 'question-media'} data-video-focus={Boolean(featuredVideo) || undefined}>{question.media?.map(media => media.kind === 'audio' || media.kind === 'video'
-      ? host ? <div key={media.mediaId}><p>{media.name} — {media.playback?.playing ? 'Playing' : 'Paused'}</p>{(['play', 'pause', 'restart'] as const).map(action => <button key={action} aria-label={`${action[0].toUpperCase() + action.slice(1)} ${media.name}`} disabled={mediaBusy || Boolean(question.preTimer && question.preTimer.mediaId !== media.mediaId)} onClick={() => onMediaControl?.(media.mediaId, action)}>{action[0].toUpperCase() + action.slice(1)}</button>)}</div>
+      ? host ? <div key={media.mediaId}><p>{media.name} — {media.playback?.playing ? 'Воспроизводится' : 'Приостановлено'}</p>{(['play', 'pause', 'restart'] as const).map(action => <button key={action} aria-label={`${hostMediaActions[action]} ${media.name}`} disabled={mediaBusy || Boolean(question.preTimer && question.preTimer.mediaId !== media.mediaId)} onClick={() => onMediaControl?.(media.mediaId, action)}>{hostMediaActions[action]}</button>)}</div>
         : <PlayableMedia key={`${question.questionId ?? ''}:${media.mediaId}`} featured={media.mediaId === featuredVideo?.mediaId} media={{ ...media, name: media.kind === 'video' ? 'Видео / Video' : 'Аудио / Audio' }} onEnded={onMediaEnded} localControls={localMediaControls} />
       : <MediaImage key={media.mediaId} src={media.mediaUrl} alt={host ? media.name : 'Изображение / Image'} className="question-image" />)}</div>
     {(host || question.state === 'ANSWER_REVEAL') && (question.explanationRu || question.explanationEn) && <section className="explanation"><h3>Объяснение / Explanation</h3><p lang="ru">{question.explanationRu}</p><p lang="en">{question.explanationEn}</p></section>}
@@ -45,7 +47,7 @@ export function QuestionContent({ question, host = false, onMediaControl, onMedi
     {host && <ol className="game-options">{question.options?.map((option, index) => <li key={index} className={option.isCorrect ? 'correct-option' : question.state === 'ANSWER_REVEAL' ? 'incorrect-option' : undefined}>
       <span className="option-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span>
       <span lang="ru">{option.textRu}</span> / <span lang="en">{option.textEn}</span>
-      {(host || question.state === 'ANSWER_REVEAL') && option.isCorrect && <> — <strong>{host ? 'Correct answer' : 'Верный ответ / Correct answer'}</strong></>}
+      {(host || question.state === 'ANSWER_REVEAL') && option.isCorrect && <> — <strong>{host ? 'Верный ответ' : 'Верный ответ / Correct answer'}</strong></>}
     </li>)}</ol>}
     {!host && question.state === 'ANSWER_REVEAL' && question.options?.some(option => option.isCorrect) && <section className="correct-answers">
       <h3>{question.type === 'multiple_choice' ? 'Правильные ответы / Correct answers' : 'Правильный ответ / Correct answer'}</h3>

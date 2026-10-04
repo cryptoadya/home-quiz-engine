@@ -136,12 +136,6 @@ export function createApp(db: DatabaseSync, lobbyChanged: (roomId: string) => vo
   app.delete(`${mediaPath}/:mediaId`, (request, response) => deleteMedia(db, request.params.quizId, request.params.mediaId)
     ? response.status(204).end() : response.status(404).json({ error: 'Media not found.' }));
 
-  app.post('/api/quizzes/:quizId/test-games', (request, response) => {
-    const result = createRoom(db, request.params.quizId, undefined, true);
-    if ('room' in result) return response.status(201).json(result.room);
-    return response.status(result.status).json({ error: result.error, validation: result.validation });
-  });
-
   app.post('/api/quizzes/:quizId/rooms', (request, response) => {
     const result = createRoom(db, request.params.quizId);
     if ('room' in result) return response.status(201).json(result.room);

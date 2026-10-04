@@ -27,7 +27,7 @@ test('Host loads roster, applies realtime snapshots and resubscribes for authori
   const view = show('/host/room');
   await waitFor(() => assert.ok(view.getByText(/Alex/)));
   assert.ok(view.getByText(/EN/));
-  assert.ok(view.getByText(/Players: 1/));
+  assert.ok(view.getByText(/Игроков: 1/));
   live.on('lobby:subscribe', input => {
     assert.deepEqual(input, { roomId: 'room', audience: 'host' });
     live.emit('lobby:state', { room, players: [player, { ...player, id: 'two', name: 'Jane' }] });
@@ -35,11 +35,11 @@ test('Host loads roster, applies realtime snapshots and resubscribes for authori
   await act(async () => { live.emit('connect'); });
   assert.ok(view.getByText(/Jane/));
   await act(async () => { live.emit('disconnect'); });
-  assert.ok(view.getByText('Reconnecting…'));
+  assert.ok(view.getByText('Переподключение…'));
   live.removeAllListeners('lobby:subscribe');
   live.on('lobby:subscribe', () => live.emit('lobby:state', { room: { ...room, closedAt: 'now' }, players: [player] }));
   await act(async () => { live.emit('connect'); });
-  assert.ok(view.getByText('Room closed'));
+  assert.ok(view.getByText('Комната закрыта'));
 });
 
 test('Screen renders count, one language-neutral Player QR, LAN origin and live closure', async () => {
@@ -84,7 +84,7 @@ test('a delayed initial HTTP response cannot overwrite a newer socket snapshot',
   const view = show('/host/room');
   await act(async () => { live.emit('lobby:state', { room: { ...room, closedAt: 'now' }, players: [player] }); });
   await act(async () => { finish(Response.json({ room, players: [] })); });
-  assert.ok(view.getByText('Room closed'));
+  assert.ok(view.getByText('Комната закрыта'));
   assert.ok(view.getByText(/Alex/));
 });
 
@@ -115,7 +115,7 @@ test('Host requires players and confirmation; Start success removes control and 
   let starts = 0;
   let confirmed = false;
   mock.method(window, 'confirm', (message: string) => {
-    assert.match(message, /player list and quiz content will be locked/i);
+    assert.match(message, /Состав игроков и содержание викторины будут зафиксированы/);
     return confirmed;
   });
   globalThis.fetch = async (url, init) => {
@@ -127,16 +127,16 @@ test('Host requires players and confirmation; Start success removes control and 
     return Response.json({ room: starts ? { ...room, state: 'ROUND_INTRO' } : room, players: [] });
   };
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByText(/Players: 0/)));
-  assert.equal(view.queryByRole('button', { name: 'Start Game' }), null);
+  await waitFor(() => assert.ok(view.getByText(/Игроков: 0/)));
+  assert.equal(view.queryByRole('button', { name: 'Начать игру' }), null);
   await act(async () => { live.emit('lobby:state', { room, players: [player] }); });
-  fireEvent.click(view.getByRole('button', { name: 'Start Game' }));
+  fireEvent.click(view.getByRole('button', { name: 'Начать игру' }));
   assert.equal(starts, 0);
   confirmed = true;
-  fireEvent.click(view.getByRole('button', { name: 'Start Game' }));
-  await waitFor(() => assert.ok(view.getByText('Round Intro')));
+  fireEvent.click(view.getByRole('button', { name: 'Начать игру' }));
+  await waitFor(() => assert.ok(view.getByText('Начало раунда')));
   assert.equal(starts, 1);
-  assert.equal(view.queryByRole('button', { name: 'Start Game' }), null);
+  assert.equal(view.queryByRole('button', { name: 'Начать игру' }), null);
 });
 
 test('Host keeps Start failure visible when a realtime snapshot arrives', async () => {
@@ -146,11 +146,11 @@ test('Host keeps Start failure visible when a realtime snapshot arrives', async 
     ? Response.json({ error: 'Quiz is not ready. Review the validation problems.' }, { status: 409 })
     : Response.json({ room, players: [player] });
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Game' })));
-  fireEvent.click(view.getByRole('button', { name: 'Start Game' }));
-  await waitFor(() => assert.match(view.getByRole('alert').textContent!, /Quiz is not ready/));
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Начать игру' })));
+  fireEvent.click(view.getByRole('button', { name: 'Начать игру' }));
+  await waitFor(() => assert.match(view.getByRole('alert').textContent!, /Викторина не готова/));
   await act(async () => { live.emit('lobby:state', { room, players: [player] }); });
-  assert.match(view.getByRole('alert').textContent!, /Quiz is not ready/);
+  assert.match(view.getByRole('alert').textContent!, /Викторина не готова/);
 });
 
 test('Screen leaves QR and join instructions when Start is broadcast and on reload', async () => {
@@ -218,14 +218,14 @@ test('Host reload restores Round Intro and Start Round displays current question
   await waitFor(() => assert.ok(view.getByText('Frozen round')));
   assert.ok(view.getByText('Замороженный раунд'));
   assert.ok(view.getByText('Description'));
-  assert.ok(view.getByText(/Questions: 2/));
-  fireEvent.click(view.getByRole('button', { name: 'Start Round' }));
+  assert.ok(view.getByText(/Вопросов: 2/));
+  fireEvent.click(view.getByRole('button', { name: 'Начать раунд' }));
   await waitFor(() => assert.ok(view.getByText('First question')));
   assert.ok(view.getByText('Первый вопрос'));
-  assert.match(view.getByText('Correct answer').parentElement!.textContent!, /Two/);
-  assert.ok(view.getByText(/Points: 3/));
-  assert.ok(view.getByText(/Answer time: 12/));
-  assert.equal(view.queryByRole('button', { name: 'Start Round' }), null);
+  assert.match(view.getByText('Верный ответ').parentElement!.textContent!, /Two/);
+  assert.ok(view.getByText(/Очков: 3/));
+  assert.ok(view.getByText(/Время на ответ: 12/));
+  assert.equal(view.queryByRole('button', { name: 'Начать раунд' }), null);
 });
 
 for (const showOptionsOnScreen of [false, true]) test(`Screen preparation hides content until public start, options ${showOptionsOnScreen}`, async () => {
@@ -264,19 +264,19 @@ test('Host primary action precedes question details and a full roster without ch
   const players = Array.from({ length: 30 }, (_, i) => ({ ...player, id: `p${i}`, name: `Guest ${i}`, present: i !== 0 }));
   globalThis.fetch = async () => Response.json({ room: { ...room, state: 'QUESTION' }, game: questionGame, players });
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Question' })));
-  const action = view.getByRole('button', { name: 'Start Question' });
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Начать вопрос' })));
+  const action = view.getByRole('button', { name: 'Начать вопрос' });
   assert.ok(action.classList.contains('host-primary-action'));
   assert.equal(view.getByRole('region', { name: 'Game controls' }).querySelector('button'), action);
   const roster = view.container.querySelector('.host-roster')!;
   assert.ok(action.compareDocumentPosition(roster) & window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.ok(action.compareDocumentPosition(view.getByText('First question')) & window.Node.DOCUMENT_POSITION_FOLLOWING);
-  assert.equal(view.getAllByRole('button', { name: /^Kick Guest/ }).length, 30);
-  assert.ok(view.getByText(/Guest 0.*Disconnected/));
+  assert.equal(view.getAllByRole('button', { name: /^Удалить игрока Guest/ }).length, 30);
+  assert.ok(view.getByText(/Guest 0.*Нет связи/));
   let confirmed = '';
   mock.method(window, 'confirm', (message: string) => { confirmed = message; return false; });
-  fireEvent.click(view.getByRole('button', { name: 'Kick Guest 0' }));
-  assert.match(confirmed, /Kick Guest 0.*cannot reconnect/);
+  fireEvent.click(view.getByRole('button', { name: 'Удалить игрока Guest 0' }));
+  assert.match(confirmed, /Удалить игрока Guest 0.*не сможет подключиться/);
   assert.equal(roster.querySelectorAll('li').length, 30);
 });
 
@@ -284,8 +284,8 @@ test('closed Round Intro hides Start Round', async () => {
   socket();
   globalThis.fetch = async () => Response.json({ room: { ...room, state: 'ROUND_INTRO', closedAt: 'now' }, players: [player], game: introGame });
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByText('Room closed')));
-  assert.equal(view.queryByRole('button', { name: 'Start Round' }), null);
+  await waitFor(() => assert.ok(view.getByText('Комната закрыта')));
+  assert.equal(view.queryByRole('button', { name: 'Начать раунд' }), null);
 });
 
 for (const language of ['ru', 'en']) test(`Player ${language} receives Question and reloads get-ready without controls`, async () => {
@@ -324,18 +324,18 @@ test('Host starts Question without confirmation and countdown expires without re
     return Response.json({ room: { ...room, state: started ? 'ANSWERING' : 'QUESTION' }, game: { ...questionGame, state: started ? 'ANSWERING' : 'QUESTION', ...(started ? { timer: answerTimer } : {}) } });
   };
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Question' })));
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Начать вопрос' })));
   t.mock.timers.enable({ apis: ['setInterval'] });
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Start Question' })); });
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Начать вопрос' })); });
   assert.equal(view.getByRole('timer').textContent, '12');
-  assert.ok(view.getByText('Correct answer'));
-  assert.equal(view.queryByRole('button', { name: 'Start Question' }), null);
+  assert.ok(view.getByText('Верный ответ'));
+  assert.equal(view.queryByRole('button', { name: 'Начать вопрос' }), null);
   elapsed = 12000;
   await act(async () => { t.mock.timers.tick(12000); });
   assert.equal(view.getByRole('timer').textContent, '0');
-  assert.ok(view.getByText(/Time is up/));
-  assert.equal(view.queryByRole('button', { name: /Reveal|Restart|Next/ }), null);
-  assert.ok(view.getByRole('button', { name: 'Pause' }));
+  assert.ok(view.getByText(/Время вышло/));
+  assert.equal(view.queryByRole('button', { name: /Показать ответ|Сначала|Следующий|Далее/ }), null);
+  assert.ok(view.getByRole('button', { name: 'Пауза' }));
 });
 
 for (const showOptionsOnScreen of [false, true]) test(`Screen Answering resyncs and reloads the same deadline with options ${showOptionsOnScreen}`, async () => {
@@ -500,7 +500,7 @@ for (const audience of ['host', 'screen']) test(`${audience} Reveal shows correc
   const view = show(`/${audience}/room`);
   await waitFor(() => assert.ok(view.getByRole('timer')));
   await act(async () => { live.emit('lobby:state', reveal); });
-  assert.ok(view.getByText(/Correct answer/));
+  assert.ok(view.getByText(audience === 'host' ? 'Верный ответ' : /Correct answer/));
   assert.ok(view.getByText('Right'));
   assert.equal(Boolean(view.queryByText('Wrong')), audience === 'host');
   assert.ok(view.getByText(/Answered: 2 \/ 2/));
@@ -508,7 +508,7 @@ for (const audience of ['host', 'screen']) test(`${audience} Reveal shows correc
   assert.equal(view.queryByRole('button', { name: /Next|Reveal/ }), null);
   await act(async () => { live.emit('lobby:state', { ...reveal, room: { ...reveal.room, closedAt: 'now' } }); });
   assert.equal(view.queryByText('Right'), null);
-  assert.ok(view.getByText(/Room closed/));
+  assert.ok(view.getByText(audience === 'host' ? 'Комната закрыта' : /Room closed/));
 });
 
 for (const [outcome, language, label, points] of [
@@ -574,21 +574,21 @@ test('Host follows explicit Reveal, round, leaderboard and final commands, with 
     return Response.json(snapshot);
   };
   let view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Next Question' })));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Next Question' })); });
-  assert.ok(view.getByRole('button', { name: 'Start Question' }));
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Следующий вопрос' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Следующий вопрос' })); });
+  assert.ok(view.getByRole('button', { name: 'Начать вопрос' }));
   assert.equal(view.queryByRole('timer'), null);
   view.unmount();
   snapshot = { room: { ...room, state: 'ANSWER_REVEAL' }, game: { ...questionGame, state: 'ANSWER_REVEAL', questionNumber: 2, questionCount: 2, nextAction: 'next' } };
   view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Next' })));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Next' })); });
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Далее' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Далее' })); });
   assert.ok(view.getByText('Раунд завершён / Round complete'));
   assert.ok(view.getByText('Round one'));
-  for (const action of ['Show Leaderboard', 'Next Round']) {
+  for (const action of ['Показать результаты', 'Следующий раунд']) {
     view.unmount(); view = show('/host/room');
     await waitFor(() => assert.ok(view.getByRole('button', { name: action })));
-    if (action === 'Next Round') {
+    if (action === 'Следующий раунд') {
       const ranks = [...view.getByRole('table').querySelectorAll('tbody tr')].map(row => row.firstElementChild?.textContent);
       assert.deepEqual(ranks, ['1', '1', '3']);
       assert.ok(view.getByText('Alice')); assert.ok(view.getByText('Carol'));
@@ -596,23 +596,23 @@ test('Host follows explicit Reveal, round, leaderboard and final commands, with 
     await act(async () => { fireEvent.click(view.getByRole('button', { name: action })); });
   }
   assert.ok(view.getByText('Second'));
-  assert.ok(view.getByRole('button', { name: 'Start Round' }));
+  assert.ok(view.getByRole('button', { name: 'Начать раунд' }));
   view.unmount();
   snapshot = boundary('ROUND_END', 'final-results');
   view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Final Results' })));
-  assert.equal(view.queryByRole('button', { name: 'Show Leaderboard' }), null);
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Final Results' })); });
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Итоги игры' })));
+  assert.equal(view.queryByRole('button', { name: 'Показать результаты' }), null);
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Итоги игры' })); });
   assert.ok(view.getByRole('table'));
-  assert.ok(view.getByRole('button', { name: 'Show Winner' }));
+  assert.ok(view.getByRole('button', { name: 'Показать победителей' }));
   assert.equal(view.queryByText('Победители / Winners'), null);
   view.unmount(); view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Show Winner' })));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Show Winner' })); });
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Показать победителей' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Показать победителей' })); });
   view.unmount(); view = show('/host/room');
   await waitFor(() => assert.ok(view.getByText('Победители / Winners')));
   assert.ok(view.getByText('Alice')); assert.ok(view.getByText('Bob'));
-  assert.equal(view.queryByRole('button', { name: /Next|Show|Start|Final/ }), null);
+  assert.equal(view.queryByRole('button', { name: /Следующий|Показать|Начать|Итоги/ }), null);
   assert.deepEqual(commands, ['next', 'next', 'show-leaderboard', 'next-round', 'final-results', 'show-winner']);
 });
 
@@ -669,16 +669,4 @@ for (const language of ['ru', 'en']) test(`Player ${language} new boundaries sta
   await act(async () => { live.emit('lobby:state', { room: { ...room, state: phase, closedAt: 'now' } }); });
   assert.ok(view.getByText(language === 'ru' ? 'Комната закрыта' : 'Room closed'));
   assert.equal(view.queryByText(labels[3]), null);
-});
-
-for (const surface of ['host', 'screen']) test(`${surface} labels test sessions throughout gameplay and after closure`, async () => {
-  socket();
-  const testRoom = { ...room, isTest: true, state: 'ROUND_INTRO' };
-  globalThis.fetch = async () => Response.json({ room: testRoom, players: [] });
-  const view = show(`/${surface}/room`);
-  await waitFor(() => assert.ok(view.getByText('Тестовая игра / Test Game')));
-  view.unmount();
-  globalThis.fetch = async () => Response.json({ room: { ...testRoom, closedAt: 'now' }, players: [] });
-  const closed = show(`/${surface}/room`);
-  await waitFor(() => assert.ok(closed.getByText('Тестовая игра / Test Game')));
 });

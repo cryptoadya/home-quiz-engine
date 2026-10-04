@@ -28,7 +28,7 @@ for (const state of ['ROUND_INTRO', 'QUESTION', 'ANSWERING', 'ANSWER_REVEAL', 'R
     globalThis.fetch = async () => Response.json({ room: { ...room, state } });
     const view = show('/host/room');
     await waitFor(() => assert.ok(view.getByText('Party')));
-    assert.equal(Boolean(view.queryByRole('button', { name: 'Pause' })), !['LOBBY', 'WINNER_SCREEN'].includes(state));
+    assert.equal(Boolean(view.queryByRole('button', { name: 'Пауза' })), !['LOBBY', 'WINNER_SCREEN'].includes(state));
   });
 }
 
@@ -44,16 +44,16 @@ test('Host Pause hides progression, reload restores pause, Resume restores prior
     return Response.json(snapshot);
   };
   let view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Start Question' })));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Pause' })); });
-  assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Resume', 'End Game']);
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Начать вопрос' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Пауза' })); });
+  assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Продолжить', 'Завершить игру']);
   view.unmount(); view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Resume' })));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Resume' })); });
-  assert.ok(view.getByRole('button', { name: 'Start Question' }));
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Продолжить' })));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Продолжить' })); });
+  assert.ok(view.getByRole('button', { name: 'Начать вопрос' }));
   assert.deepEqual(commands, ['pause', 'resume']);
   await act(async () => { live.emit('lobby:state', { ...paused, room: { ...paused.room, closedAt: 'now' } }); });
-  assert.ok(view.getByText('Room closed'));
+  assert.ok(view.getByText('Комната закрыта'));
   assert.equal(view.queryByRole('button'), null);
 });
 
@@ -87,7 +87,7 @@ for (const audience of ['host', 'screen']) test(`${audience} pause removes count
   await act(async () => { t.mock.timers.tick(1000); });
   assert.equal(view.getByRole('timer').textContent, '9');
   await act(async () => { live.emit('lobby:state', { ...paused, room: { ...paused.room, closedAt: 'now' } }); });
-  assert.ok(view.getByText(/Room closed/));
+  assert.ok(view.getByText(audience === 'host' ? 'Комната закрыта' : /Room closed/));
   assert.equal(view.queryByRole('heading', { name: 'Пауза / Paused' }), null);
 });
 
@@ -136,10 +136,10 @@ for (const audience of ['host', 'screen']) test(`${audience} disconnect pause re
   await waitFor(() => assert.ok(view.getByText('Party')));
   await act(async () => { live.emit('lobby:state', snapshot); });
   if (audience === 'host') {
-    assert.ok(view.getByText('Alice disconnected.'));
-    assert.ok(view.getByText('Game paused.'));
-    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Wait for Player', 'Continue Without Player', 'End Game']);
-    assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, true);
+    assert.ok(view.getByText('Alice потерял(а) связь.'));
+    assert.ok(view.getByText('Игра приостановлена.'));
+    assert.deepEqual(view.getAllByRole('button').map(button => button.textContent), ['Продолжить с игроком', 'Продолжить без игрока', 'Завершить игру']);
+    assert.equal((view.getByRole('button', { name: 'Продолжить с игроком' }) as HTMLButtonElement).disabled, true);
   } else {
     assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
     assert.equal(view.queryByText(/Alice/), null);
@@ -195,24 +195,24 @@ test('Host reconnect enables Wait without confirmation and resumes; Continue req
     return Response.json(snapshot);
   };
   const view = show('/host/room');
-  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Wait for Player' })));
-  assert.equal((view.getByRole('button', { name: 'Wait for Player' }) as HTMLButtonElement).disabled, true);
-  assert.equal(view.queryByRole('button', { name: 'Resume' }), null);
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Continue Without Player' })); });
+  await waitFor(() => assert.ok(view.getByRole('button', { name: 'Продолжить с игроком' })));
+  assert.equal((view.getByRole('button', { name: 'Продолжить с игроком' }) as HTMLButtonElement).disabled, true);
+  assert.equal(view.queryByRole('button', { name: 'Продолжить' }), null);
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Продолжить без игрока' })); });
   assert.deepEqual(commands, []);
-  assert.match(confirmations[0], /Continue without Alice.*0 points for this question.*return for the next question/);
+  assert.match(confirmations[0], /Продолжить без игрока Alice.*этот вопрос.*0 очков.*со следующего вопроса/);
   snapshot = disconnect(true);
   await act(async () => { live.emit('lobby:state', snapshot); });
-  assert.ok(view.getByText(/Alice is back/));
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Wait for Player' })); });
+  assert.ok(view.getByText(/Alice снова подключён/));
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Продолжить с игроком' })); });
   assert.deepEqual(commands, ['wait-for-player']); assert.equal(confirmations.length, 1);
   assert.equal(view.getByRole('timer').textContent, '10');
   snapshot = disconnect(false);
   await act(async () => { live.emit('lobby:state', snapshot); });
   confirm = true;
-  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Continue Without Player' })); });
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Продолжить без игрока' })); });
   assert.deepEqual(commands, ['wait-for-player', 'continue-without-player']);
-  assert.ok(view.getByRole('button', { name: 'Pause' }));
+  assert.ok(view.getByRole('button', { name: 'Пауза' }));
 });
 
 for (const language of ['ru', 'en']) test(`excluded Player ${language} has no controls and next question restores them`, async () => {
@@ -330,9 +330,9 @@ for (const audience of ['host', 'screen'] as const) {
     assert.ok(view.getByText('Описание'));
     assert.equal(view.getByRole('img', { name: 'Round art' }).getAttribute('src'), '/round-art.png');
     if (audience === 'host') {
-      assert.ok(view.getByText('Game paused.'));
-      assert.equal(view.queryByRole('button', { name: 'Start Round' }), null);
-      assert.ok(view.getByRole('button', { name: 'Resume' }));
+      assert.ok(view.getByText('Игра приостановлена.'));
+      assert.equal(view.queryByRole('button', { name: 'Начать раунд' }), null);
+      assert.ok(view.getByRole('button', { name: 'Продолжить' }));
     } else assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
   });
 
@@ -350,8 +350,8 @@ for (const audience of ['host', 'screen'] as const) {
         assert.ok(view.getByText('7'));
       }
       if (audience === 'host') {
-        assert.ok(view.getByText('Game paused.'));
-        assert.equal(view.queryByRole('button', { name: 'Show Winner' }), null);
+        assert.ok(view.getByText('Игра приостановлена.'));
+        assert.equal(view.queryByRole('button', { name: 'Показать победителей' }), null);
       } else assert.ok(view.getByRole('heading', { name: 'Пауза / Paused' }));
     });
   }

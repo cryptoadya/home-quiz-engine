@@ -1,4 +1,4 @@
-import { cleanupTestGames } from './test-games.js';
+import { registerScreenCheck } from './screen-check.js';
 import { completeMedia } from './media-playback.js';
 import { createDeadlineManager } from './deadlines.js';
 import { createServer } from 'node:http';
@@ -13,8 +13,6 @@ import { getSurfaceState, type Audience } from './game.js';
 const channel = (roomId: string, audience: Audience) => `lobby:${roomId}:${audience}`;
 
 export function createQuizServer(db: DatabaseSync) {
-  // Opportunistic retention; failures leave closed rows eligible for a later retry.
-  try { cleanupTestGames(db); } catch (error) { console.warn('Test Game cleanup failed:', error); }
   const presence = new Map<string, Set<string>>();
   const isPlayerPresent = (roomId: string, playerId: string) => (presence.get(`${roomId}:${playerId}`)?.size ?? 0) > 0;
   function broadcastPresence(roomId: string) {
@@ -45,6 +43,7 @@ export function createQuizServer(db: DatabaseSync) {
   }, isPlayerPresent);
   const server = createServer(app);
   const io = new Server(server);
+  registerScreenCheck(io, db);
   // Presence is process-local. Only an observed loss of the last authenticated
   // socket invokes the durable transaction; an empty registry at startup does not.
   io.on('connection', socket => {

@@ -35,7 +35,7 @@ test('Screen applies authoritative Play/Pause/Restart and reload position; Host 
     const commands: string[] = [];
     const host = render(createElement(QuestionContent, { question: base, host: true, onMediaControl: (id: string, action: string) => commands.push(`${id}:${action}`) }));
     assert.equal(host.container.querySelectorAll('audio,video').length, 0);
-    for (const action of ['Play', 'Pause', 'Restart']) fireEvent.click(host.getByRole('button', { name: `${action} audio` }));
+    for (const action of ['Play', 'Pause', 'Restart']) fireEvent.click(host.getByRole('button', { name: `${{ Play: 'Проиграть', Pause: 'Пауза', Restart: 'Сначала' }[action]} audio` }));
     assert.deepEqual(commands, ['audio:play', 'audio:pause', 'audio:restart']);
     assert.ok(host.getByAltText('GIF'));
   } finally { proto.play = oldPlay; proto.pause = oldPause; Object.defineProperty(proto, 'readyState', oldReady); }
@@ -66,15 +66,15 @@ test('Host posts stable media/question identities and restores server status aft
   const show = () => render(createElement(MemoryRouter, { initialEntries: ['/host/room'] }, createElement(App)));
   try {
     let view = show();
-    await waitFor(() => assert.ok(view.getByText('track — Paused')));
+    await waitFor(() => assert.ok(view.getByText('track — Приостановлено')));
     for (const action of ['Play', 'Pause', 'Restart']) {
-      fireEvent.click(view.getByRole('button', { name: `${action} track` }));
-      await waitFor(() => assert.equal((view.getByRole('button', { name: `${action} track` }) as HTMLButtonElement).disabled, false));
-      assert.ok(view.getByText(`track — ${action === 'Pause' ? 'Paused' : 'Playing'}`));
+      fireEvent.click(view.getByRole('button', { name: `${{ Play: 'Проиграть', Pause: 'Пауза', Restart: 'Сначала' }[action]} track` }));
+      await waitFor(() => assert.equal((view.getByRole('button', { name: `${{ Play: 'Проиграть', Pause: 'Пауза', Restart: 'Сначала' }[action]} track` }) as HTMLButtonElement).disabled, false));
+      assert.ok(view.getByText(`track — ${action === 'Pause' ? 'Приостановлено' : 'Воспроизводится'}`));
     }
     assert.deepEqual(commands, ['play', 'pause', 'restart'].map(action => `/api/rooms/room/media/stable/${action}`));
     view.unmount(); view = show();
-    await waitFor(() => assert.ok(view.getByText('track — Playing')));
+    await waitFor(() => assert.ok(view.getByText('track — Воспроизводится')));
     assert.equal(view.container.querySelectorAll('audio,video').length, 0);
   } finally { cleanup(); mock.restoreAll(); globalThis.fetch = originalFetch; }
 });
@@ -125,8 +125,8 @@ test('blocked pre-timer autoplay and projected EOF cannot advance after reload',
     assert.equal(completions.length, 0);
     view.unmount();
     const host = render(createElement(QuestionContent, { question: question(8), host: true }));
-    assert.equal((host.getByRole('button', { name: 'Play b' }) as HTMLButtonElement).disabled, true);
-    assert.equal((host.getByRole('button', { name: 'Play a' }) as HTMLButtonElement).disabled, false);
+    assert.equal((host.getByRole('button', { name: 'Проиграть b' }) as HTMLButtonElement).disabled, true);
+    assert.equal((host.getByRole('button', { name: 'Проиграть a' }) as HTMLButtonElement).disabled, false);
   } finally { cleanup(); proto.play = oldPlay; proto.pause = oldPause; }
 });
 

@@ -61,7 +61,7 @@ test('all four previews share current editor content, localization and themes wi
     fireEvent.change(panel.getByLabelText('Preview mode'), { target: { value: mode } });
     assert.ok(panel.getByText(mode === 'EN Player' ? 'Question EN' : 'Вопрос RU'));
     if (mode === 'Screen' || mode === 'Host') assert.ok(panel.getByText('Question EN'));
-    if (mode === 'Host') assert.ok(panel.getByText('Correct answer'));
+    if (mode === 'Host') assert.ok(panel.getByText('Верный ответ'));
     if (mode === 'Screen') { assert.equal(panel.queryByText('Right EN'), null); assert.equal(panel.queryByText('Wrong EN'), null); }
   }
   assert.equal(requests.filter(request => request.method !== 'GET').length, 0);
@@ -188,7 +188,7 @@ test('Matching text/images and ordered question media use shared rendering and f
     fireEvent.change(panel.getByLabelText('Preview mode'), { target: { value: 'Host' } });
     assert.ok(panel.getByText('Верные пары / Correct pairs'));
     assert.equal(panel.queryByLabelText('Clip'), null, 'Host does not mount media players');
-    assert.equal((panel.getByRole('button', { name: 'Play Clip' }) as HTMLButtonElement).disabled, true);
+    assert.equal((panel.getByRole('button', { name: 'Проиграть Clip' }) as HTMLButtonElement).disabled, true);
     assert.equal(writes.length, 0);
     assert.ok(requests.every(request => request.path.startsWith('/api/quizzes/quiz') && request.method === 'GET'));
   } finally { prototype.pause = originalPause; }

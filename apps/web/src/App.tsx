@@ -1,3 +1,4 @@
+import { ScreenCheck } from './ScreenCheck';
 import { RoomEntry } from './RoomEntry';
 import { RoomRoute } from './RoomRoute';
 import { Play } from './Play';
@@ -14,6 +15,7 @@ export function App() {
       <Route path="/admin/quizzes/:quizId" element={<QuizEditor />} />
       <Route path="/play" element={<Play />} />
       <Route path="/play/:code" element={<Play />} />
+      <Route path="/screen-check/:quizId" element={<ScreenCheck />} />
       <Route path="/screen/:roomId" element={<RoomRoute destination="screen" />} />
       <Route path="/host/:roomId" element={<RoomRoute destination="host" />} />
       <Route path="/host" element={<RoomEntry destination="host" />} />

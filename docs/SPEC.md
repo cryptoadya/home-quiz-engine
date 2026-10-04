@@ -13,7 +13,7 @@ This is a private home quiz engine for parties with friends. It is not a market 
 
 ## Roles / surfaces
 
-- **Admin / Editor:** create, edit, validate, preview and test quizzes; private to organizer.
+- **Admin / Editor:** create, edit, validate and preview quizzes; check Screen and sound; private to organizer.
 - **Host:** mobile-first control surface used by the host during the party.
 - **Screen:** presentation-only TV surface, normally browser on laptop connected to TV by cable.
 - **Player:** smartphone answer surface.
@@ -169,7 +169,7 @@ Host disconnect does not destroy session; Host reconnect restores control. Scree
 
 ## Host behavior
 
-Mobile-first. At minimum:
+Mobile-first. Host action labels, phases, connection status, confirmations and errors are in Russian. Each phase includes a short instruction explaining the next action; disconnect Pause explains waiting/resuming or continuing without the player. At minimum:
 - Start Game / Start Round
 - Pause / Resume
 - Play / Pause / Restart current media
@@ -226,11 +226,13 @@ Before Reveal, Player must not receive correct answer / `isCorrect` data in HTML
 
 Server is authoritative for accepted submissions, score, timer, roster and game-state transitions.
 
-## Preview / Test Game
+## Preview / equipment check
 
 Preview: visual inspection modes for RU Player, EN Player, Screen, Host. Screen Preview follows the same answer boundary: no choices or Matching candidates while answering; only correct answers/pairs on Reveal.
 
-Test Game: real temporary session used with actual phones/Wi-Fi to verify QR, browsers, realtime, reconnect/disconnect, media, scoring, leaderboard, theme and final flow. Mark `isTest=true`; exclude from normal history and clean stale tests automatically.
+Equipment check: Admin opens a standalone `/screen-check/<quizId>` page on the TV browser, without creating a room, players, game session, timer, scores or history. Works for draft quizzes as well as ready quizzes. Admin can show a test picture, play a three-second test tone or stop the check; only the check Screen produces sound. Report connected check Screens and playback/permission failures to Admin. If autoplay is blocked, Screen offers a local sound-permission recovery button. Organizer confirms picture visibility and actual audibility; software does not certify the TV/speaker output. Stop sound on a new command, Screen disconnect/unmount or when the last checking Admin disconnects. Check commands never affect gameplay. Preserve the reachable LAN origin and frontend port when opening the check on another device.
+
+Test Game is removed: no creation endpoint, editor action, runtime marker or stale-test cleanup. Legacy test records remain excluded from normal history.
 
 ## History
 

@@ -69,7 +69,7 @@ async function editor(matching = false, secondRound = false) {
     createElement(Route, { path: '/admin', element: createElement('p', null, 'Quiz list opened') }),
     createElement(Route, { path: '/host/:roomId', element: createElement('p', null, 'Lobby opened') }))));
   await waitFor(() => assert.ok(view.getByLabelText(matching ? 'Pair 1 left EN' : 'Option 1 EN')));
-  fireEvent.click(view.getByText('Rehearse & export'));
+  fireEvent.click(view.getByText('Export'));
   const edit = (label: string, value: string) => fireEvent.change(view.getByLabelText(label, { exact: true }), { target: { value } });
   const reply = async (index: number, ok = true, body: Record<string, unknown> = {}) => {
     await waitFor(() => assert.ok(writes[index]), { timeout: 2000 });
@@ -124,14 +124,14 @@ test('successful settings save cannot conceal a failed child edit', async () => 
   await waitFor(() => assert.equal(e.actions.length, 1));
 });
 
-for (const action of ['Export Quiz', 'Open lobby', 'Rehearse with devices']) {
+for (const action of ['Export Quiz', 'Open lobby']) {
   test(`${action} flushes and waits for settings, rounds and questions`, async () => {
     const e = await editor();
     e.edit('Title', 'Saved quiz'); e.edit('Round title EN', 'Saved round'); e.edit('Question text EN', 'Saved question');
     fireEvent.click(e.view.getByRole('button', { name: action }));
     for (let index = 0; index < 3; index++) { assert.equal(e.actions.length, 0); await e.reply(index); }
     await waitFor(() => assert.equal(e.actions.length, 1));
-    assert.equal(e.actions[0], `/api/quizzes/q/${action === 'Export Quiz' ? 'export' : action === 'Open lobby' ? 'rooms' : 'test-games'}`);
+    assert.equal(e.actions[0], `/api/quizzes/q/${action === 'Export Quiz' ? 'export' : 'rooms'}`);
   });
   test(`${action} aborts on failed child saves`, async () => {
     const e = await editor();
@@ -345,7 +345,7 @@ test('failed round DELETE blocks parent actions without replay, survives autosav
   e.edit('Round description RU', 'Visible draft');
   fireEvent.click(e.view.getByRole('button', { name: 'Delete round' }));
   await replyDelete(e, false);
-  for (const action of ['← Quiz list', 'Export Quiz', 'Open lobby', 'Rehearse with devices']) {
+  for (const action of ['← Quiz list', 'Export Quiz', 'Open lobby']) {
     fireEvent.click(e.view.getByRole('button', { name: action }));
     await act(async () => {});
     assert.equal(e.deletions.length, 1);
@@ -777,7 +777,7 @@ async function replyMedia(e: Awaited<ReturnType<typeof editor>>, index: number, 
 }
 
 for (const mutation of ['upload', 'delete'] as const) {
-  for (const action of ['Export Quiz', 'Open lobby', 'Rehearse with devices', '← Quiz list']) test(`${action} waits for media ${mutation} and locks further mutations`, async () => {
+  for (const action of ['Export Quiz', 'Open lobby', '← Quiz list']) test(`${action} waits for media ${mutation} and locks further mutations`, async () => {
     const e = await editor();
     const initial = e.validations();
     await startMedia(e, mutation);
@@ -817,7 +817,7 @@ for (const mutation of ['upload', 'delete'] as const) {
   });
 }
 
-for (const action of ['Export Quiz', 'Open lobby', 'Rehearse with devices', '← Quiz list']) test(`${action} prevents starting media mutations while waiting for other saves`, async () => {
+for (const action of ['Export Quiz', 'Open lobby', '← Quiz list']) test(`${action} prevents starting media mutations while waiting for other saves`, async () => {
   const e = await editor();
   fireEvent.click(e.view.getByRole('button', { name: 'Manage media' }));
   await waitFor(() => assert.ok(e.view.getByText('picture.gif')));

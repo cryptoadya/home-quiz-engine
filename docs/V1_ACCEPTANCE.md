@@ -1,5 +1,7 @@
 # V1 acceptance — Phase 8E
 
+Актуализация 4 октября 2026: Test Game удалён и заменён проверкой экрана/звука без игровой сессии. Упоминания Test Game в датированном отчёте ниже описывают прежнюю реализацию. Новые изменения не подтверждены этим аудитом; физический чек-лист остаётся открытым.
+
 [Карта документации](README.md) · [Этапы и статус](ROADMAP.md) · [Проведение игры](RUNBOOK.md)
 
 ## Как читать этот отчёт
@@ -92,8 +94,7 @@ requests return errors; development-tool diagnostics are not physical acceptance
 
 Existing V1 limits: trusted home LAN APIs; no late join/device bans; browser-owned
 codec/autoplay behavior; filesystem/SQLite media operations are not power-failure
-atomic; pre-8D completion timestamps cannot be reconstructed. Closed Test Games
-clean up only on a later startup after seven days. A quiz ZIP is not a full backup.
+atomic; pre-8D completion timestamps cannot be reconstructed. Legacy test-session records remain excluded from history; new Test Games and their automatic cleanup have been removed. A quiz ZIP is not a full backup.
 
 Perform these checks on the actual party equipment before calling hardware
 acceptance complete:
@@ -111,9 +112,10 @@ acceptance complete:
 4. Real party JPG/PNG/WEBP and **animated GIF**, MP3/WAV/OGG, MP4/WEBM codec playback
    on the Screen browser. Test cold-origin autoplay/block recovery, ordered pre-timer
    clips, Pause/Resume, replay without timer reset and Screen reconnect during playback.
-5. Complete a Test Game using these devices: round boundaries, leaderboard/ties,
-   Winner, close/released code, history exclusion. Then complete a short real game
-   and verify its minimal history. Keep laptop/Screen awake throughout.
+5. Run the standalone equipment check on the TV: picture edges/circle, audible tone,
+   autoplay recovery and Stop. Then complete a short regular game on these devices:
+   round boundaries, leaderboard/ties, Winner, close/released code and minimal history.
+   Keep laptop/Screen awake throughout.
 6. Play with internet disconnected on the home Wi-Fi. Check router client isolation,
    firewall reachability and representative simultaneous guests (up to 30); avoid
    sleeping the server computer. No real Wi-Fi/load test has been performed here.

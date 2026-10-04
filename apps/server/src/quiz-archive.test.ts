@@ -90,8 +90,8 @@ test('portable HTTP export → delete source → import → edit/launch: all typ
   const f = fixture();
   try {
     const id = await seed(f);
-    // Freeze one Test Game, then edit the source: export must read the editable state, never this played snapshot.
-    const room = (await f.app.post(`/api/quizzes/${id}/test-games`).expect(201)).body;
+    // Freeze one game, then edit the source: export must read the editable state, never this played snapshot.
+    const room = (await f.app.post(`/api/quizzes/${id}/rooms`).expect(201)).body;
     await f.app.post(`/api/rooms/code/${room.code}/players`).send({ name: 'Alice', language: 'en' }).expect(201);
     await f.app.post(`/api/rooms/${room.id}/start`).expect(200);
     updateQuiz(f.db, id, { title: 'Текущий / Current', themeId: 'halloween', defaultAnswerTimeSeconds: 49, shuffleAnswers: false });

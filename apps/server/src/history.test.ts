@@ -10,7 +10,6 @@ import { createQuiz } from './quizzes.js';
 import { createRound } from './rounds.js';
 import { createQuestion, createOption } from './questions.js';
 import { getLeaderboard } from './navigation.js';
-import { cleanupTestGames } from './test-games.js';
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'quiz-history-'));
@@ -36,8 +35,8 @@ function fixture() {
   };
 }
 
-async function start(f: ReturnType<typeof fixture>, isTest = false, names = ['Alice']) {
-  const room = (await f.api.post(`/api/quizzes/${f.quiz.id}/${isTest ? 'test-games' : 'rooms'}`).expect(201)).body;
+async function start(f: ReturnType<typeof fixture>, names = ['Alice']) {
+  const room = (await f.api.post(`/api/quizzes/${f.quiz.id}/rooms`).expect(201)).body;
   const identities = [];
   for (const name of names) identities.push((await f.api.post(`/api/rooms/code/${room.code}/players`).send({ name, language: 'en' }).expect(201)).body);
   await f.api.post(`/api/rooms/${room.id}/start`).expect(200);
@@ -67,7 +66,7 @@ test('completed real game appears once with stable timestamp, final roster/total
     const media = (await f.api.post(`/api/quizzes/${f.quiz.id}/media`)
       .attach('file', readFileSync(new URL('./fixtures/media/sample.jpg', import.meta.url)), 'private.jpg').expect(201)).body;
     f.db.prepare('UPDATE questions SET media_json = ? WHERE id = ?').run(JSON.stringify([{ mediaId: media.id, playBeforeTimer: false }]), f.questions[0].id);
-    const game = await start(f, false, ['Alice', 'Bob', 'Carol', 'Removed']);
+    const game = await start(f, ['Alice', 'Bob', 'Carol', 'Removed']);
     // Original identity must already be durable before the source can be deleted.
     await f.api.put(`/api/quizzes/${f.quiz.id}`).send({ title: 'Renamed party', themeId: f.quiz.themeId,
       defaultAnswerTimeSeconds: f.quiz.defaultAnswerTimeSeconds, shuffleAnswers: f.quiz.shuffleAnswers }).expect(200);
@@ -109,7 +108,7 @@ test('completed real game appears once with stable timestamp, final roster/total
   } finally { f.close(); }
 });
 
-test('Test Games and closed/abandoned incomplete games never enter default history; seven-day cleanup still applies', async () => {
+test('legacy test sessions and incomplete games stay out of history after restart', async () => {
   const f = fixture();
   try {
     assert.deepEqual(await history(f), []);
@@ -120,7 +119,8 @@ test('Test Games and closed/abandoned incomplete games never enter default histo
     await f.api.post(`${unfinished.root}/close`).expect(200);
     const lobby = (await f.api.post(`/api/quizzes/${f.quiz.id}/rooms`).expect(201)).body;
     await f.api.post(`/api/rooms/${lobby.id}/close`).expect(200);
-    const game = await start(f, true);
+    const game = await start(f);
+    f.db.prepare('UPDATE game_sessions SET is_test = 1 WHERE id = ?').run(game.room.id);
     await play(f, game);
     await f.api.post(`${game.root}/final-results`).expect(200);
     assert.ok(f.db.prepare('SELECT completed_at FROM game_history WHERE session_id = ?').get(game.room.id)!.completed_at);
@@ -130,8 +130,7 @@ test('Test Games and closed/abandoned incomplete games never enter default histo
     await f.api.post(`${game.root}/close`).expect(200);
     f.restart();
     assert.deepEqual(await history(f), []);
-    assert.equal(cleanupTestGames(f.db, Date.now() + 8 * 24 * 60 * 60 * 1000), 1);
-    assert.equal(f.db.prepare('SELECT count(*) AS n FROM game_history WHERE session_id = ?').get(game.room.id)!.n, 0);
+    assert.equal(f.db.prepare('SELECT count(*) AS n FROM game_history WHERE session_id = ?').get(game.room.id)!.n, 1);
     assert.ok(f.db.prepare('SELECT id FROM game_sessions WHERE id = ?').get(abandoned.room.id));
   } finally { f.close(); }
 });
@@ -145,7 +144,7 @@ test('history orders newest completions first and excludes non-roster players', 
     games.forEach((game, index) => f.db.prepare('UPDATE game_history SET completed_at = ? WHERE session_id = ?')
       .run(`2026-09-2${index + 1}T10:00:00.000Z`, game.room.id));
     assert.deepEqual((await history(f)).map((entry: { sessionId: string }) => entry.sessionId), games.map(g => g.room.id).reverse());
-    const game = await start(f, false, ['Alice', 'Nonroster']);
+    const game = await start(f, ['Alice', 'Nonroster']);
     f.db.prepare('UPDATE session_players SET in_roster = 0 WHERE id = ?').run(game.identities.pop()!.player.id);
     await play(f, game); await f.api.post(`${game.root}/final-results`).expect(200);
     assert.deepEqual((await history(f))[0].players.map((p: { displayName: string }) => p.displayName), ['Alice']);

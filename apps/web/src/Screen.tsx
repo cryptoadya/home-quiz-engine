@@ -21,7 +21,6 @@ export function Screen({ roomId: resolvedId }: { roomId?: string } = {}) {
     {state && <>
       {state.game?.state === 'PAUSED' && !state.room.closedAt && <div className="screen-pause-overlay" role="status"><strong>Пауза / Paused</strong><p>Продолжим по команде ведущего / Waiting for the host</p></div>}
       <h2 className="quiz-title">{state.room.quizTitle}</h2>
-      {state.room.isTest && <p className="test-banner"><strong>Тестовая игра / Test Game</strong></p>}
       {!connected && <p className="connection-chip" data-connected={false}>Переподключение… / Reconnecting…</p>}
     </>}
     </header>

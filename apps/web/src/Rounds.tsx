@@ -1,3 +1,4 @@
+import { request as api } from './request';
 import { useEditorSave, useSaveBarrier } from './EditorSaves';
 import { useEffect, useRef, useState } from 'react';
 import type { AuthoringTarget, Quiz, ValidationProblem } from './Admin';
@@ -21,15 +22,6 @@ export type Round = {
 };
 
 type RoundChanges = Pick<Round, 'titleRu' | 'titleEn' | 'descriptionRu' | 'descriptionEn' | 'showLeaderboardAfter' | 'artMediaId' | 'isTiebreak'>;
-
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, options);
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed (${response.status}).`);
-  }
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
-}
 
 export function Rounds({ quizId, targetRound, onPersistedChange, quiz, mediaRevision = 0, onMediaChange, problems = [] }: { quiz?: Quiz; quizId: string; targetRound?: AuthoringTarget | null; onPersistedChange?: () => void; mediaRevision?: number; onMediaChange?: () => void; problems?: ValidationProblem[] }) {
   const base = `/api/quizzes/${quizId}/rounds`;

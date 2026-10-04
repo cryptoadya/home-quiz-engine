@@ -78,7 +78,7 @@ test('Host Lobby shows its code and controls without organizer sharing or networ
   serve();
   const view = show(`/host/${room.id}`);
   await waitFor(() => assert.ok(view.getByText('H8VXT')));
-  assert.ok(view.getByRole('button', { name: 'Close room' }));
+  assert.ok(view.getByRole('button', { name: 'Закрыть комнату' }));
   assert.equal(view.container.querySelector('svg'), null);
   assert.equal(view.queryByRole('region', { name: /Device setup/ }), null);
   assert.equal(view.queryByLabelText('Network address'), null);

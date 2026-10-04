@@ -12,14 +12,14 @@ function show(path = '/admin/history') {
   return render(createElement(MemoryRouter, { initialEntries: [path] }, createElement(App)));
 }
 
-test('Admin links to clear history empty state with Test Game exclusion', async () => {
+test('Admin links to history with a clear empty state', async () => {
   const calls: string[] = [];
   globalThis.fetch = async input => { calls.push(String(input)); return Response.json([]); };
   const view = show('/admin');
   fireEvent.click(view.getByText('Import & history'));
   fireEvent.click(view.getByRole('link', { name: 'History' }));
   await waitFor(() => assert.ok(view.getByText(/No completed real games yet/)));
-  assert.ok(view.getByText(/Test Games are excluded/));
+  assert.equal(view.queryByText(/Test Game/), null);
   assert.ok(calls.includes('/api/history'));
   assert.equal(view.queryByRole('table'), null);
 });
